@@ -1,0 +1,2279 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LobeHub UI Replica</title>
+    <style>
+      body {
+        margin: 0;
+      }
+      #boot {
+        font:
+          13px/1.6 ui-monospace,
+          monospace;
+        color: #888;
+        padding: 24px;
+      }
+    </style>
+
+    <!-- The prototype runtime: react + @lobehub/ui(+base-ui) + antd + antd-style +
+     lucide-react, bundled from the real design system.
+     Build both files next to this HTML:
+       bash .agents/skills/design-prototype/scripts/build-runtime.sh <this-dir> -->
+    <script src="./lobe-prototype-runtime.js"></script>
+    <script>
+      window.require = (name) => {
+        const m = __PROTO_DEPS_NS__.default[name];
+        if (!m)
+          throw new Error(
+            'prototype runtime is missing module: ' + name + ' — add it to entry.mjs and rebuild',
+          );
+        return m;
+      };
+      window.exports = {};
+      window.module = { exports: window.exports };
+    </script>
+    <script src="./babel.min.js"></script>
+  </head>
+  <body>
+    <div id="boot">booting prototype runtime…</div>
+    <div id="root"></div>
+
+    <script type="text/babel" data-presets="react" data-plugins="transform-modules-commonjs">
+      // =====================================================================
+      // LobeHub — full-app UI replica prototype
+      //
+      // Replicates the real app's shell (NavPanel + NavHeader + content) and
+      // nine surfaces, built on the actual design system so every token,
+      // control height and radius is the production value, not an eyeball.
+      //
+      // Structural sources (read from the repo, mirrored here):
+      //   shell        src/routes/(main)/_layout/index.tsx
+      //   nav panel    src/features/NavPanel/{index,SideBarLayout}.tsx
+      //   nav row      src/features/NavPanel/components/NavItem.tsx   (h36 / gap8 / icon18-in-28)
+      //   nav header   src/features/NavHeader/index.tsx               (h44 / padding8)
+      //   panel size   src/store/global/selectors/systemStatus.ts     (min 240 / max 400)
+      //   nav items    src/hooks/useNavLayout.ts + packages/app-config/src/routes
+      //   home         src/routes/(main)/home/features/index.tsx
+      //   chat         src/routes/(main)/agent/(chat)/_layout + features/Conversation
+      //   settings     src/routes/(main)/settings/{_layout/Body,hooks/useCategory}
+      //   community    src/routes/(main)/community/(list)/_layout
+      //   tokens       DESIGN.md + DESIGN.dark.md
+      //
+      // OUT OF SCOPE (deliberate cuts, not decisions):
+      //   - i18n: copy is inlined in English (prototypes skip react-i18next).
+      //   - Real data/stores: zustand + SWR are replaced by local useState.
+      //   - createStaticStyles → createStyles (static extraction needs a build).
+      //   - Mobile / popup / desktop-titlebar route trees.
+      // =====================================================================
+      import {
+        Accordion,
+        AccordionItem,
+        ActionIcon,
+        Alert,
+        Avatar,
+        Block,
+        Button,
+        Center,
+        Collapse,
+        ConfigProvider,
+        DraggablePanel,
+        DropdownMenu,
+        Empty,
+        Flexbox,
+        Grid,
+        Icon,
+        Input,
+        Markdown,
+        Modal,
+        NeuralNetworkLoading,
+        ScrollShadow,
+        Segmented,
+        Skeleton,
+        Tag,
+        Text,
+        TextArea,
+        ThemeProvider,
+        Tooltip,
+        TooltipGroup,
+      } from '@lobehub/ui';
+      import { Divider, Progress } from 'antd';
+      import { createStyles } from 'antd-style';
+      import {
+        ArrowUp,
+        AtSign,
+        BellIcon,
+        Blocks,
+        Brain,
+        BrainCircuit,
+        ChartColumnBigIcon,
+        CheckIcon,
+        ChevronDown,
+        CircleAlert,
+        Coins,
+        CreditCard,
+        Database,
+        FilePenIcon,
+        FileText,
+        FolderIcon,
+        Gift,
+        Globe,
+        HomeIcon,
+        ImageIcon,
+        KeyboardIcon,
+        KeyRound,
+        LibraryBigIcon,
+        ListTodoIcon,
+        MapIcon,
+        MessageCircleIcon,
+        MonitorSmartphoneIcon,
+        MoreHorizontalIcon,
+        PaletteIcon,
+        PanelLeftIcon,
+        PaperclipIcon,
+        PlusIcon,
+        RefreshCwIcon,
+        SearchIcon,
+        SettingsIcon,
+        ShapesIcon,
+        Share2Icon,
+        SlidersHorizontalIcon,
+        Sparkles,
+        SquarePenIcon,
+        TerminalSquare,
+        UploadIcon,
+        WrenchIcon,
+      } from 'lucide-react';
+      // lobe-ui components animate through an injected motion component — the
+      // real app wires the same thing in src/layout/GlobalProvider/AppTheme.tsx.
+      import * as m from 'motion/react-m';
+      import React, { memo, useMemo, useState } from 'react';
+      import { createRoot } from 'react-dom/client';
+
+      // ===================================================================
+      // Mock data — stands in for the zustand stores / TRPC payloads.
+      // ===================================================================
+
+      const AGENTS = [
+        { avatar: '🤖', desc: 'General-purpose assistant', id: 'inbox', title: 'Inbox' },
+        { avatar: '🧑‍💻', desc: 'Reads the repo, writes patches', id: 'code', title: 'Code Reviewer' },
+        { avatar: '📊', desc: 'Turns tables into charts', id: 'data', title: 'Data Analyst' },
+        { avatar: '✍️', desc: 'Drafts and edits long-form copy', id: 'write', title: 'Writer' },
+      ];
+
+      const RECENTS = [
+        { id: 'r1', sub: 'Code Reviewer', time: '2m', title: 'Refactor the nav panel snapshot' },
+        { id: 'r2', sub: 'Data Analyst', time: '1h', title: 'Q3 retention cohorts' },
+        { id: 'r3', sub: 'Inbox', time: '3h', title: 'Summarize the RFC thread' },
+        { id: 'r4', sub: 'Writer', time: 'Yesterday', title: 'Changelog for 1.42' },
+      ];
+
+      const COMMUNITY = {
+        agent: [
+          { avatar: '🧠', desc: 'Plans multi-step research and cites every claim.', tag: 'Research', title: 'Deep Researcher' },
+          { avatar: '🐞', desc: 'Reproduces the bug before it proposes a fix.', tag: 'Engineering', title: 'Bug Hunter' },
+          { avatar: '🎨', desc: 'Critiques UI against a design system.', tag: 'Design', title: 'Design Critic' },
+          { avatar: '📮', desc: 'Drafts replies in your own voice.', tag: 'Productivity', title: 'Inbox Zero' },
+          { avatar: '⚖️', desc: 'Reads contracts and flags unusual clauses.', tag: 'Legal', title: 'Contract Reader' },
+          { avatar: '🧪', desc: 'Writes tests that actually fail first.', tag: 'Engineering', title: 'Test Author' },
+        ],
+        mcp: [
+          { avatar: '🐙', desc: 'Issues, pull requests, code search.', tag: 'Official', title: 'GitHub' },
+          { avatar: '📅', desc: 'Read and write calendar events.', tag: 'Official', title: 'Google Calendar' },
+          { avatar: '🗂️', desc: 'Query and update Linear issues.', tag: 'Community', title: 'Linear' },
+          { avatar: '🐘', desc: 'Run read-only SQL against Postgres.', tag: 'Community', title: 'Postgres' },
+        ],
+        model: [
+          { avatar: '🅰️', desc: '200K context · vision · tool use', tag: 'Anthropic', title: 'Claude Opus 5' },
+          { avatar: '🌀', desc: '128K context · fast · tool use', tag: 'OpenAI', title: 'GPT-5' },
+          { avatar: '💎', desc: '1M context · multimodal', tag: 'Google', title: 'Gemini 3 Pro' },
+          { avatar: '🦙', desc: 'Open weights · self-host', tag: 'Meta', title: 'Llama 4 70B' },
+        ],
+        provider: [
+          { avatar: '🅰️', desc: '4 models · API key or OAuth', tag: 'Connected', title: 'Anthropic' },
+          { avatar: '🌀', desc: '9 models · API key', tag: 'Connected', title: 'OpenAI' },
+          { avatar: '☁️', desc: '12 models · IAM role', tag: 'Not set up', title: 'AWS Bedrock' },
+          { avatar: '🖥️', desc: 'Local · no key required', tag: 'Not set up', title: 'Ollama' },
+        ],
+        skill: [
+          { avatar: '📄', desc: 'Create and edit .docx documents.', tag: 'Documents', title: 'Word' },
+          { avatar: '📊', desc: 'Build spreadsheets and charts.', tag: 'Documents', title: 'Excel' },
+          { avatar: '🖼️', desc: 'Generate and edit images inline.', tag: 'Media', title: 'Image Studio' },
+          { avatar: '🔍', desc: 'Search the web and read pages.', tag: 'Research', title: 'Web Search' },
+        ],
+      };
+
+      const COMMUNITY_TABS = [
+        { label: 'Agents', value: 'agent' },
+        { label: 'Models', value: 'model' },
+        { label: 'Providers', value: 'provider' },
+        { label: 'Skills', value: 'skill' },
+        { label: 'MCP', value: 'mcp' },
+      ];
+
+      const FILES = [
+        { chunks: 128, name: 'design-system.md', size: '24 KB', time: '2 days ago', type: 'Markdown' },
+        { chunks: 902, name: 'q3-financials.xlsx', size: '1.2 MB', time: '5 days ago', type: 'Spreadsheet' },
+        { chunks: 340, name: 'onboarding-flow.pdf', size: '3.4 MB', time: '1 week ago', type: 'PDF' },
+        { chunks: 56, name: 'api-contract.json', size: '8 KB', time: '2 weeks ago', type: 'JSON' },
+      ];
+
+      const MEMORIES = [
+        { body: 'Prefers TypeScript over JavaScript for every new file.', kind: 'Preference', time: 'Updated 2d ago' },
+        { body: 'Works in the Europe/Berlin timezone; ships on Thursdays.', kind: 'Identity', time: 'Updated 1w ago' },
+        { body: 'The nav panel snapshot bug came from a stale portal key.', kind: 'Experience', time: 'Updated 3w ago' },
+        { body: 'Current project: LobeHub design-system extraction.', kind: 'Context', time: 'Updated today' },
+      ];
+
+      const PAGES = [
+        { excerpt: 'Tokens are themeable — primary and neutral resolve to CSS variables…', time: 'Edited 10m ago', title: 'Design system notes' },
+        { excerpt: 'Roots vs features: route trees only hold page segments…', time: 'Edited 2h ago', title: 'SPA route conventions' },
+        { excerpt: 'Canary is the development branch; main is the release branch…', time: 'Edited yesterday', title: 'Release process' },
+      ];
+
+      const TASKS = [
+        { agent: 'Code Reviewer', progress: 62, status: 'running', title: 'Audit the settings sidebar for a11y' },
+        { agent: 'Data Analyst', progress: 100, status: 'done', title: 'Rebuild the retention dashboard' },
+        { agent: 'Writer', progress: 0, status: 'queued', title: 'Draft the 1.43 changelog' },
+        { agent: 'Bug Hunter', progress: 38, status: 'failed', title: 'Reproduce the blank-screen route bug' },
+      ];
+
+      const MESSAGES = [
+        {
+          content: 'Pull the whole UI of this app — every surface, one prototype.',
+          role: 'user',
+        },
+        {
+          content:
+            'I mapped the shell first: a draggable `NavPanel` on the left (240–400px), a 44px `NavHeader` per surface, and the content area underneath.\n\nNine surfaces follow the same contract, so replicating the shell replicates most of the app.',
+          role: 'assistant',
+        },
+        {
+          role: 'tool',
+          tool: {
+            name: 'read_files',
+            result: '486 route segments · 1289 feature components · 4 router configs',
+            args: 'src/routes/**, src/features/**',
+          },
+        },
+        {
+          content:
+            'Here is what the extraction covers:\n\n- **Shell** — nav panel, nav header, panel collapse\n- **Home** — agent picker, welcome, composer\n- **Chat** — message list, tool calls, working sidebar\n- **Community / Resource / Memory / Pages / Tasks / Settings**\n\nEvery value below comes from `DESIGN.md`, not from eyeballing screenshots.',
+          role: 'assistant',
+        },
+      ];
+
+      const SETTINGS_GROUPS = [
+        {
+          items: [
+            { icon: undefined, key: 'profile', label: 'Profile' },
+            { icon: ChartColumnBigIcon, key: 'stats', label: 'Statistics' },
+            { icon: PaletteIcon, key: 'appearance', label: 'Appearance' },
+            { icon: MonitorSmartphoneIcon, key: 'devices', label: 'Devices' },
+            { icon: KeyboardIcon, key: 'hotkey', label: 'Hotkeys' },
+            { icon: BellIcon, key: 'notification', label: 'Notifications' },
+          ],
+          key: 'general',
+          title: 'Common',
+        },
+        {
+          items: [
+            { icon: MapIcon, key: 'plans', label: 'Plans' },
+            { icon: ChartColumnBigIcon, key: 'usage', label: 'Usage' },
+            { icon: Coins, key: 'credits', label: 'Credits' },
+            { icon: CreditCard, key: 'billing', label: 'Billing' },
+            { icon: Gift, key: 'referral', label: 'Referral' },
+          ],
+          key: 'subscription',
+          title: 'Subscription',
+        },
+        {
+          items: [
+            { icon: Brain, key: 'provider', label: 'Model Provider' },
+            { icon: Sparkles, key: 'service-model', label: 'Service Model' },
+            { icon: WrenchIcon, key: 'skill', label: 'Skills' },
+            { icon: Blocks, key: 'connector', label: 'Connectors' },
+            { icon: BrainCircuit, key: 'memory', label: 'Memory' },
+            { icon: KeyRound, key: 'creds', label: 'Credentials' },
+            { icon: MessageCircleIcon, key: 'messenger', label: 'Messenger' },
+          ],
+          key: 'agent',
+          title: 'AI Config',
+        },
+        {
+          items: [
+            { icon: TerminalSquare, key: 'system-tools', label: 'System Tools' },
+            { icon: Database, key: 'storage', label: 'Storage' },
+            { icon: SettingsIcon, key: 'about', label: 'About' },
+          ],
+          key: 'system',
+          title: 'System',
+        },
+      ];
+
+      // Straight out of DESIGN.md — the light-theme contract. Swatches read the
+      // live token so dark mode shows the dark value next to the light spec.
+      const TOKEN_GROUPS = [
+        {
+          rows: [
+            ['colorPrimary', 'colorPrimary', 'Most important action, focus, links'],
+            ['colorSuccess', 'colorSuccess', 'Success state'],
+            ['colorWarning', 'colorWarning', 'Warning state'],
+            ['colorError', 'colorError', 'Error / destructive'],
+            ['colorInfo', 'colorInfo', 'Informational state'],
+          ],
+          title: 'Functional',
+        },
+        {
+          rows: [
+            ['colorText', 'colorText', 'Primary text and icons'],
+            ['colorTextSecondary', 'colorTextSecondary', 'Secondary text, form labels'],
+            ['colorTextTertiary', 'colorTextTertiary', 'Placeholders, captions'],
+            ['colorTextQuaternary', 'colorTextQuaternary', 'Disabled'],
+          ],
+          title: 'Text ramp',
+        },
+        {
+          rows: [
+            ['colorBgLayout', 'colorBgLayout', 'Page canvas'],
+            ['colorBgContainer', 'colorBgContainer', 'Primary card / panel surface'],
+            ['colorBgElevated', 'colorBgElevated', 'Popovers, menus, modals'],
+            ['colorBgSpotlight', 'colorBgSpotlight', 'Tooltips'],
+          ],
+          title: 'Surfaces',
+        },
+        {
+          rows: [
+            ['colorBorder', 'colorBorder', 'Stronger edge'],
+            ['colorBorderSecondary', 'colorBorderSecondary', 'Default divider'],
+            ['colorFillSecondary', 'colorFillSecondary', 'Fill'],
+            ['colorFillTertiary', 'colorFillTertiary', 'Hover wash'],
+          ],
+          title: 'Borders & fills',
+        },
+      ];
+
+      // ===================================================================
+      // Styles
+      // ===================================================================
+
+      const useStyles = createStyles(({ css, token }) => ({
+        // --- shell -------------------------------------------------------
+        shell: css`
+          overflow: hidden;
+          height: 100dvh;
+          background: ${token.colorBgLayout};
+        `,
+        panel: css`
+          height: 100%;
+          color: ${token.colorTextSecondary};
+          background: ${token.colorBgLayout};
+        `,
+        content: css`
+          overflow: hidden;
+          min-width: 0;
+          height: 100%;
+          border-start-start-radius: ${token.borderRadiusLG}px;
+          border-end-start-radius: ${token.borderRadiusLG}px;
+          background: ${token.colorBgContainer};
+          box-shadow: 0 0 0 1px ${token.colorBorderSecondary};
+        `,
+        scroll: css`
+          overflow-y: auto;
+          min-height: 0;
+        `,
+        // --- nav ---------------------------------------------------------
+        navRow: css`
+          overflow: hidden;
+          min-width: 32px;
+          user-select: none;
+
+          .nav-actions {
+            width: 0;
+            opacity: 0;
+            transition: opacity 0.2s ${token.motionEaseOut};
+          }
+          &:hover .nav-actions {
+            width: unset;
+            opacity: 1;
+          }
+        `,
+        // --- chat --------------------------------------------------------
+        userBubble: css`
+          max-width: min(680px, 78%);
+          border-radius: ${token.borderRadiusLG}px;
+          background: ${token.colorFillSecondary};
+        `,
+        composer: css`
+          border: 1px solid ${token.colorBorderSecondary};
+          border-radius: ${token.borderRadiusLG}px;
+          background: ${token.colorBgContainer};
+          box-shadow: ${token.boxShadowTertiary};
+
+          &:focus-within {
+            border-color: ${token.colorBorder};
+          }
+        `,
+        // --- misc --------------------------------------------------------
+        card: css`
+          height: 100%;
+          transition: background 0.2s ${token.motionEaseOut};
+
+          &:hover {
+            background: ${token.colorFillTertiary};
+          }
+        `,
+        swatch: css`
+          width: 44px;
+          height: 28px;
+          border: 1px solid ${token.colorBorderSecondary};
+          border-radius: ${token.borderRadiusSM}px;
+        `,
+        mono: css`
+          font-family: ${token.fontFamilyCode};
+          font-size: 12px;
+        `,
+        stateStrip: css`
+          border-block-end: 1px solid ${token.colorBorderSecondary};
+          background: ${token.colorBgLayout};
+        `,
+      }));
+
+      // ===================================================================
+      // Primitives shared with the real app
+      // ===================================================================
+
+      /** Mirrors src/features/NavPanel/components/NavItem.tsx */
+      const NavRow = memo(({ active, actions, description, extra, icon, iconNode, onClick, title }) => {
+        const { styles, theme } = useStyles();
+        return (
+          <Block
+            horizontal
+            align="center"
+            className={styles.navRow}
+            clickable
+            gap={8}
+            height={description ? undefined : 36}
+            paddingBlock={description ? 8 : undefined}
+            paddingInline={4}
+            variant={active ? 'filled' : 'borderless'}
+            onClick={onClick}
+          >
+            <Center
+              flex="none"
+              height={description ? 22 : 28}
+              style={description ? { alignSelf: 'flex-start' } : undefined}
+              width={28}
+            >
+              {iconNode ?? (
+                <Icon
+                  color={active ? theme.colorText : theme.colorTextDescription}
+                  icon={icon}
+                  size={18}
+                />
+              )}
+            </Center>
+            <Flexbox flex={1} gap={3} style={{ overflow: 'hidden' }}>
+              <Text
+                color={active ? theme.colorText : theme.colorTextSecondary}
+                ellipsis
+              >
+                {title}
+              </Text>
+              {description && (
+                <Text color={theme.colorTextTertiary} ellipsis fontSize={12}>
+                  {description}
+                </Text>
+              )}
+            </Flexbox>
+            {extra}
+            {actions && (
+              <Flexbox horizontal align="center" className="nav-actions" gap={2}>
+                {actions}
+              </Flexbox>
+            )}
+          </Block>
+        );
+      });
+
+      /** Mirrors src/features/NavHeader/index.tsx — 44px tall, 8px padding. */
+      const NavHeader = memo(({ collapsed, left, onExpand, right }) => (
+        <Flexbox
+          horizontal
+          align="center"
+          flex="none"
+          gap={4}
+          height={44}
+          justify="space-between"
+          padding={8}
+        >
+          <TooltipGroup>
+            <Flexbox horizontal align="center" gap={2} style={{ minWidth: 0 }}>
+              {collapsed && (
+                <Tooltip title="Expand sidebar">
+                  <ActionIcon icon={PanelLeftIcon} size="small" onClick={onExpand} />
+                </Tooltip>
+              )}
+              {left}
+            </Flexbox>
+            <Flexbox horizontal align="center" gap={2} justify="flex-end">
+              {right}
+            </Flexbox>
+          </TooltipGroup>
+        </Flexbox>
+      ));
+
+      const SectionLabel = memo(({ children, extra }) => (
+        <Flexbox horizontal align="center" justify="space-between" paddingInline={4}>
+          <Text ellipsis fontSize={12} type="secondary" weight={500}>
+            {children}
+          </Text>
+          {extra}
+        </Flexbox>
+      ));
+
+      /**
+       * Prototype chrome — NOT part of the app UI. Sits outside the shell so
+       * it can't be mistaken for a real surface. Drives the four data states
+       * every screen renders through, so non-happy paths are specified rather
+       * than assumed.
+       */
+      const PrototypeBar = memo(({ onChange, route, value }) => {
+        const { styles, theme } = useStyles();
+        return (
+          <Flexbox
+            horizontal
+            align="center"
+            className={styles.stateStrip}
+            flex="none"
+            gap={12}
+            paddingBlock={6}
+            paddingInline={12}
+          >
+            <Text className={styles.mono} color={theme.colorTextTertiary}>
+              prototype
+            </Text>
+            <Text color={theme.colorTextQuaternary}>/</Text>
+            <Text className={styles.mono} fontSize={12}>
+              {ROUTE_TITLE[route] ?? route}
+            </Text>
+            <Flexbox horizontal align="center" gap={8} style={{ marginInlineStart: 'auto' }}>
+              <Text fontSize={12} type="secondary">
+                Data state
+              </Text>
+              <Segmented
+                options={[
+                  { label: 'Data', value: 'data' },
+                  { label: 'Loading', value: 'loading' },
+                  { label: 'Empty', value: 'empty' },
+                  { label: 'Error', value: 'error' },
+                ]}
+                size="small"
+                value={value}
+                onChange={onChange}
+              />
+              <Text fontSize={12} type="secondary">
+                Theme follows your OS
+              </Text>
+            </Flexbox>
+          </Flexbox>
+        );
+      });
+
+      /**
+       * Lets the error state's Retry actually recover instead of being a
+       * painted button — the screens don't have to thread a setter each.
+       */
+      const StateContext = React.createContext(() => {});
+
+      /** One menu behind every "…" in the app. */
+      const RowMenu = memo(({ items }) => (
+        <DropdownMenu
+          items={
+            items ?? [
+              { icon: <Icon icon={SquarePenIcon} />, key: 'rename', label: 'Rename' },
+              { icon: <Icon icon={Share2Icon} />, key: 'duplicate', label: 'Duplicate' },
+              { type: 'divider' },
+              { danger: true, icon: <Icon icon={CircleAlert} />, key: 'delete', label: 'Delete' },
+            ]
+          }
+          nativeButton={false}
+        >
+          <ActionIcon icon={MoreHorizontalIcon} size="small" style={{ flex: 'none' }} />
+        </DropdownMenu>
+      ));
+
+      const LoadingState = memo(({ rows = 4 }) => (
+        <Flexbox gap={16} padding={24}>
+          {Array.from({ length: rows }).map((_, i) => (
+            <Skeleton active key={i} paragraph={{ rows: 2 }} title={{ width: '32%' }} />
+          ))}
+        </Flexbox>
+      ));
+
+      const ErrorState = memo(({ onRetry, what }) => (
+        <Center flex={1} padding={48}>
+          <Empty
+            action={
+              <Button icon={RefreshCwIcon} onClick={onRetry}>
+                Retry
+              </Button>
+            }
+            description={`The request timed out. Nothing was changed — try again, or check your connection.`}
+            icon={CircleAlert}
+            title={`Couldn't load ${what}`}
+          />
+        </Center>
+      ));
+
+      /** Renders the four states so no screen ships happy-path only. */
+      const StateBody = memo(({ children, empty, state, what }) => {
+        const setState = React.useContext(StateContext);
+        if (state === 'loading') return <LoadingState />;
+        if (state === 'error')
+          return <ErrorState what={what} onRetry={() => setState('data')} />;
+        if (state === 'empty') return <Center flex={1} padding={48}>{empty}</Center>;
+        return children;
+      });
+
+      // ===================================================================
+      // Left panel — content swaps per route, exactly like NavPanel does
+      // ===================================================================
+
+      const TOP_NAV = [
+        { icon: SearchIcon, key: 'search', title: 'Search' },
+        { icon: HomeIcon, key: 'home', title: 'Home' },
+        { icon: ListTodoIcon, key: 'tasks', title: 'Tasks' },
+        { icon: FilePenIcon, key: 'pages', title: 'Pages' },
+      ];
+
+      const BOTTOM_NAV = [
+        { icon: ImageIcon, key: 'image', title: 'Generation' },
+        { icon: ShapesIcon, key: 'community', title: 'Community' },
+        { icon: LibraryBigIcon, key: 'resource', title: 'Resource' },
+        { icon: BrainCircuit, key: 'memory', title: 'Memory' },
+      ];
+
+      const PanelHeader = memo(({ children }) => (
+        <Flexbox flex="none" gap={1} paddingInline={4}>
+          {children}
+        </Flexbox>
+      ));
+
+      const HomeSidebar = memo(({ agentId, onAgent, onRoute, route }) => (
+        <Flexbox gap={1} height="100%" style={{ overflow: 'hidden' }}>
+          <PanelHeader>
+            <Flexbox horizontal align="center" gap={8} height={44} paddingInline={4}>
+              <Avatar avatar="🦔" shape="circle" size={26} />
+              <Text ellipsis strong style={{ flex: 1 }}>
+                Bai Quan
+              </Text>
+              <Tooltip title="New chat">
+                <ActionIcon icon={SquarePenIcon} size="small" />
+              </Tooltip>
+            </Flexbox>
+            {TOP_NAV.map((item) => (
+              <NavRow
+                active={route === item.key}
+                icon={item.icon}
+                key={item.key}
+                title={item.title}
+                onClick={() => onRoute(item.key)}
+              />
+            ))}
+          </PanelHeader>
+
+          <ScrollShadow size={2} style={{ height: '100%' }}>
+            <Flexbox flex={1} gap={1} paddingInline={4} style={{ minHeight: '100%' }}>
+              <Accordion defaultExpandedKeys={['recents', 'agents']} gap={8}>
+                <AccordionItem
+                  itemKey="recents"
+                  paddingBlock={4}
+                  paddingInline="8px 4px"
+                  title={
+                    <Text ellipsis fontSize={12} type="secondary" weight={500}>
+                      Recents
+                    </Text>
+                  }
+                >
+                  <Flexbox gap={1} paddingBlock={1}>
+                    {RECENTS.map((r) => (
+                      <NavRow
+                        active={route === 'chat' && r.id === 'r1'}
+                        icon={MessageCircleIcon}
+                        key={r.id}
+                        title={r.title}
+                        actions={<RowMenu />}
+                        onClick={() => onRoute('chat')}
+                      />
+                    ))}
+                  </Flexbox>
+                </AccordionItem>
+
+                <AccordionItem
+                  itemKey="agents"
+                  paddingBlock={4}
+                  paddingInline="8px 4px"
+                  title={
+                    <Text ellipsis fontSize={12} type="secondary" weight={500}>
+                      Agents
+                    </Text>
+                  }
+                >
+                  <Flexbox gap={1} paddingBlock={1}>
+                    {AGENTS.map((a) => (
+                      <NavRow
+                        active={agentId === a.id && route === 'chat'}
+                        iconNode={<Avatar avatar={a.avatar} shape="circle" size={22} />}
+                        key={a.id}
+                        title={a.title}
+                        actions={<RowMenu />}
+                        onClick={() => {
+                          onAgent(a.id);
+                          onRoute('chat');
+                        }}
+                      />
+                    ))}
+                    <NavRow icon={PlusIcon} title="New agent" onClick={() => {}} />
+                  </Flexbox>
+                </AccordionItem>
+              </Accordion>
+
+              <Flexbox gap={1} paddingBlock={8}>
+                {BOTTOM_NAV.map((item) => (
+                  <NavRow
+                    active={route === item.key}
+                    icon={item.icon}
+                    key={item.key}
+                    title={item.title}
+                    onClick={() => onRoute(item.key)}
+                  />
+                ))}
+              </Flexbox>
+
+              <div style={{ flex: '1 1 0', minHeight: 0 }} />
+
+              <Flexbox gap={1} paddingBlock={8}>
+                <NavRow
+                  active={route === 'tokens'}
+                  icon={PaletteIcon}
+                  title="Design tokens"
+                  onClick={() => onRoute('tokens')}
+                />
+                <NavRow
+                  active={route === 'settings'}
+                  icon={SettingsIcon}
+                  title="Settings"
+                  onClick={() => onRoute('settings')}
+                />
+              </Flexbox>
+            </Flexbox>
+          </ScrollShadow>
+        </Flexbox>
+      ));
+
+      const SettingsSidebar = memo(({ onBack, onTab, tab }) => (
+        <Flexbox gap={1} height="100%" style={{ overflow: 'hidden' }}>
+          <PanelHeader>
+            <Flexbox horizontal align="center" gap={8} height={44} paddingInline={4}>
+              <ActionIcon icon={PanelLeftIcon} size="small" onClick={onBack} />
+              <Text ellipsis strong style={{ flex: 1 }}>
+                Settings
+              </Text>
+            </Flexbox>
+          </PanelHeader>
+          <ScrollShadow size={2} style={{ height: '100%' }}>
+            <Flexbox gap={4} paddingInline={4}>
+              <Accordion defaultExpandedKeys={SETTINGS_GROUPS.map((g) => g.key)} gap={8}>
+                {SETTINGS_GROUPS.map((group) => (
+                  <AccordionItem
+                    itemKey={group.key}
+                    key={group.key}
+                    paddingBlock={4}
+                    paddingInline="8px 4px"
+                    title={
+                      <Text ellipsis fontSize={12} type="secondary" weight={500}>
+                        {group.title}
+                      </Text>
+                    }
+                  >
+                    <Flexbox gap={1} paddingBlock={1}>
+                      {group.items.map((item) => (
+                        <NavRow
+                          active={tab === item.key}
+                          icon={item.icon}
+                          iconNode={
+                            item.key === 'profile' ? (
+                              <Avatar avatar="🦔" shape="square" size={22} />
+                            ) : undefined
+                          }
+                          key={item.key}
+                          title={item.label}
+                          onClick={() => onTab(item.key)}
+                        />
+                      ))}
+                    </Flexbox>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            </Flexbox>
+          </ScrollShadow>
+        </Flexbox>
+      ));
+
+      const ChatSidebar = memo(({ agentId, onAgent, onRoute }) => {
+        const agent = AGENTS.find((a) => a.id === agentId) ?? AGENTS[0];
+        return (
+          <Flexbox gap={1} height="100%" style={{ overflow: 'hidden' }}>
+            <PanelHeader>
+              <Flexbox horizontal align="center" gap={8} height={44} paddingInline={4}>
+                <ActionIcon icon={PanelLeftIcon} size="small" onClick={() => onRoute('home')} />
+                <Avatar avatar={agent.avatar} shape="circle" size={24} />
+                <Text ellipsis strong style={{ flex: 1 }}>
+                  {agent.title}
+                </Text>
+                <Tooltip title="New topic">
+                  <ActionIcon icon={SquarePenIcon} size="small" />
+                </Tooltip>
+              </Flexbox>
+              <NavRow icon={MessageCircleIcon} title="Chat" active onClick={() => {}} />
+              <NavRow icon={FileText} title="Documents" onClick={() => {}} />
+              <NavRow icon={ListTodoIcon} title="Tasks" onClick={() => {}} />
+              <NavRow icon={SlidersHorizontalIcon} title="Agent profile" onClick={() => {}} />
+            </PanelHeader>
+            <ScrollShadow size={2} style={{ height: '100%' }}>
+              <Flexbox gap={1} paddingInline={4}>
+                <Flexbox paddingBlock={8}>
+                  <SectionLabel>Topics</SectionLabel>
+                </Flexbox>
+                {RECENTS.map((r, i) => (
+                  <NavRow
+                    active={i === 0}
+                    description={r.time}
+                    icon={MessageCircleIcon}
+                    key={r.id}
+                    title={r.title}
+                    actions={<RowMenu />}
+                    onClick={() => {}}
+                  />
+                ))}
+              </Flexbox>
+            </ScrollShadow>
+          </Flexbox>
+        );
+      });
+
+      // ===================================================================
+      // Screen — Home
+      // ===================================================================
+
+      const Composer = memo(({ onSend, placeholder }) => {
+        const { styles, theme } = useStyles();
+        const [value, setValue] = useState('');
+        return (
+          <Flexbox className={styles.composer} gap={8} padding={12}>
+            <TextArea
+              autoSize={{ maxRows: 8, minRows: 2 }}
+              placeholder={placeholder}
+              resize={false}
+              value={value}
+              variant="borderless"
+              onChange={(e) => setValue(e.target.value)}
+              onPressEnter={(e) => {
+                if (e.shiftKey) return;
+                e.preventDefault();
+                if (!value.trim()) return;
+                onSend?.(value.trim());
+                setValue('');
+              }}
+            />
+            <Flexbox horizontal align="center" gap={4} justify="space-between">
+              <Flexbox horizontal align="center" gap={2}>
+                <Button icon={Sparkles} size="small" type="text">
+                  Claude Opus 5
+                </Button>
+                <Tooltip title="Attach a file">
+                  <ActionIcon icon={PaperclipIcon} size="small" />
+                </Tooltip>
+                <Tooltip title="Tools">
+                  <ActionIcon icon={WrenchIcon} size="small" />
+                </Tooltip>
+                <Tooltip title="Mention an agent">
+                  <ActionIcon icon={AtSign} size="small" />
+                </Tooltip>
+              </Flexbox>
+              <Flexbox horizontal align="center" gap={8}>
+                <Text color={theme.colorTextTertiary} fontSize={12}>
+                  Enter to send
+                </Text>
+                <Button
+                  disabled={!value.trim()}
+                  icon={ArrowUp}
+                  shape="circle"
+                  type="primary"
+                  onClick={() => {
+                    if (!value.trim()) return;
+                    onSend?.(value.trim());
+                    setValue('');
+                  }}
+                />
+              </Flexbox>
+            </Flexbox>
+          </Flexbox>
+        );
+      });
+
+      const HomeScreen = memo(({ agentId, onAgent, onRoute, state }) => {
+        const { styles, theme } = useStyles();
+        const agent = AGENTS.find((a) => a.id === agentId) ?? AGENTS[0];
+        return (
+          <StateBody
+            state={state}
+            what="your home"
+            empty={
+              <Empty
+                action={<Button icon={PlusIcon} type="primary">Create Agent</Button>}
+                description="Create your first Agent and it will show up here with everything it has worked on."
+                emoji="🌱"
+                title="Nothing here yet"
+              />
+            }
+          >
+            <Flexbox className={styles.scroll} flex={1} padding={24}>
+              <Flexbox gap={40} style={{ margin: '0 auto', maxWidth: 760, width: '100%' }}>
+                <Flexbox gap={24} style={{ paddingTop: '8vh' }}>
+                  <Flexbox gap={8}>
+                    <Flexbox horizontal align="center" gap={8}>
+                      <Block
+                        horizontal
+                        align="center"
+                        clickable
+                        gap={8}
+                        height={36}
+                        paddingInline={10}
+                        variant="filled"
+                        onClick={() => onRoute('chat')}
+                      >
+                        <Avatar avatar={agent.avatar} shape="circle" size={22} />
+                        <Text weight={500}>{agent.title}</Text>
+                        <Icon color={theme.colorTextTertiary} icon={ChevronDown} size={14} />
+                      </Block>
+                    </Flexbox>
+                    <Text as="h1" fontSize={30} weight={600}>
+                      Good evening, Bai Quan.
+                    </Text>
+                    <Text fontSize={16} type="secondary">
+                      Four topics moved yesterday. Pick one up, or start something new.
+                    </Text>
+                  </Flexbox>
+
+                  <Composer
+                    placeholder="Ask anything, or describe a task…"
+                    onSend={() => onRoute('chat')}
+                  />
+                </Flexbox>
+
+                <Flexbox gap={12}>
+                  <SectionLabel
+                    extra={
+                      <Button size="small" type="text" onClick={() => onRoute('tasks')}>
+                        View all
+                      </Button>
+                    }
+                  >
+                    Recents
+                  </SectionLabel>
+                  <Grid gap={12} maxItemWidth={240} rows={3}>
+                    {RECENTS.map((r) => (
+                      <Block
+                        className={styles.card}
+                        clickable
+                        gap={8}
+                        key={r.id}
+                        padding={16}
+                        variant="outlined"
+                        onClick={() => onRoute('chat')}
+                      >
+                        <Text ellipsis weight={500}>
+                          {r.title}
+                        </Text>
+                        <Flexbox horizontal align="center" gap={6}>
+                          <Text color={theme.colorTextTertiary} fontSize={12}>
+                            {r.sub}
+                          </Text>
+                          <Text color={theme.colorTextQuaternary} fontSize={12}>
+                            ·
+                          </Text>
+                          <Text color={theme.colorTextTertiary} fontSize={12}>
+                            {r.time}
+                          </Text>
+                        </Flexbox>
+                      </Block>
+                    ))}
+                  </Grid>
+                </Flexbox>
+              </Flexbox>
+            </Flexbox>
+          </StateBody>
+        );
+      });
+
+      // ===================================================================
+      // Screen — Chat
+      // ===================================================================
+
+      const ToolCall = memo(({ tool }) => {
+        const { styles, theme } = useStyles();
+        return (
+          <Collapse
+            items={[
+              {
+                children: (
+                  <Flexbox gap={8} paddingBlock={8}>
+                    <Text className={styles.mono} color={theme.colorTextTertiary}>
+                      {tool.args}
+                    </Text>
+                    <Text className={styles.mono}>{tool.result}</Text>
+                  </Flexbox>
+                ),
+                key: 'tool',
+                label: (
+                  <Flexbox horizontal align="center" gap={8}>
+                    <Icon color={theme.colorSuccess} icon={CheckIcon} size={14} />
+                    <Text className={styles.mono} fontSize={12}>
+                      {tool.name}
+                    </Text>
+                    <Tag size="small" variant="filled">
+                      done
+                    </Tag>
+                  </Flexbox>
+                ),
+              },
+            ]}
+            size="small"
+            variant="outlined"
+          />
+        );
+      });
+
+      const ChatMessage = memo(({ msg, onRegenerate }) => {
+        const { styles } = useStyles();
+        if (msg.role === 'tool')
+          return (
+            <Flexbox paddingInline={40}>
+              <ToolCall tool={msg.tool} />
+            </Flexbox>
+          );
+        if (msg.role === 'user')
+          return (
+            <Flexbox horizontal justify="flex-end">
+              <Flexbox className={styles.userBubble} paddingBlock={10} paddingInline={16}>
+                <Text>{msg.content}</Text>
+              </Flexbox>
+            </Flexbox>
+          );
+        return (
+          <Flexbox horizontal align="flex-start" gap={12}>
+            <Avatar avatar="🤖" shape="circle" size={28} style={{ flex: 'none' }} />
+            <Flexbox flex={1} gap={8} style={{ minWidth: 0 }}>
+              <Markdown variant="chat">{msg.content}</Markdown>
+              <Flexbox horizontal align="center" gap={2}>
+                <ActionIcon
+                  icon={RefreshCwIcon}
+                  size="small"
+                  title="Regenerate"
+                  onClick={onRegenerate}
+                />
+                <DropdownMenu
+                  items={[
+                    { icon: <Icon icon={Share2Icon} />, key: 'link', label: 'Copy link' },
+                    { icon: <Icon icon={FileText} />, key: 'md', label: 'Export as Markdown' },
+                  ]}
+                  nativeButton={false}
+                >
+                  <ActionIcon icon={Share2Icon} size="small" />
+                </DropdownMenu>
+                <RowMenu
+                  items={[
+                    { icon: <Icon icon={SquarePenIcon} />, key: 'edit', label: 'Edit' },
+                    { icon: <Icon icon={FileText} />, key: 'copy', label: 'Copy text' },
+                    { type: 'divider' },
+                    {
+                      danger: true,
+                      icon: <Icon icon={CircleAlert} />,
+                      key: 'delete',
+                      label: 'Delete message',
+                    },
+                  ]}
+                />
+              </Flexbox>
+            </Flexbox>
+          </Flexbox>
+        );
+      });
+
+      const WorkingSidebar = memo(({ onClose }) => {
+        const { styles, theme } = useStyles();
+        return (
+          <Flexbox
+            flex="none"
+            gap={16}
+            padding={16}
+            style={{
+              borderInlineStart: `1px solid ${theme.colorBorderSecondary}`,
+              overflowY: 'auto',
+              width: 300,
+            }}
+          >
+            <Flexbox horizontal align="center" justify="space-between">
+              <Text weight={600}>Working</Text>
+              <ActionIcon icon={PanelLeftIcon} size="small" title="Hide panel" onClick={onClose} />
+            </Flexbox>
+
+            <Flexbox gap={8}>
+              <SectionLabel>Progress</SectionLabel>
+              <Progress percent={62} size="small" strokeColor={theme.colorPrimary} />
+              <Text color={theme.colorTextTertiary} fontSize={12}>
+                Reading 1289 feature components…
+              </Text>
+            </Flexbox>
+
+            <Divider style={{ margin: 0 }} />
+
+            <Flexbox gap={8}>
+              <SectionLabel>Files touched</SectionLabel>
+              {['NavPanel/index.tsx', 'NavHeader/index.tsx', 'useNavLayout.ts'].map((f) => (
+                <Flexbox horizontal align="center" gap={8} key={f}>
+                  <Icon color={theme.colorTextTertiary} icon={FileText} size={14} />
+                  <Text ellipsis fontSize={12}>
+                    {f}
+                  </Text>
+                </Flexbox>
+              ))}
+            </Flexbox>
+
+            <Divider style={{ margin: 0 }} />
+
+            <Flexbox gap={8}>
+              <SectionLabel>Parameters</SectionLabel>
+              <Flexbox horizontal align="center" justify="space-between">
+                <Text fontSize={12} type="secondary">
+                  Temperature
+                </Text>
+                <Text className={styles.mono} fontSize={12}>
+                  0.6
+                </Text>
+              </Flexbox>
+              <Flexbox horizontal align="center" justify="space-between">
+                <Text fontSize={12} type="secondary">
+                  Context
+                </Text>
+                <Text className={styles.mono} fontSize={12}>
+                  32k / 200k
+                </Text>
+              </Flexbox>
+            </Flexbox>
+          </Flexbox>
+        );
+      });
+
+      const ChatScreen = memo(({ agentId, state }) => {
+        const { styles, theme } = useStyles();
+        const agent = AGENTS.find((a) => a.id === agentId) ?? AGENTS[0];
+        const [messages, setMessages] = useState(MESSAGES);
+        const [working, setWorking] = useState(true);
+        const [generating, setGenerating] = useState(false);
+
+        return (
+          <Flexbox horizontal flex={1} style={{ minHeight: 0 }}>
+            <Flexbox flex={1} style={{ minWidth: 0 }}>
+              <StateBody
+                state={state}
+                what="this conversation"
+                empty={
+                  <Empty
+                    action={<Button type="primary">Start the conversation</Button>}
+                    description={`${agent.title} has no messages in this topic yet. Say what you need and it will pick up from there.`}
+                    emoji={agent.avatar}
+                    title="No messages yet"
+                  />
+                }
+              >
+                <Flexbox className={styles.scroll} flex={1} padding={24}>
+                  <Flexbox gap={24} style={{ margin: '0 auto', maxWidth: 760, width: '100%' }}>
+                    {messages.map((m, i) => (
+                      <ChatMessage
+                        key={i}
+                        msg={m}
+                        onRegenerate={() => {
+                          setGenerating(true);
+                          setTimeout(() => {
+                            setGenerating(false);
+                            setMessages((prev) => {
+                              const next = [...prev];
+                              next[i] = {
+                                ...next[i],
+                                content: `${next[i].content}\n\n_Regenerated — same surface, different words._`,
+                              };
+                              return next;
+                            });
+                          }, 900);
+                        }}
+                      />
+                    ))}
+                    {generating && (
+                      <Flexbox horizontal align="center" gap={12}>
+                        <NeuralNetworkLoading size={28} />
+                        <Text color={theme.colorTextTertiary}>Generating…</Text>
+                      </Flexbox>
+                    )}
+                  </Flexbox>
+                </Flexbox>
+
+                <Flexbox flex="none" padding={16}>
+                  <Flexbox style={{ margin: '0 auto', maxWidth: 760, width: '100%' }}>
+                    <Composer
+                      placeholder={`Message ${agent.title}…`}
+                      onSend={(text) => {
+                        setMessages((prev) => [...prev, { content: text, role: 'user' }]);
+                        setGenerating(true);
+                        setTimeout(() => {
+                          setGenerating(false);
+                          setMessages((prev) => [
+                            ...prev,
+                            {
+                              content:
+                                'Noted. This prototype answers from a fixed script — the point here is the surface, not the model.',
+                              role: 'assistant',
+                            },
+                          ]);
+                        }, 1400);
+                      }}
+                    />
+                  </Flexbox>
+                </Flexbox>
+              </StateBody>
+            </Flexbox>
+
+            {working && <WorkingSidebar onClose={() => setWorking(false)} />}
+            {!working && (
+              <Flexbox flex="none" padding={8}>
+                <ActionIcon
+                  icon={SlidersHorizontalIcon}
+                  size="small"
+                  title="Show working panel"
+                  onClick={() => setWorking(true)}
+                />
+              </Flexbox>
+            )}
+          </Flexbox>
+        );
+      });
+
+      // ===================================================================
+      // Screen — Community
+      // ===================================================================
+
+      const CommunityScreen = memo(({ state }) => {
+        const { styles, theme } = useStyles();
+        const [tab, setTab] = useState('agent');
+        const [query, setQuery] = useState('');
+        const [detail, setDetail] = useState(null);
+        const items = useMemo(() => {
+          const list = COMMUNITY[tab] ?? [];
+          if (!query.trim()) return list;
+          const q = query.trim().toLowerCase();
+          return list.filter(
+            (i) => i.title.toLowerCase().includes(q) || i.desc.toLowerCase().includes(q),
+          );
+        }, [tab, query]);
+
+        return (
+          <Flexbox className={styles.scroll} flex={1}>
+            <Flexbox gap={24} padding={24} style={{ margin: '0 auto', maxWidth: 1080, width: '100%' }}>
+              <Flexbox gap={8}>
+                <Text as="h1" fontSize={24} weight={600}>
+                  Community
+                </Text>
+                <Text type="secondary">
+                  Agents, models, providers, skills and MCP servers the community publishes.
+                </Text>
+              </Flexbox>
+
+              <Flexbox horizontal align="center" gap={12} justify="space-between" wrap="wrap">
+                <Segmented
+                  options={COMMUNITY_TABS}
+                  value={tab}
+                  onChange={(v) => setTab(String(v))}
+                />
+                <Input
+                  allowClear
+                  placeholder="Search the community"
+                  prefix={<Icon color={theme.colorTextTertiary} icon={SearchIcon} size={16} />}
+                  style={{ maxWidth: 280 }}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </Flexbox>
+
+              <StateBody
+                state={state}
+                what="the community"
+                empty={
+                  <Empty
+                    description="Nothing published in this category yet. Publish yours and it lands here."
+                    emoji="🧭"
+                    title="Nothing to browse"
+                  />
+                }
+              >
+                {items.length === 0 ? (
+                  <Center padding={48}>
+                    <Empty
+                      action={<Button onClick={() => setQuery('')}>Clear search</Button>}
+                      description={`No ${tab} matches “${query}”. Try a shorter term.`}
+                      emoji="🔍"
+                      title="No matches"
+                    />
+                  </Center>
+                ) : (
+                  <Grid gap={16} maxItemWidth={300} rows={3}>
+                    {items.map((item) => (
+                      <Block
+                        className={styles.card}
+                        clickable
+                        gap={12}
+                        key={item.title}
+                        padding={16}
+                        variant="outlined"
+                        onClick={() => setDetail(item)}
+                      >
+                        <Flexbox horizontal align="center" gap={12}>
+                          <Avatar avatar={item.avatar} shape="circle" size={36} />
+                          <Flexbox flex={1} gap={2} style={{ minWidth: 0 }}>
+                            <Text ellipsis weight={600}>
+                              {item.title}
+                            </Text>
+                            <Tag size="small" variant="filled">
+                              {item.tag}
+                            </Tag>
+                          </Flexbox>
+                        </Flexbox>
+                        <Text ellipsis={{ rows: 2 }} fontSize={12} type="secondary">
+                          {item.desc}
+                        </Text>
+                        <Button block size="small" onClick={() => setDetail(item)}>
+                          View details
+                        </Button>
+                      </Block>
+                    ))}
+                  </Grid>
+                )}
+              </StateBody>
+            </Flexbox>
+
+            <Modal
+              footer={
+                <Flexbox horizontal gap={8} justify="flex-end">
+                  <Button onClick={() => setDetail(null)}>Close</Button>
+                  <Button type="primary" onClick={() => setDetail(null)}>
+                    Add to my Agents
+                  </Button>
+                </Flexbox>
+              }
+              open={!!detail}
+              title={detail?.title}
+              onCancel={() => setDetail(null)}
+            >
+              {detail && (
+                <Flexbox gap={16} paddingBlock={8}>
+                  <Flexbox horizontal align="center" gap={12}>
+                    <Avatar avatar={detail.avatar} shape="circle" size={48} />
+                    <Flexbox gap={6} style={{ minWidth: 0 }}>
+                      <Tag size="small" variant="filled">
+                        {detail.tag}
+                      </Tag>
+                      <Text type="secondary">{detail.desc}</Text>
+                    </Flexbox>
+                  </Flexbox>
+                  <Divider style={{ margin: 0 }} />
+                  <Flexbox horizontal gap={32}>
+                    <Flexbox gap={2}>
+                      <Text color={theme.colorTextTertiary} fontSize={12}>
+                        Installs
+                      </Text>
+                      <Text className={styles.mono}>12.4k</Text>
+                    </Flexbox>
+                    <Flexbox gap={2}>
+                      <Text color={theme.colorTextTertiary} fontSize={12}>
+                        Updated
+                      </Text>
+                      <Text className={styles.mono}>3 days ago</Text>
+                    </Flexbox>
+                    <Flexbox gap={2}>
+                      <Text color={theme.colorTextTertiary} fontSize={12}>
+                        License
+                      </Text>
+                      <Text className={styles.mono}>MIT</Text>
+                    </Flexbox>
+                  </Flexbox>
+                </Flexbox>
+              )}
+            </Modal>
+          </Flexbox>
+        );
+      });
+
+      // ===================================================================
+      // Screen — Resource (Library)
+      // ===================================================================
+
+      const ResourceScreen = memo(({ state }) => {
+        const { styles, theme } = useStyles();
+        const [files, setFiles] = useState(FILES);
+        const addFile = () =>
+          setFiles((prev) => [
+            {
+              chunks: 0,
+              name: `untitled-${prev.length + 1}.md`,
+              size: '0 KB',
+              time: 'just now',
+              type: 'Markdown',
+            },
+            ...prev,
+          ]);
+        return (
+          <Flexbox className={styles.scroll} flex={1}>
+            <Flexbox gap={24} padding={24} style={{ margin: '0 auto', maxWidth: 980, width: '100%' }}>
+              <Flexbox horizontal align="center" justify="space-between">
+                <Flexbox gap={4}>
+                  <Text as="h1" fontSize={24} weight={600}>
+                    Resource
+                  </Text>
+                  <Text type="secondary">Files your Agents can read and cite.</Text>
+                </Flexbox>
+                <Button icon={UploadIcon} type="primary" onClick={addFile}>
+                  Upload files
+                </Button>
+              </Flexbox>
+
+              <StateBody
+                state={state}
+                what="your library"
+                empty={
+                  <Empty
+                    action={
+                      <Button icon={UploadIcon} type="primary" onClick={addFile}>
+                        Upload files
+                      </Button>
+                    }
+                    description="Drop in a PDF, spreadsheet or Markdown file and your Agents can cite it from the next message on."
+                    emoji="📚"
+                    title="Your library is empty"
+                  />
+                }
+              >
+                <Block gap={0} padding={0} variant="outlined">
+                  <Flexbox
+                    horizontal
+                    align="center"
+                    gap={16}
+                    paddingBlock={10}
+                    paddingInline={16}
+                    style={{ borderBlockEnd: `1px solid ${theme.colorBorderSecondary}` }}
+                  >
+                    <Text fontSize={12} style={{ flex: 3 }} type="secondary">
+                      Name
+                    </Text>
+                    <Text fontSize={12} style={{ flex: 1 }} type="secondary">
+                      Type
+                    </Text>
+                    <Text fontSize={12} style={{ flex: 1 }} type="secondary">
+                      Chunks
+                    </Text>
+                    <Text fontSize={12} style={{ flex: 1 }} type="secondary">
+                      Size
+                    </Text>
+                    <Text fontSize={12} style={{ flex: 1 }} type="secondary">
+                      Modified
+                    </Text>
+                  </Flexbox>
+                  {files.map((f, i) => (
+                    <Flexbox
+                      horizontal
+                      align="center"
+                      gap={16}
+                      key={f.name}
+                      paddingBlock={12}
+                      paddingInline={16}
+                      style={{
+                        borderBlockEnd:
+                          i === files.length - 1
+                            ? undefined
+                            : `1px solid ${theme.colorBorderSecondary}`,
+                      }}
+                    >
+                      <Flexbox horizontal align="center" gap={8} style={{ flex: 3, minWidth: 0 }}>
+                        <Icon color={theme.colorTextTertiary} icon={FileText} size={16} />
+                        <Text ellipsis>{f.name}</Text>
+                      </Flexbox>
+                      <Text fontSize={12} style={{ flex: 1 }} type="secondary">
+                        {f.type}
+                      </Text>
+                      <Text className={styles.mono} style={{ flex: 1 }} type="secondary">
+                        {f.chunks}
+                      </Text>
+                      <Text fontSize={12} style={{ flex: 1 }} type="secondary">
+                        {f.size}
+                      </Text>
+                      <Text fontSize={12} style={{ flex: 1 }} type="secondary">
+                        {f.time}
+                      </Text>
+                    </Flexbox>
+                  ))}
+                </Block>
+              </StateBody>
+            </Flexbox>
+          </Flexbox>
+        );
+      });
+
+      // ===================================================================
+      // Screen — Memory
+      // ===================================================================
+
+      const MemoryScreen = memo(({ state }) => {
+        const { styles, theme } = useStyles();
+        return (
+          <Flexbox className={styles.scroll} flex={1}>
+            <Flexbox gap={24} padding={24} style={{ margin: '0 auto', maxWidth: 860, width: '100%' }}>
+              <Flexbox gap={4}>
+                <Text as="h1" fontSize={24} weight={600}>
+                  Memory
+                </Text>
+                <Text type="secondary">
+                  What your Agents remember about you. Edit or clear anything here — you own it.
+                </Text>
+              </Flexbox>
+
+              <Alert
+                message="Memory is on. Agents write here after a conversation ends."
+                showIcon
+                type="info"
+                variant="filled"
+              />
+
+              <StateBody
+                state={state}
+                what="your memory"
+                empty={
+                  <Empty
+                    description="Nothing remembered yet. After a few conversations, what matters will collect here — and you can clear it any time."
+                    emoji="🧠"
+                    title="No memories yet"
+                  />
+                }
+              >
+                <Flexbox gap={12}>
+                  {MEMORIES.map((m) => (
+                    <Block gap={8} key={m.body} padding={16} variant="outlined">
+                      <Flexbox horizontal align="center" gap={8} justify="space-between">
+                        <Tag size="small" variant="filled">
+                          {m.kind}
+                        </Tag>
+                        <Flexbox horizontal align="center" gap={8}>
+                          <Text color={theme.colorTextTertiary} fontSize={12}>
+                            {m.time}
+                          </Text>
+                          <RowMenu />
+                        </Flexbox>
+                      </Flexbox>
+                      <Text>{m.body}</Text>
+                    </Block>
+                  ))}
+                </Flexbox>
+              </StateBody>
+            </Flexbox>
+          </Flexbox>
+        );
+      });
+
+      // ===================================================================
+      // Screen — Pages
+      // ===================================================================
+
+      const PagesScreen = memo(({ state }) => {
+        const { styles, theme } = useStyles();
+        const [pages, setPages] = useState(PAGES);
+        const addPage = () =>
+          setPages((prev) => [
+            { excerpt: 'Empty page — start writing.', time: 'just now', title: 'Untitled' },
+            ...prev,
+          ]);
+        return (
+          <Flexbox className={styles.scroll} flex={1}>
+            <Flexbox gap={24} padding={24} style={{ margin: '0 auto', maxWidth: 860, width: '100%' }}>
+              <Flexbox horizontal align="center" justify="space-between">
+                <Flexbox gap={4}>
+                  <Text as="h1" fontSize={24} weight={600}>
+                    Pages
+                  </Text>
+                  <Text type="secondary">Documents you and your Agents write together.</Text>
+                </Flexbox>
+                <Button icon={PlusIcon} type="primary" onClick={addPage}>
+                  New Page
+                </Button>
+              </Flexbox>
+
+              <StateBody
+                state={state}
+                what="your pages"
+                empty={
+                  <Empty
+                    action={
+                      <Button icon={PlusIcon} type="primary" onClick={addPage}>
+                        New Page
+                      </Button>
+                    }
+                    description="Pages are documents an Agent can draft, edit and cite. Start one and it stays yours to edit."
+                    emoji="📝"
+                    title="No pages yet"
+                  />
+                }
+              >
+                <Flexbox gap={12}>
+                  {pages.map((p) => (
+                    <Block
+                      className={styles.card}
+                      clickable
+                      gap={6}
+                      key={p.title}
+                      padding={16}
+                      variant="outlined"
+                    >
+                      <Flexbox horizontal align="center" gap={8}>
+                        <Icon color={theme.colorTextTertiary} icon={FilePenIcon} size={16} />
+                        <Text weight={600}>{p.title}</Text>
+                        <Text
+                          color={theme.colorTextTertiary}
+                          fontSize={12}
+                          style={{ marginInlineStart: 'auto' }}
+                        >
+                          {p.time}
+                        </Text>
+                      </Flexbox>
+                      <Text ellipsis fontSize={12} type="secondary">
+                        {p.excerpt}
+                      </Text>
+                    </Block>
+                  ))}
+                </Flexbox>
+              </StateBody>
+            </Flexbox>
+          </Flexbox>
+        );
+      });
+
+      // ===================================================================
+      // Screen — Tasks
+      // ===================================================================
+
+      const STATUS_TAG = {
+        done: { color: 'success', label: 'Done' },
+        failed: { color: 'error', label: 'Failed' },
+        queued: { color: undefined, label: 'Queued' },
+        running: { color: 'info', label: 'Running' },
+      };
+
+      const TasksScreen = memo(({ state }) => {
+        const { styles, theme } = useStyles();
+        return (
+          <Flexbox className={styles.scroll} flex={1}>
+            <Flexbox gap={24} padding={24} style={{ margin: '0 auto', maxWidth: 860, width: '100%' }}>
+              <Flexbox gap={4}>
+                <Text as="h1" fontSize={24} weight={600}>
+                  Tasks
+                </Text>
+                <Text type="secondary">Long-running work your Agents are driving.</Text>
+              </Flexbox>
+
+              <StateBody
+                state={state}
+                what="your tasks"
+                empty={
+                  <Empty
+                    description="No task is running. Ask an Agent for something that takes a while and it will show up here with live progress."
+                    emoji="📋"
+                    title="No tasks running"
+                  />
+                }
+              >
+                <Flexbox gap={12}>
+                  {TASKS.map((t) => {
+                    const tag = STATUS_TAG[t.status];
+                    return (
+                      <Block gap={12} key={t.title} padding={16} variant="outlined">
+                        <Flexbox horizontal align="center" gap={12}>
+                          <Flexbox flex={1} gap={4} style={{ minWidth: 0 }}>
+                            <Text ellipsis weight={500}>
+                              {t.title}
+                            </Text>
+                            <Text color={theme.colorTextTertiary} fontSize={12}>
+                              {t.agent}
+                            </Text>
+                          </Flexbox>
+                          <Tag color={tag.color} size="small" variant="filled">
+                            {tag.label}
+                          </Tag>
+                        </Flexbox>
+                        {t.status === 'failed' ? (
+                          <Flexbox horizontal align="center" gap={8}>
+                            <Icon color={theme.colorError} icon={CircleAlert} size={14} />
+                            <Text fontSize={12} type="danger" style={{ flex: 1 }}>
+                              Step 3 timed out. Nothing was written.
+                            </Text>
+                            <Button icon={RefreshCwIcon} size="small">
+                              Retry
+                            </Button>
+                          </Flexbox>
+                        ) : (
+                          <Progress
+                            percent={t.progress}
+                            size="small"
+                            status={t.status === 'done' ? 'success' : 'active'}
+                            strokeColor={t.status === 'done' ? theme.colorSuccess : theme.colorPrimary}
+                          />
+                        )}
+                      </Block>
+                    );
+                  })}
+                </Flexbox>
+              </StateBody>
+            </Flexbox>
+          </Flexbox>
+        );
+      });
+
+      // ===================================================================
+      // Screen — Settings (Appearance shown as the representative form)
+      // ===================================================================
+
+      const SettingRow = memo(({ children, desc, label }) => {
+        const { theme } = useStyles();
+        return (
+          <Flexbox
+            horizontal
+            align="center"
+            gap={24}
+            justify="space-between"
+            paddingBlock={16}
+            style={{ borderBlockEnd: `1px solid ${theme.colorBorderSecondary}` }}
+          >
+            <Flexbox gap={2} style={{ minWidth: 0 }}>
+              <Text>{label}</Text>
+              {desc && (
+                <Text color={theme.colorTextTertiary} fontSize={12}>
+                  {desc}
+                </Text>
+              )}
+            </Flexbox>
+            <Flexbox flex="none">{children}</Flexbox>
+          </Flexbox>
+        );
+      });
+
+      const SettingsScreen = memo(({ state, tab }) => {
+        const { styles, theme } = useStyles();
+        const label =
+          SETTINGS_GROUPS.flatMap((g) => g.items).find((i) => i.key === tab)?.label ?? 'Settings';
+        const [themeMode, setThemeMode] = useState('auto');
+        const [density, setDensity] = useState('comfortable');
+        const [primary, setPrimary] = useState('#222');
+        const [msgStyle, setMsgStyle] = useState('chat');
+        const [msgFontSize, setMsgFontSize] = useState(14);
+
+        return (
+          <Flexbox className={styles.scroll} flex={1}>
+            <Flexbox gap={24} padding={24} style={{ margin: '0 auto', maxWidth: 760, width: '100%' }}>
+              <Text as="h1" fontSize={24} weight={600}>
+                {label}
+              </Text>
+
+              <StateBody
+                state={state}
+                what="your settings"
+                empty={
+                  <Empty
+                    description="This section has nothing to configure on your plan."
+                    emoji="⚙️"
+                    title="Nothing to configure"
+                  />
+                }
+              >
+                {tab === 'appearance' ? (
+                  <Flexbox gap={32}>
+                    <Flexbox gap={0}>
+                      <SectionLabel>Theme</SectionLabel>
+                      <SettingRow
+                        desc="Auto follows your operating system."
+                        label="Appearance"
+                      >
+                        <Segmented
+                          options={[
+                            { label: 'Auto', value: 'auto' },
+                            { label: 'Light', value: 'light' },
+                            { label: 'Dark', value: 'dark' },
+                          ]}
+                          value={themeMode}
+                          onChange={(v) => setThemeMode(String(v))}
+                        />
+                      </SettingRow>
+                      <SettingRow
+                        desc="Monochrome by default — a hue only appears when you pick one."
+                        label="Primary color"
+                      >
+                        <Flexbox horizontal gap={6}>
+                          {['#222', '#ec5e41', '#ee9e0b', '#379d4a', '#0072f5', '#8b5cf6'].map(
+                            (c) => (
+                              <button
+                                aria-label={`Primary color ${c}`}
+                                aria-pressed={primary === c}
+                                key={c}
+                                type="button"
+                                onClick={() => setPrimary(c)}
+                                style={{
+                                  background: c,
+                                  border:
+                                    primary === c
+                                      ? `2px solid ${theme.colorText}`
+                                      : `1px solid ${theme.colorBorder}`,
+                                  borderRadius: 9999,
+                                  cursor: 'pointer',
+                                  height: 22,
+                                  padding: 0,
+                                  width: 22,
+                                }}
+                              />
+                            ),
+                          )}
+                        </Flexbox>
+                      </SettingRow>
+                      <SettingRow desc="Row height across lists and menus." label="Density">
+                        <Segmented
+                          options={[
+                            { label: 'Compact', value: 'compact' },
+                            { label: 'Comfortable', value: 'comfortable' },
+                          ]}
+                          value={density}
+                          onChange={(v) => setDensity(String(v))}
+                        />
+                      </SettingRow>
+                    </Flexbox>
+
+                    <Flexbox gap={0}>
+                      <SectionLabel>Chat</SectionLabel>
+                      <SettingRow desc="Bubble or document layout." label="Message style">
+                        <Segmented
+                          options={[
+                            { label: 'Chat', value: 'chat' },
+                            { label: 'Docs', value: 'docs' },
+                          ]}
+                          value={msgStyle}
+                          onChange={(v) => setMsgStyle(String(v))}
+                        />
+                      </SettingRow>
+                      <SettingRow desc="Applies to message text only." label="Font size">
+                        <Segmented
+                          options={[
+                            { label: '12', value: 12 },
+                            { label: '14', value: 14 },
+                            { label: '16', value: 16 },
+                          ]}
+                          value={msgFontSize}
+                          onChange={(v) => setMsgFontSize(Number(v))}
+                        />
+                      </SettingRow>
+                      <Flexbox paddingBlock={16}>
+                        <Block gap={8} padding={16} variant="filled">
+                          <Text color={theme.colorTextTertiary} fontSize={12}>
+                            Preview
+                          </Text>
+                          <Flexbox
+                            paddingBlock={msgStyle === 'chat' ? 10 : 0}
+                            paddingInline={msgStyle === 'chat' ? 16 : 0}
+                            style={
+                              msgStyle === 'chat'
+                                ? {
+                                    alignSelf: 'flex-start',
+                                    background: theme.colorBgContainer,
+                                    borderRadius: theme.borderRadiusLG,
+                                  }
+                                : undefined
+                            }
+                          >
+                            <Text fontSize={msgFontSize}>
+                              Message text renders at {msgFontSize}px in {msgStyle} layout.
+                            </Text>
+                          </Flexbox>
+                        </Block>
+                      </Flexbox>
+                    </Flexbox>
+                  </Flexbox>
+                ) : (
+                  <Empty
+                    description={`“${label}” is not part of this prototype — Appearance is the representative form. Every settings page uses the same header + grouped-row layout.`}
+                    emoji="🧩"
+                    title="Not in this prototype"
+                  />
+                )}
+              </StateBody>
+            </Flexbox>
+          </Flexbox>
+        );
+      });
+
+      // ===================================================================
+      // Screen — Design tokens (the extraction itself, made visible)
+      // ===================================================================
+
+      const TokensScreen = memo(() => {
+        const { styles, theme } = useStyles();
+        return (
+          <Flexbox className={styles.scroll} flex={1}>
+            <Flexbox gap={32} padding={24} style={{ margin: '0 auto', maxWidth: 980, width: '100%' }}>
+              <Flexbox gap={4}>
+                <Text as="h1" fontSize={24} weight={600}>
+                  Design tokens
+                </Text>
+                <Text type="secondary">
+                  Live values read from the running theme. Swatches change with your OS appearance —
+                  this is the real contract, not a screenshot of it.
+                </Text>
+              </Flexbox>
+
+              {TOKEN_GROUPS.map((group) => (
+                <Flexbox gap={12} key={group.title}>
+                  <SectionLabel>{group.title}</SectionLabel>
+                  <Grid gap={12} maxItemWidth={300} rows={2}>
+                    {group.rows.map(([name, tokenKey, desc]) => (
+                      <Flexbox horizontal align="center" gap={12} key={name}>
+                        <div
+                          className={styles.swatch}
+                          style={{ background: theme[tokenKey], flex: 'none' }}
+                        />
+                        <Flexbox gap={2} style={{ minWidth: 0 }}>
+                          <Text className={styles.mono} ellipsis>
+                            {name}
+                          </Text>
+                          <Text color={theme.colorTextTertiary} ellipsis fontSize={12}>
+                            {desc}
+                          </Text>
+                        </Flexbox>
+                      </Flexbox>
+                    ))}
+                  </Grid>
+                </Flexbox>
+              ))}
+
+              <Flexbox gap={12}>
+                <SectionLabel>Typography</SectionLabel>
+                <Block gap={12} padding={16} variant="outlined">
+                  {[
+                    ['fontSizeHeading1', 38],
+                    ['fontSizeHeading3', 24],
+                    ['fontSizeLG', 16],
+                    ['fontSize', 14],
+                    ['fontSizeSM', 12],
+                  ].map(([name, size]) => (
+                    <Flexbox horizontal align="baseline" gap={16} key={name}>
+                      <Text className={styles.mono} style={{ flex: 'none', width: 170 }} type="secondary">
+                        {name}
+                      </Text>
+                      <Text fontSize={size} weight={size >= 24 ? 600 : undefined}>
+                        The quick brown fox — {size}px
+                      </Text>
+                    </Flexbox>
+                  ))}
+                </Block>
+              </Flexbox>
+
+              <Flexbox gap={12}>
+                <SectionLabel>Radius & control heights</SectionLabel>
+                <Flexbox horizontal gap={24} wrap="wrap">
+                  {[
+                    ['borderRadiusXS', 4, 'tags, chips'],
+                    ['borderRadiusSM', 6, 'inputs'],
+                    ['borderRadius', 8, 'buttons, cards'],
+                    ['borderRadiusLG', 12, 'menus, modals'],
+                  ].map(([name, r, use]) => (
+                    <Flexbox align="center" gap={6} key={name}>
+                      <div
+                        style={{
+                          background: theme.colorFillSecondary,
+                          border: `1px solid ${theme.colorBorderSecondary}`,
+                          borderRadius: r,
+                          height: 56,
+                          width: 56,
+                        }}
+                      />
+                      <Text className={styles.mono} fontSize={12}>
+                        {r}px
+                      </Text>
+                      <Text color={theme.colorTextTertiary} fontSize={12}>
+                        {use}
+                      </Text>
+                    </Flexbox>
+                  ))}
+                </Flexbox>
+                <Flexbox horizontal align="center" gap={12}>
+                  <Button size="small">28 · SM</Button>
+                  <Button>36 · default</Button>
+                  <Button size="large">40 · LG</Button>
+                </Flexbox>
+              </Flexbox>
+
+              <Flexbox gap={12}>
+                <SectionLabel>Elevation</SectionLabel>
+                <Flexbox horizontal gap={24} wrap="wrap">
+                  {[
+                    ['boxShadowTertiary', 'raised cards'],
+                    ['boxShadowSecondary', 'popovers, menus'],
+                    ['boxShadow', 'modals, dialogs'],
+                  ].map(([name, use]) => (
+                    <Flexbox align="center" gap={8} key={name} style={{ padding: 8 }}>
+                      <div
+                        style={{
+                          background: theme.colorBgElevated,
+                          borderRadius: theme.borderRadiusLG,
+                          boxShadow: theme[name],
+                          height: 56,
+                          width: 96,
+                        }}
+                      />
+                      <Text className={styles.mono} fontSize={12}>
+                        {name}
+                      </Text>
+                      <Text color={theme.colorTextTertiary} fontSize={12}>
+                        {use}
+                      </Text>
+                    </Flexbox>
+                  ))}
+                </Flexbox>
+              </Flexbox>
+
+              <Flexbox gap={12} style={{ paddingBottom: 40 }}>
+                <SectionLabel>Buttons & tags</SectionLabel>
+                <Flexbox horizontal gap={8} wrap="wrap">
+                  <Button type="primary">Create Agent</Button>
+                  <Button>View details</Button>
+                  <Button type="text">Dismiss</Button>
+                  <Button danger>Delete Session</Button>
+                  <Button disabled>Disabled</Button>
+                </Flexbox>
+                <Flexbox horizontal gap={8} wrap="wrap">
+                  <Tag>default</Tag>
+                  <Tag color="success">success</Tag>
+                  <Tag color="warning">warning</Tag>
+                  <Tag color="error">error</Tag>
+                  <Tag color="info">info</Tag>
+                </Flexbox>
+              </Flexbox>
+            </Flexbox>
+          </Flexbox>
+        );
+      });
+
+      // ===================================================================
+      // App shell
+      // ===================================================================
+
+      const ROUTE_TITLE = {
+        chat: 'Chat',
+        community: 'Community',
+        home: 'Home',
+        image: 'Generation',
+        memory: 'Memory',
+        pages: 'Pages',
+        resource: 'Resource',
+        search: 'Search',
+        settings: 'Settings',
+        tasks: 'Tasks',
+        tokens: 'Design tokens',
+      };
+
+      const App = memo(() => {
+        const { styles, theme } = useStyles();
+        const [route, setRoute] = useState('home');
+        const [agentId, setAgentId] = useState('code');
+        const [settingsTab, setSettingsTab] = useState('appearance');
+        const [state, setState] = useState('data');
+        const [expand, setExpand] = useState(true);
+
+        const agent = AGENTS.find((a) => a.id === agentId) ?? AGENTS[0];
+
+        const sidebar =
+          route === 'settings' ? (
+            <SettingsSidebar
+              tab={settingsTab}
+              onBack={() => setRoute('home')}
+              onTab={setSettingsTab}
+            />
+          ) : route === 'chat' ? (
+            <ChatSidebar agentId={agentId} onAgent={setAgentId} onRoute={setRoute} />
+          ) : (
+            <HomeSidebar
+              agentId={agentId}
+              route={route}
+              onAgent={setAgentId}
+              onRoute={setRoute}
+            />
+          );
+
+        const header = (() => {
+          if (route === 'chat')
+            return {
+              left: (
+                <Flexbox horizontal align="center" gap={4} style={{ minWidth: 0 }}>
+                  <Tag size="small" variant="filled">
+                    Claude Opus 5
+                  </Tag>
+                  <Tag size="small" variant="filled">
+                    3 tools
+                  </Tag>
+                  <Tag size="small" variant="filled">
+                    Memory on
+                  </Tag>
+                </Flexbox>
+              ),
+              right: (
+                <>
+                  <ActionIcon icon={Share2Icon} size="small" title="Share" />
+                  <RowMenu />
+                </>
+              ),
+            };
+          if (route === 'home')
+            return {
+              left: null,
+              right: (
+                <>
+                  <ActionIcon icon={SearchIcon} size="small" title="Search" />
+                  <ActionIcon icon={SettingsIcon} size="small" title="Settings" onClick={() => setRoute('settings')} />
+                </>
+              ),
+            };
+          return {
+            left: (
+              <Text ellipsis weight={500}>
+                {ROUTE_TITLE[route] ?? ''}
+              </Text>
+            ),
+            right: <RowMenu />,
+          };
+        })();
+
+        const screen = (() => {
+          switch (route) {
+            case 'chat': {
+              return <ChatScreen agentId={agentId} state={state} />;
+            }
+            case 'community': {
+              return <CommunityScreen state={state} />;
+            }
+            case 'resource': {
+              return <ResourceScreen state={state} />;
+            }
+            case 'memory': {
+              return <MemoryScreen state={state} />;
+            }
+            case 'pages': {
+              return <PagesScreen state={state} />;
+            }
+            case 'tasks': {
+              return <TasksScreen state={state} />;
+            }
+            case 'settings': {
+              return <SettingsScreen state={state} tab={settingsTab} />;
+            }
+            case 'tokens': {
+              return <TokensScreen />;
+            }
+            // `search` opens the command palette in the real app and
+            // `image` is the generation surface — both are cuts here.
+            case 'search':
+            case 'image': {
+              return (
+                <Center flex={1} padding={48}>
+                  <Empty
+                    action={<Button onClick={() => setRoute('home')}>Back to Home</Button>}
+                    description={
+                      route === 'search'
+                        ? 'Search opens the ⌘K command palette in the real app. Not wired in this prototype.'
+                        : 'The image / video generation surface is out of scope for this prototype.'
+                    }
+                    emoji="🚧"
+                    title="Not in this prototype"
+                  />
+                </Center>
+              );
+            }
+            default: {
+              return (
+                <HomeScreen
+                  agentId={agentId}
+                  state={state}
+                  onAgent={setAgentId}
+                  onRoute={setRoute}
+                />
+              );
+            }
+          }
+        })();
+
+        return (
+          <StateContext value={setState}>
+          <Flexbox className={styles.shell} width="100%">
+            <PrototypeBar route={route} value={state} onChange={setState} />
+            <Flexbox horizontal flex={1} style={{ minHeight: 0 }} width="100%">
+            <DraggablePanel
+              className={styles.panel}
+              defaultSize={{ height: '100%', width: 280 }}
+              expand={expand}
+              expandable={false}
+              maxWidth={400}
+              minWidth={240}
+              placement="left"
+              showBorder={false}
+              style={{ background: theme.colorBgLayout, zIndex: 11 }}
+              onExpandChange={setExpand}
+            >
+              <TooltipGroup>{sidebar}</TooltipGroup>
+            </DraggablePanel>
+
+            <Flexbox className={styles.content} flex={1}>
+              <NavHeader
+                collapsed={!expand}
+                left={header.left}
+                right={header.right}
+                onExpand={() => setExpand(true)}
+              />
+              {screen}
+            </Flexbox>
+            </Flexbox>
+          </Flexbox>
+          </StateContext>
+        );
+      });
+
+      document.querySelector('#boot').remove();
+      createRoot(document.querySelector('#root')).render(
+        <ThemeProvider theme={{ cssVar: { key: 'lobe-vars' } }} themeMode="auto">
+          <ConfigProvider motion={m}>
+            <App />
+          </ConfigProvider>
+        </ThemeProvider>,
+      );
+    </script>
+  </body>
+</html>

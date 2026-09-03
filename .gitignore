@@ -154,3 +154,11 @@ docs/superpowers/
 
 # Kagura agent runtime
 .kagura/
+
+# design-prototype runtime artifacts (built locally, ~21MB)
+prototypes/lobe-prototype-runtime.js
+prototypes/babel.min.js
+prototypes/entry.mjs
+prototypes/node_modules
+prototypes/package.json
+prototypes/package-lock.json
