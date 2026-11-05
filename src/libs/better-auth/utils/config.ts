@@ -1,16 +1,24 @@
+import { regionalIdentifier } from '@lobechat/region';
+
 import { appEnv } from '@/envs/app';
 import { authEnv } from '@/envs/auth';
 import { getRedisConfig } from '@/envs/redis';
+import { regionEnv } from '@/envs/region';
 import { initializeRedis, isRedisEnabled } from '@/libs/redis';
 import { isDev } from '@/utils/env';
 
 const APPLE_TRUSTED_ORIGIN = 'https://appleid.apple.com';
-const MOBILE_APP_SCHEME = 'com.lobehub.app://';
 const EXPO_DEV_SCHEME = 'exp://*/*';
 
 /**
+ * The Biber app of this deployment's edition (`biber`, `biber-cn`, `biber-dev`; see
+ * `apps/mobile/config/identity.ts`) returns from sign-in through its scheme, so trust exactly that one.
+ */
+const mobileAppScheme = () => `${regionalIdentifier('biber', regionEnv.APP_REGION, '-')}://`;
+
+/**
  * Normalize a URL-like string to an origin with https fallback.
- * Returns the original string if it's a custom scheme (e.g., com.lobehub.app://).
+ * Returns the original string if it's a custom scheme (e.g., biber://).
  */
 export const normalizeOrigin = (url?: string) => {
   if (!url) return undefined;
@@ -52,7 +60,7 @@ export const getTrustedOrigins = (enabledSSOProviders: string[]) => {
     normalizeOrigin(appEnv.APP_URL),
     normalizeOrigin(process.env.VERCEL_URL),
     normalizeOrigin(process.env.VERCEL_BRANCH_URL),
-    MOBILE_APP_SCHEME,
+    mobileAppScheme(),
     // Add expo URL in development
     ...(isDev ? [EXPO_DEV_SCHEME] : []),
   ].filter(Boolean) as string[];

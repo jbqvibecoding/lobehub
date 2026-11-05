@@ -1,0 +1,43 @@
+{
+  "build": {
+    "base": {
+      "node": "24.11.1"
+    },
+    "development": {
+      "extends": "base",
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "APP_REGION": "dev"
+      }
+    },
+    "preview-global": {
+      "extends": "base",
+      "distribution": "internal",
+      "env": {
+        "APP_REGION": "global"
+      }
+    },
+    "production-global": {
+      "extends": "base",
+      "autoIncrement": true,
+      "env": {
+        "APP_REGION": "global"
+      }
+    },
+    "production-cn": {
+      "extends": "base",
+      "autoIncrement": true,
+      "env": {
+        "APP_REGION": "cn"
+      }
+    }
+  },
+  "cli": {
+    "appVersionSource": "remote"
+  },
+  "submit": {
+    "production-global": {},
+    "production-cn": {}
+  }
+}

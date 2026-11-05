@@ -40,6 +40,8 @@ export default eslint(
       '.cache',
       // Bun services with their own toolchain (copied from OpenBot)
       'apps/computer',
+      // Expo app with its own npm toolchain (React Native, not the web stack)
+      'apps/mobile',
       // AI coding tools directories
       '.claude',
       '.serena',
