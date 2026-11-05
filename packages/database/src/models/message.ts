@@ -2423,6 +2423,73 @@ export class MessageModel {
   };
 
   /**
+   * Tool calls still waiting for the user's yes or no, newest first, with the conversation each
+   * belongs to. The mobile app lists these; answering one resumes its run through `execAgent`'s
+   * `resumeApproval`.
+   */
+  listPendingInterventions = async (limit = 50) => {
+    const rows = await this.db
+      .select({
+        agentId: messages.agentId,
+        apiName: messagePlugins.apiName,
+        arguments: messagePlugins.arguments,
+        createdAt: messages.createdAt,
+        groupId: messages.groupId,
+        id: messagePlugins.id,
+        identifier: messagePlugins.identifier,
+        threadId: messages.threadId,
+        toolCallId: messagePlugins.toolCallId,
+        topicId: messages.topicId,
+        type: messagePlugins.type,
+      })
+      .from(messagePlugins)
+      .innerJoin(messages, eq(messagePlugins.id, messages.id))
+      .where(
+        and(
+          sql`${messagePlugins.intervention}->>'status' = 'pending'`,
+          this.ownership(),
+          this.pluginsOwnership(),
+        ),
+      )
+      .orderBy(desc(messages.createdAt), desc(messages.id))
+      .limit(limit);
+
+    return rows.map((row) => ({
+      agentId: row.agentId ?? undefined,
+      apiName: row.apiName ?? undefined,
+      arguments: row.arguments ?? undefined,
+      createdAt: row.createdAt,
+      groupId: row.groupId ?? undefined,
+      id: row.id,
+      identifier: row.identifier ?? undefined,
+      threadId: row.threadId ?? undefined,
+      toolCallId: row.toolCallId ?? undefined,
+      topicId: row.topicId ?? undefined,
+      type: row.type ?? 'default',
+    }));
+  };
+
+  /**
+   * Answers a pending intervention exactly once: only a row that is still `pending` changes, so two
+   * devices answering at the same moment cannot both resume its run. Returns whether this call won.
+   */
+  claimPendingIntervention = async (id: string, status: 'approved' | 'rejected') => {
+    const rows = await this.db
+      .update(messagePlugins)
+      .set({ intervention: { status } })
+      .where(
+        and(
+          eq(messagePlugins.id, id),
+          sql`${messagePlugins.intervention}->>'status' = 'pending'`,
+          this.pluginsOwnership(),
+        ),
+      )
+      .returning({ id: messagePlugins.id });
+
+    return rows.length > 0;
+  };
+
+  /**
    * List tool/plugin rows for a topic in stable first-seen order.
    *
    * This is used by onboarding analytics to reconstruct successful assistant
