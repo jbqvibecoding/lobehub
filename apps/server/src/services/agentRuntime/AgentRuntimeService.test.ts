@@ -1054,7 +1054,7 @@ describe('AgentRuntimeService', () => {
     };
 
     const mockMetadata = {
-      userId: 'user-123',
+      userId: mockUserId,
       createdAt: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
       lastActiveAt: new Date(Date.now() - 1800000).toISOString(), // 30 minutes ago
     };
@@ -1145,7 +1145,7 @@ describe('AgentRuntimeService', () => {
       };
 
       const mockMetadata = {
-        userId: 'user-123',
+        userId: mockUserId,
         modelRuntimeConfig: { model: 'gpt-4' },
       };
 
@@ -1166,7 +1166,7 @@ describe('AgentRuntimeService', () => {
             status: 'waiting_for_human',
             stepCount: 3,
             lastModified: mockState.lastModified,
-            userId: 'user-123',
+            userId: mockUserId,
             modelRuntimeConfig: { model: 'gpt-4' },
             pendingToolsCalling: mockState.pendingToolsCalling,
           },
@@ -1180,7 +1180,7 @@ describe('AgentRuntimeService', () => {
 
       // Mock metadata for filtering by userId
       mockCoordinator.getOperationMetadata
-        .mockResolvedValueOnce({ userId: 'user-123' })
+        .mockResolvedValueOnce({ userId: mockUserId })
         .mockResolvedValueOnce({ userId: 'other-user' });
 
       // Mock states - only first operation needs intervention
@@ -1198,7 +1198,7 @@ describe('AgentRuntimeService', () => {
         });
 
       const result = await service.getPendingInterventions({
-        userId: 'user-123',
+        userId: mockUserId,
       });
 
       expect(result.totalCount).toBe(1);
@@ -1219,7 +1219,7 @@ describe('AgentRuntimeService', () => {
         status: 'running',
         stepCount: 1,
       });
-      mockCoordinator.getOperationMetadata.mockResolvedValue({ userId: 'user-123' });
+      mockCoordinator.getOperationMetadata.mockResolvedValue({ userId: mockUserId });
 
       const result = await service.getPendingInterventions({
         operationId: 'test-operation-1',
@@ -1230,6 +1230,39 @@ describe('AgentRuntimeService', () => {
         timestamp: expect.any(String),
         pendingInterventions: [],
       });
+    });
+  });
+
+  describe("other users' operations", () => {
+    beforeEach(() => {
+      mockCoordinator.getOperationMetadata.mockResolvedValue({ userId: 'other-user' });
+      mockCoordinator.loadAgentState.mockResolvedValue({
+        pendingToolsCalling: [{ apiName: 'send_email', identifier: 'gmail' }],
+        status: 'waiting_for_human',
+        stepCount: 1,
+      });
+    });
+
+    it('reads as missing in getOperationStatus', async () => {
+      expect(await service.getOperationStatus({ operationId: 'victim-operation' })).toBeNull();
+    });
+
+    it('is left out of pending interventions, by operation or by user', async () => {
+      mockCoordinator.getActiveOperations.mockResolvedValue(['victim-operation']);
+
+      const byOperation = await service.getPendingInterventions({
+        operationId: 'victim-operation',
+      });
+      const byUser = await service.getPendingInterventions({ userId: 'other-user' });
+
+      expect(byOperation.totalCount).toBe(0);
+      expect(byUser.totalCount).toBe(0);
+    });
+
+    it('cannot be started', async () => {
+      await expect(service.startExecution({ operationId: 'victim-operation' })).rejects.toThrow(
+        'Operation victim-operation not found',
+      );
     });
   });
 
@@ -1258,7 +1291,7 @@ describe('AgentRuntimeService', () => {
     };
 
     const mockMetadata = {
-      userId: 'user-123',
+      userId: mockUserId,
       agentConfig: { name: 'test-agent' },
       modelRuntimeConfig: { model: 'gpt-4' },
     };
@@ -1368,6 +1401,24 @@ describe('AgentRuntimeService', () => {
   });
 
   describe('processHumanIntervention', () => {
+    beforeEach(() => {
+      mockCoordinator.getOperationMetadata.mockResolvedValue({ userId: mockUserId });
+    });
+
+    it("should refuse to answer another user's operation", async () => {
+      mockCoordinator.getOperationMetadata.mockResolvedValue({ userId: 'other-user' });
+
+      await expect(
+        service.processHumanIntervention({
+          action: 'approve',
+          approvedToolCall: { apiName: 'send_email', arguments: '{}', identifier: 'gmail' },
+          operationId: 'victim-operation',
+          stepIndex: 0,
+        }),
+      ).rejects.toThrow('Operation victim-operation not found');
+      expect(mockQueueService.scheduleMessage).not.toHaveBeenCalled();
+    });
+
     it('should process human intervention successfully', async () => {
       mockQueueService.scheduleMessage.mockResolvedValue('message-789');
 

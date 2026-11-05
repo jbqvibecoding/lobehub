@@ -1513,6 +1513,12 @@ export class AgentRuntimeService {
         return null;
       }
 
+      // Another user's operation reads exactly like a missing one
+      if (!this.ownsOperation(operationMetadata)) {
+        log('Operation %s does not belong to user %s', operationId, this.userId);
+        return null;
+      }
+
       // Get execution history (if needed)
       let executionHistory;
       if (includeHistory) {
@@ -1593,8 +1599,14 @@ export class AgentRuntimeService {
 
       let operations: string[] = [];
 
+      // Only the caller's own interventions are visible, whatever userId the request names
+      if (userId && userId !== this.userId) {
+        return { pendingInterventions: [], timestamp: new Date().toISOString(), totalCount: 0 };
+      }
+
       if (operationId) {
-        operations = [operationId];
+        const metadata = await this.coordinator.getOperationMetadata(operationId);
+        operations = this.ownsOperation(metadata) ? [operationId] : [];
       } else if (userId) {
         // Get all active operations for the user
         try {
@@ -1605,7 +1617,7 @@ export class AgentRuntimeService {
           for (const operation of activeOperations) {
             try {
               const metadata = await this.coordinator.getOperationMetadata(operation);
-              if (metadata?.userId === userId) {
+              if (this.ownsOperation(metadata)) {
                 userOperations.push(operation);
               }
             } catch (error) {
@@ -1670,6 +1682,14 @@ export class AgentRuntimeService {
   }
 
   /**
+   * The legacy operation endpoints take an operation id from the client. Only the user who
+   * started an operation may read it, start it or answer its interventions.
+   */
+  private ownsOperation(metadata: { userId?: string } | null | undefined): boolean {
+    return !!metadata?.userId && metadata.userId === this.userId;
+  }
+
+  /**
    * Explicitly start operation execution
    */
   async startExecution(params: StartExecutionParams): Promise<StartExecutionResult> {
@@ -1678,9 +1698,9 @@ export class AgentRuntimeService {
     try {
       log('Starting execution for operation %s', operationId);
 
-      // Check if operation exists
+      // Check if operation exists and belongs to the caller
       const operationMetadata = await this.coordinator.getOperationMetadata(operationId);
-      if (!operationMetadata) {
+      if (!operationMetadata || !this.ownsOperation(operationMetadata)) {
         throw new Error(`Operation ${operationId} not found`);
       }
 
@@ -1789,6 +1809,11 @@ export class AgentRuntimeService {
         stepIndex,
         action,
       );
+
+      // The approved tool call comes from the client, so only the operation's owner may answer
+      if (!this.ownsOperation(await this.coordinator.getOperationMetadata(operationId))) {
+        throw new Error(`Operation ${operationId} not found`);
+      }
 
       // Schedule execution with high priority (if queue service is available)
       let messageId: string | undefined;
