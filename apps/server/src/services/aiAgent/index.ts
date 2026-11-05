@@ -55,6 +55,7 @@ import type {
   MessagePluginItem,
   RuntimeMentionedAgent,
   UserInterventionConfig,
+  UserToolConfig,
   WorkspaceInitResult,
 } from '@lobechat/types';
 import {
@@ -463,6 +464,16 @@ interface ResolvedWorkspaceInit {
  * - REST API endpoint (/api/agent)
  * - Cron jobs / scheduled tasks
  */
+/**
+ * A run that brings no allow list of its own (bots, scheduled and background tasks) uses the one
+ * the user saved, so a tool they chose to always allow keeps running without a person present.
+ */
+const withStoredAllowList = (
+  config: UserInterventionConfig,
+  storedAllowList: string[] | undefined,
+): UserInterventionConfig =>
+  config.allowList || !storedAllowList?.length ? config : { ...config, allowList: storedAllowList };
+
 export class AiAgentService {
   private readonly userId: string;
   private readonly db: LobeChatDatabase;
@@ -2213,6 +2224,8 @@ export class AiAgentService {
     const agentMemoryEnabled = agentConfig.chatConfig?.memory?.enabled;
     let globalMemoryEnabled = agentMemoryEnabled ?? false;
     let userTimezone: string | undefined;
+    // Tools the user chose to always allow; headless runs (bots, tasks) inherit them below
+    let storedAllowList: string[] | undefined;
     // Resolved once below (alongside the group-tool authorization fetch) and
     // forwarded into op metadata for the per-step context engine.
     let operationAgentGroup: AgentGroupConfig | undefined;
@@ -2225,6 +2238,9 @@ export class AiAgentService {
 
       const generalSettings = settings?.general as { timezone?: string } | undefined;
       userTimezone = generalSettings?.timezone;
+
+      storedAllowList = (settings?.tool as UserToolConfig | undefined)?.humanIntervention
+        ?.allowList;
     } catch (error) {
       log('execAgent: failed to fetch user settings: %O', error);
     }
@@ -3762,7 +3778,7 @@ export class AiAgentService {
         },
         operationSkillSet,
         userId: this.userId,
-        userInterventionConfig,
+        userInterventionConfig: withStoredAllowList(userInterventionConfig, storedAllowList),
         userMemory,
         workspaceId: this.workspaceId,
       });

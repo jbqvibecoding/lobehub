@@ -3,10 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AiAgentService } from '../index';
 
-const { mockCreateOperation, mockGetAgentConfig, mockMessageCreate } = vi.hoisted(() => ({
-  mockCreateOperation: vi.fn(),
-  mockGetAgentConfig: vi.fn(),
-  mockMessageCreate: vi.fn(),
+const { mockCreateOperation, mockGetAgentConfig, mockGetUserSettings, mockMessageCreate } =
+  vi.hoisted(() => ({
+    mockCreateOperation: vi.fn(),
+    mockGetAgentConfig: vi.fn(),
+    mockGetUserSettings: vi.fn().mockResolvedValue(undefined),
+    mockMessageCreate: vi.fn(),
+  }));
+
+vi.mock('@/database/models/user', () => ({
+  UserModel: vi.fn().mockImplementation(() => ({ getUserSettings: mockGetUserSettings })),
 }));
 
 vi.mock('@/libs/trusted-client', () => ({
@@ -173,6 +179,36 @@ describe('AiAgentService.execAgent - headless approval default', () => {
     });
 
     expect(mockCreateOperation).toHaveBeenCalledTimes(1);
+    const callArgs = mockCreateOperation.mock.calls[0][0];
+    expect(callArgs.userInterventionConfig).toEqual(config);
+  });
+
+  it("should give headless runs the user's saved always-allow list", async () => {
+    mockGetUserSettings.mockResolvedValueOnce({
+      tool: { humanIntervention: { allowList: ['gmail-mcp/send_email'], approvalMode: 'manual' } },
+    });
+
+    await service.execAgent({ agentId: 'agent-1', prompt: 'Hello' });
+
+    const callArgs = mockCreateOperation.mock.calls[0][0];
+    expect(callArgs.userInterventionConfig).toEqual({
+      allowList: ['gmail-mcp/send_email'],
+      approvalMode: 'headless',
+    });
+  });
+
+  it("should keep the caller's own allow list over the saved one", async () => {
+    mockGetUserSettings.mockResolvedValueOnce({
+      tool: { humanIntervention: { allowList: ['gmail-mcp/send_email'], approvalMode: 'manual' } },
+    });
+    const config = { allowList: ['tool-a'], approvalMode: 'allow-list' as const };
+
+    await service.execAgent({
+      agentId: 'agent-1',
+      prompt: 'Hello',
+      userInterventionConfig: config,
+    });
+
     const callArgs = mockCreateOperation.mock.calls[0][0];
     expect(callArgs.userInterventionConfig).toEqual(config);
   });

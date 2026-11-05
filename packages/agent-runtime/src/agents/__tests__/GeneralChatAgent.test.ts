@@ -2336,7 +2336,7 @@ describe('GeneralChatAgent', () => {
       const toolCall: ChatToolPayload = {
         id: 'call-1',
         identifier: 'dangerous-tool',
-        apiName: 'delete',
+        apiName: 'archive',
         arguments: '{}',
         type: 'default',
       };
@@ -3132,6 +3132,101 @@ describe('GeneralChatAgent', () => {
     });
   });
 
+  describe('sensitive actions on third-party tools', () => {
+    const createAgent = () =>
+      new GeneralChatAgent({
+        agentConfig: { maxSteps: 100 },
+        operationId: 'test-session',
+        modelRuntimeConfig: mockModelRuntimeConfig,
+      });
+
+    const run = (toolCall: ChatToolPayload, overrides: Partial<AgentState>) =>
+      createAgent().runner(
+        createMockContext('llm_result', {
+          hasToolsCalling: true,
+          parentMessageId: 'msg-1',
+          toolsCalling: [toolCall],
+        }),
+        createMockState({
+          toolManifestMap: {
+            [toolCall.identifier]: { identifier: toolCall.identifier, humanIntervention: 'never' },
+          },
+          ...overrides,
+        }),
+      );
+
+    const sendEmail: ChatToolPayload = {
+      apiName: 'send_email',
+      arguments: '{"to":"ana@example.com"}',
+      id: 'call-1',
+      identifier: 'gmail-mcp',
+      type: 'mcp',
+    };
+
+    it('asks before an MCP tool sends something, even in auto-run', async () => {
+      const result = await run(sendEmail, { userInterventionConfig: { approvalMode: 'auto-run' } });
+
+      expect(result).toEqual([
+        {
+          pendingToolsCalling: [sendEmail],
+          reason: 'human_intervention_required',
+          type: 'request_human_approve',
+        },
+      ]);
+    });
+
+    it('hands a Composio delete back as blocked in headless runs', async () => {
+      const deleteMessage: ChatToolPayload = {
+        apiName: 'GMAIL_DELETE_MESSAGE',
+        arguments: '{}',
+        id: 'call-2',
+        identifier: 'gmail',
+        type: 'builtin',
+      };
+
+      const result = await run(deleteMessage, {
+        toolSourceMap: { gmail: 'composio' },
+        userInterventionConfig: { approvalMode: 'headless' },
+      });
+
+      expect(result).toEqual([
+        {
+          payload: { parentMessageId: 'msg-1', toolsCalling: [deleteMessage] },
+          type: 'resolve_blocked_tools',
+        },
+      ]);
+    });
+
+    it('runs a sensitive tool the user chose to always allow', async () => {
+      const result = await run(sendEmail, {
+        userInterventionConfig: { allowList: ['gmail-mcp/send_email'], approvalMode: 'auto-run' },
+      });
+
+      expect(result).toEqual([
+        { payload: { parentMessageId: 'msg-1', toolCalling: sendEmail }, type: 'call_tool' },
+      ]);
+    });
+
+    it('leaves reads on third-party tools and builtin tools to their own config', async () => {
+      const listMessages: ChatToolPayload = { ...sendEmail, apiName: 'list_messages' };
+      const builtinDelete: ChatToolPayload = {
+        apiName: 'deleteDocument',
+        arguments: '{}',
+        id: 'call-3',
+        identifier: 'lobe-notebook',
+        type: 'builtin',
+      };
+      const autoRun = { userInterventionConfig: { approvalMode: 'auto-run' as const } };
+
+      expect(await run(listMessages, autoRun)).toEqual([
+        { payload: { parentMessageId: 'msg-1', toolCalling: listMessages }, type: 'call_tool' },
+      ]);
+      expect(await run(builtinDelete, autoRun)).toEqual([
+        { payload: { parentMessageId: 'msg-1', toolCalling: builtinDelete }, type: 'call_tool' },
+      ]);
+    });
+  });
+
   describe('headless mode (for async tasks)', () => {
     it('should execute tool-level required tools in headless mode', async () => {
       const agent = new GeneralChatAgent({
@@ -3143,7 +3238,7 @@ describe('GeneralChatAgent', () => {
       const toolCall: ChatToolPayload = {
         id: 'call-1',
         identifier: 'dangerous-tool',
-        apiName: 'delete',
+        apiName: 'archive',
         arguments: '{}',
         type: 'default',
       };

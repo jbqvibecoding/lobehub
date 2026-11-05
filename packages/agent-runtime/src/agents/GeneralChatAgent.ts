@@ -168,9 +168,24 @@ export class GeneralChatAgent implements Agent {
       let globalBlocked = false;
       let globalPolicy: HumanInterventionPolicy = 'always';
 
+      // Global audits also see which tool is being called and what the user always allows
+      const toolCallMetadata = {
+        ...resolverMetadata,
+        allowList,
+        toolCall: {
+          apiName,
+          identifier,
+          source:
+            toolCalling.source ??
+            state.operationToolSet?.sourceMap?.[identifier] ??
+            state.toolSourceMap?.[identifier],
+          type: toolCalling.type,
+        },
+      };
+
       // Default global audits are ordered so always-block rules match first
       for (const globalResolver of globalResolvers) {
-        if (await globalResolver.resolver(toolArgs, resolverMetadata)) {
+        if (await globalResolver.resolver(toolArgs, toolCallMetadata)) {
           globalBlocked = true;
           globalPolicy = globalResolver.policy ?? 'always';
           break;
