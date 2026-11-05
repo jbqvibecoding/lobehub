@@ -704,7 +704,7 @@ export class OnlyboxesSandboxProvider implements SandboxProvider {
   }
 }
 
-const scriptPrelude = `
+export const scriptPrelude = `
 import base64, json, os, re, shutil, glob, fnmatch
 from pathlib import Path
 
@@ -715,7 +715,7 @@ def emit(value):
     print(json.dumps(value, ensure_ascii=False))
 `;
 
-const listFilesScript = `${scriptPrelude}
+export const listFilesScript = `${scriptPrelude}
 def main(encoded):
     args = load_args(encoded)
     directory = args.get('directoryPath') or '.'
@@ -732,7 +732,7 @@ def main(encoded):
     emit({'files': entries, 'totalCount': len(entries)})
 `;
 
-const readFileScript = `${scriptPrelude}
+export const readFileScript = `${scriptPrelude}
 def main(encoded):
     args = load_args(encoded)
     path = args.get('path')
@@ -755,7 +755,7 @@ def main(encoded):
     })
 `;
 
-const prepareWriteFileScript = `${scriptPrelude}
+export const prepareWriteFileScript = `${scriptPrelude}
 def main(encoded):
     args = load_args(encoded)
     path = Path(args.get('path'))
@@ -765,7 +765,7 @@ def main(encoded):
     emit({'success': True})
 `;
 
-const appendWriteFileChunkScript = `${scriptPrelude}
+export const appendWriteFileChunkScript = `${scriptPrelude}
 def main(encoded):
     args = load_args(encoded)
     path = Path(args.get('path'))
@@ -775,7 +775,7 @@ def main(encoded):
     emit({'bytesWritten': len(chunk), 'success': True})
 `;
 
-const editFileScript = `${scriptPrelude}
+export const editFileScript = `${scriptPrelude}
 def main(encoded):
     args = load_args(encoded)
     path = Path(args.get('path'))
@@ -792,7 +792,7 @@ def main(encoded):
     emit({'success': True, 'replacements': replacements, 'linesAdded': replace.count('\\n'), 'linesDeleted': search.count('\\n')})
 `;
 
-const searchFilesScript = `${scriptPrelude}
+export const searchFilesScript = `${scriptPrelude}
 from datetime import datetime
 
 def parse_time(value):
@@ -853,7 +853,7 @@ def main(encoded):
     emit({'results': results, 'totalCount': total})
 `;
 
-const moveFilesScript = `${scriptPrelude}
+export const moveFilesScript = `${scriptPrelude}
 def main(encoded):
     args = load_args(encoded)
     results = []
@@ -866,7 +866,7 @@ def main(encoded):
     emit({'results': results, 'successCount': len([r for r in results if r.get('success')])})
 `;
 
-const grepContentScript = `${scriptPrelude}
+export const grepContentScript = `${scriptPrelude}
 def main(encoded):
     args = load_args(encoded)
     directory = args.get('directory') or '.'
@@ -891,7 +891,7 @@ def main(encoded):
     emit({'matches': matches, 'totalMatches': len(matches)})
 `;
 
-const globFilesScript = `${scriptPrelude}
+export const globFilesScript = `${scriptPrelude}
 def main(encoded):
     args = load_args(encoded)
     directory = args.get('directory') or '.'

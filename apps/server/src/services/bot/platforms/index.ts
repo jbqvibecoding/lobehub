@@ -1,5 +1,9 @@
 // --------------- Core types & utilities ---------------
 // --------------- Registry singleton ---------------
+import { isBotPlatformAvailable } from '@lobechat/region';
+
+import { regionEnv } from '@/envs/region';
+
 import { discord } from './discord/definition';
 import { feishu } from './feishu/definitions/feishu';
 import { lark } from './feishu/definitions/lark';
@@ -92,12 +96,9 @@ export { wechat } from './wechat/definition';
 
 export const platformRegistry = new PlatformRegistry();
 
-platformRegistry.register(discord);
-platformRegistry.register(telegram);
-platformRegistry.register(slack);
-platformRegistry.register(feishu);
-platformRegistry.register(imessage);
-platformRegistry.register(lark);
-platformRegistry.register(qq);
-platformRegistry.register(wechat);
-platformRegistry.register(line);
+// The mainland edition only offers the platforms reachable from mainland China.
+for (const definition of [discord, telegram, slack, feishu, imessage, lark, qq, wechat, line]) {
+  if (isBotPlatformAvailable(regionEnv.APP_REGION, definition.id)) {
+    platformRegistry.register(definition);
+  }
+}

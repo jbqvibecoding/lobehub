@@ -1,0 +1,49 @@
+# Agent computers for the `openbot` Cloud Sandbox provider.
+#
+# Run from this directory:
+#   docker compose build            # builds the computer image and the supervisor
+#   docker compose up -d supervisor
+#
+# Then point LobeHub at it (see docs/self-hosting/environment-variables/cloud-sandbox.mdx):
+#   SANDBOX_PROVIDER=openbot
+#   OPENBOT_SUPERVISOR_URL=http://supervisor:4300   # or http://127.0.0.1:4500 from the host
+#   OPENBOT_SUPERVISOR_TOKEN / OPENBOT_COMPUTER_TOKEN = the two tokens below
+#
+# The LobeHub server must join the `lobe-computers` network: the supervisor hands out addresses of
+# the form http://<container>:4100 on it.
+
+services:
+  agent-computer:
+    build:
+      context: .
+      dockerfile: agent-computer/Dockerfile
+    image: ${COMPUTER_IMAGE:-lobe-agent-computer:latest}
+    # Built here, started by the supervisor: one container per user (or per topic).
+    profiles: [build-only]
+
+  supervisor:
+    build:
+      context: .
+      dockerfile: supervisor/Dockerfile
+    image: ${SUPERVISOR_IMAGE:-lobe-computer-supervisor:latest}
+    restart: unless-stopped
+    environment:
+      PORT: '4300'
+      SUPERVISOR_TOKEN: ${SUPERVISOR_TOKEN:?set SUPERVISOR_TOKEN}
+      COMPUTER_TOKEN: ${COMPUTER_TOKEN:?set COMPUTER_TOKEN}
+      COMPUTER_IMAGE: ${COMPUTER_IMAGE:-lobe-agent-computer:latest}
+      COMPUTER_NAMESPACE: ${COMPUTER_NAMESPACE:-lobe}
+      COMPUTER_NETWORK: lobe-computers
+      COMPUTER_BROWSER_MODE: ${COMPUTER_BROWSER_MODE:-headed}
+      COMPUTER_MEMORY_BYTES: ${COMPUTER_MEMORY_BYTES:-}
+      COMPUTER_RUNTIME: ${COMPUTER_RUNTIME:-}
+    ports:
+      - '127.0.0.1:${SUPERVISOR_PORT:-4500}:4300'
+    volumes:
+      # Root-equivalent on the host. Only the supervisor holds it, behind four verbs.
+      - ${ENGINE_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
+    networks: [lobe-computers]
+
+networks:
+  lobe-computers:
+    name: lobe-computers

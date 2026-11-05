@@ -24,6 +24,7 @@ Supported values:
 
 - `market`: Use the existing Market sandbox.
 - `onlyboxes`: Use an Onlyboxes-compatible self-hosted sandbox console.
+- `openbot`: Give each user (or topic) its own agent computer, started by the supervisor in `apps/computer`.
 
 ### `MARKET_BASE_URL`
 
@@ -81,6 +82,34 @@ Supported values:
 - Default: `900`
 - Example: `3600`
 
+### `OPENBOT_SUPERVISOR_URL`
+
+- Type: Required when `SANDBOX_PROVIDER=openbot`
+- Description: Address of the agent computer supervisor. The LobeHub server must also reach the computers it hands out, which live on the supervisor's `lobe-computers` network.
+- Default: -
+- Example: `http://supervisor:4300`
+
+### `OPENBOT_SUPERVISOR_TOKEN`
+
+- Type: Required when `SANDBOX_PROVIDER=openbot`
+- Description: Bearer token for the supervisor. It must match the supervisor's `SUPERVISOR_TOKEN`.
+- Default: -
+- Example: `change-me-supervisor-token`
+
+### `OPENBOT_COMPUTER_TOKEN`
+
+- Type: Required when `SANDBOX_PROVIDER=openbot`
+- Description: Bearer token for the computers. It must match the supervisor's `COMPUTER_TOKEN`, which the supervisor gives to every computer it starts.
+- Default: -
+- Example: `change-me-computer-token`
+
+### `OPENBOT_COMPUTER_SCOPE`
+
+- Type: Optional
+- Description: `user` gives each user one computer that keeps its files and browser logins across topics. `topic` gives each topic its own computer.
+- Default: `user`
+- Example: `topic`
+
 ## Market Configuration
 
 By default, LobeHub uses the official Market sandbox and does not require extra sandbox configuration:
@@ -134,3 +163,23 @@ CONSOLE_JIT_SIGNING_KEY=onlyboxes-jit-signing-secret
   File export still writes the exported artifact to the configured LobeHub S3 storage. Configure the
   S3 environment variables when users need to download files generated inside the sandbox.
 </Callout>
+
+## OpenBot Agent Computers
+
+`apps/computer` holds the supervisor and the computer image. Build and start them, then point LobeHub at the supervisor:
+
+```bash
+cd apps/computer
+export SUPERVISOR_TOKEN=change-me-supervisor-token COMPUTER_TOKEN=change-me-computer-token
+docker compose build
+docker compose up -d supervisor
+```
+
+```bash
+SANDBOX_PROVIDER=openbot
+OPENBOT_SUPERVISOR_URL=http://supervisor:4300
+OPENBOT_SUPERVISOR_TOKEN=change-me-supervisor-token
+OPENBOT_COMPUTER_TOKEN=change-me-computer-token
+```
+
+Attach the LobeHub server container to the `lobe-computers` network. Every Cloud Sandbox tool runs as a shell command on the computer; the image ships `python3`, `node`, `bun`, `curl` and Chromium.

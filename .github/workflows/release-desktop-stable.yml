@@ -200,6 +200,7 @@ jobs:
         run: npm run desktop:package:app
         env:
           UPDATE_CHANNEL: stable
+          APP_REGION: global
           UPDATE_SERVER_URL: ${{ secrets.UPDATE_SERVER_URL }}
           RELEASE_NOTES: ${{ needs.check-stable.outputs.release_notes }}
           APP_URL: http://localhost:3015
@@ -222,6 +223,7 @@ jobs:
         run: npm run desktop:package:app
         env:
           UPDATE_CHANNEL: stable
+          APP_REGION: global
           UPDATE_SERVER_URL: ${{ secrets.UPDATE_SERVER_URL }}
           RELEASE_NOTES: ${{ needs.check-stable.outputs.release_notes }}
           APP_URL: http://localhost:3015
@@ -241,6 +243,7 @@ jobs:
           tar -czf apps/desktop/release/lobehub-renderer.tar.gz -C apps/desktop/dist/renderer .
         env:
           UPDATE_CHANNEL: stable
+          APP_REGION: global
           UPDATE_SERVER_URL: ${{ secrets.UPDATE_SERVER_URL }}
           RELEASE_NOTES: ${{ needs.check-stable.outputs.release_notes }}
           APP_URL: http://localhost:3015

@@ -1,4 +1,12 @@
+import { assertRegionDeployment } from '@lobechat/region';
+
 export async function register() {
+  // A deployment configured against its region (global / cn) must not start: it would serve users
+  // from the wrong edition or send mainland data abroad.
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    assertRegionDeployment(process.env);
+  }
+
   // In local development, write debug logs to logs/server.log
   if (process.env.NODE_ENV !== 'production' && process.env.NEXT_RUNTIME === 'nodejs') {
     await import('./libs/debug-file-logger');

@@ -38,6 +38,8 @@ export default eslint(
       'docs/.local',
       // cache directories
       '.cache',
+      // Bun services with their own toolchain (copied from OpenBot)
+      'apps/computer',
       // AI coding tools directories
       '.claude',
       '.serena',

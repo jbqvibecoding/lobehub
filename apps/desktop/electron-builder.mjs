@@ -7,6 +7,11 @@ import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 
 import {
+  regionalIdentifier,
+  requireAppRegion,
+  resolveAppRegion,
+} from '../../packages/region/src/region.ts';
+import {
   copyExternalRuntimeModulesToSource,
   getExternalRuntimeModulesFilesConfig,
 } from './external-runtime-deps.config.mjs';
@@ -24,13 +29,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageJSON = JSON.parse(await fs.readFile(path.join(__dirname, 'package.json'), 'utf8'));
 
 const channel = process.env.UPDATE_CHANNEL;
+
+// Release builds (any update channel) must say which edition they are; local packaging defaults to
+// Global. The mainland edition gets its own app id so both can be installed side by side.
+const region = channel
+  ? requireAppRegion(process.env.APP_REGION, `the ${channel} desktop release`)
+  : resolveAppRegion(process.env.APP_REGION);
 const arch = os.arch();
 const hasAppleCertificate = Boolean(process.env.CSC_LINK);
 
 // 自定义更新服务器 URL (用于 stable 频道)
 const updateServerUrl = process.env.UPDATE_SERVER_URL;
 
-console.info(`🚄 Build Version ${packageJSON.version}, Channel: ${channel}`);
+console.info(`🚄 Build Version ${packageJSON.version}, Channel: ${channel}, Region: ${region}`);
 console.info(`🏗️ Building for architecture: ${arch}`);
 
 // Channel identity derived solely from UPDATE_CHANNEL env var.
@@ -215,7 +226,7 @@ const config = {
       console.info(`⏭️  Skipping Assets.car (not found or copy failed)`);
     }
   },
-  appId: 'com.lobehub.lobehub-desktop',
+  appId: regionalIdentifier('com.lobehub.lobehub-desktop', region),
   appImage: {
     artifactName: '${productName}-${version}.${ext}',
   },

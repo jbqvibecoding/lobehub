@@ -18,6 +18,15 @@ LobeHub provides some additional configuration options during deployment, which 
 
 ## Common Variables
 
+### `APP_REGION`
+
+- Type: Required in production
+- Description: Which edition this deployment serves. `global` is the international edition; `cn` is the mainland China edition, which runs on mainland infrastructure and only offers services reachable from there. Each region is a separate deployment with its own accounts and data. The server refuses to start in production without it, and refuses a `cn` deployment configured with services hosted abroad (Upstash QStash without `QSTASH_URL`, or the Market sandbox).
+- Default: `global` outside production
+- Example: `cn`
+
+In the `cn` region the agent bots offer WeChat, Feishu and QQ only, the Telegram, Discord and Slack messenger bots are unavailable, and the Cloud Sandbox defaults to `openbot`.
+
 ### `KEY_VAULTS_SECRET`
 
 - Type: Optional

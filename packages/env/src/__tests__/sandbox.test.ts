@@ -10,6 +10,10 @@ describe('getSandboxConfig', () => {
     delete process.env.ONLYBOXES_JIT_SIGNING_KEY;
     delete process.env.ONLYBOXES_JIT_TTL_SEC;
     delete process.env.ONLYBOXES_LEASE_TTL_SEC;
+    delete process.env.OPENBOT_COMPUTER_SCOPE;
+    delete process.env.OPENBOT_COMPUTER_TOKEN;
+    delete process.env.OPENBOT_SUPERVISOR_TOKEN;
+    delete process.env.OPENBOT_SUPERVISOR_URL;
   });
 
   it('should treat docker empty string defaults as unset optional values', async () => {
@@ -48,5 +52,22 @@ describe('getSandboxConfig', () => {
     expect(config.ONLYBOXES_JIT_SIGNING_KEY).toBe('jit-signing-key');
     expect(config.ONLYBOXES_JIT_TTL_SEC).toBe(900);
     expect(config.ONLYBOXES_LEASE_TTL_SEC).toBe(3600);
+  });
+
+  it('should parse OpenBot computer settings', async () => {
+    process.env.SANDBOX_PROVIDER = 'openbot';
+    process.env.OPENBOT_SUPERVISOR_URL = 'http://supervisor.internal:4300';
+    process.env.OPENBOT_SUPERVISOR_TOKEN = 'supervisor-token';
+    process.env.OPENBOT_COMPUTER_TOKEN = 'computer-token';
+    process.env.OPENBOT_COMPUTER_SCOPE = 'topic';
+
+    const { getSandboxConfig } = await import('../sandbox');
+    const config = getSandboxConfig();
+
+    expect(config.SANDBOX_PROVIDER).toBe('openbot');
+    expect(config.OPENBOT_SUPERVISOR_URL).toBe('http://supervisor.internal:4300');
+    expect(config.OPENBOT_SUPERVISOR_TOKEN).toBe('supervisor-token');
+    expect(config.OPENBOT_COMPUTER_TOKEN).toBe('computer-token');
+    expect(config.OPENBOT_COMPUTER_SCOPE).toBe('topic');
   });
 });

@@ -1,3 +1,7 @@
+import { isMessengerPlatformAvailable } from '@lobechat/region';
+
+import { regionEnv } from '@/envs/region';
+
 import { discord } from './discord';
 import { MessengerPlatformRegistry } from './registry';
 import { slack } from './slack';
@@ -18,7 +22,11 @@ export type {
  * Singleton registry — one per process. Each platform definition lives
  * alongside its binder + (optional) webhook gate, mirroring `bot/platforms/`.
  */
-export const messengerPlatformRegistry = new MessengerPlatformRegistry()
-  .register(slack)
-  .register(telegram)
-  .register(discord);
+export const messengerPlatformRegistry = new MessengerPlatformRegistry();
+
+// None of the product-owned messenger bots is reachable from the mainland edition.
+for (const definition of [slack, telegram, discord]) {
+  if (isMessengerPlatformAvailable(regionEnv.APP_REGION, definition.id)) {
+    messengerPlatformRegistry.register(definition);
+  }
+}

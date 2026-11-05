@@ -1,7 +1,11 @@
+import { defaultSandboxProviderForRegion } from '@lobechat/region';
+
+import { regionEnv } from '@/envs/region';
 import { sandboxEnv } from '@/envs/sandbox';
 
 import { MarketSandboxProvider } from './providers/market';
 import { OnlyboxesSandboxProvider } from './providers/onlyboxes';
+import { OpenBotSandboxProvider } from './providers/openbot';
 import { SandboxMiddlewareService } from './service';
 import type {
   SandboxProvider,
@@ -11,13 +15,17 @@ import type {
 } from './types';
 
 export const getSandboxProviderKind = (): SandboxProviderKind => {
-  return sandboxEnv.SANDBOX_PROVIDER || 'market';
+  return sandboxEnv.SANDBOX_PROVIDER || defaultSandboxProviderForRegion(regionEnv.APP_REGION);
 };
 
 const createSandboxProvider = (options: SandboxServiceOptions): SandboxProvider => {
   switch (getSandboxProviderKind()) {
     case 'onlyboxes': {
       return new OnlyboxesSandboxProvider(options);
+    }
+
+    case 'openbot': {
+      return new OpenBotSandboxProvider(options);
     }
 
     case 'market': {

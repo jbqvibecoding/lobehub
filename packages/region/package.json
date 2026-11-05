@@ -1,0 +1,19 @@
+{
+  "name": "@lobechat/region",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Build-time region identity (global / cn / dev) and the per-region product rules derived from it",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest",
+    "test:coverage": "vitest --coverage --silent='passed-only'"
+  }
+}

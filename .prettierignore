@@ -16,6 +16,9 @@ temp
 tmp
 LICENSE
 
+# Bun services with their own toolchain (copied from OpenBot)
+apps/computer
+
 # dependencies
 node_modules
 *.log
