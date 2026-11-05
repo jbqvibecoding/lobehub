@@ -276,6 +276,23 @@ describe('NotificationModel (integration)', () => {
     });
   });
 
+  describe('markAsReadByDedupeKeys', () => {
+    it("marks only the user's notifications with those keys as read", async () => {
+      const model = new NotificationModel(serverDB, userId);
+      const otherModel = new NotificationModel(serverDB, otherUserId);
+      const answered = await model.create(baseNotification({ dedupeKey: 'tool-approval:call-1' }));
+      const waiting = await model.create(baseNotification({ dedupeKey: 'tool-approval:call-2' }));
+      await otherModel.create(baseNotification({ dedupeKey: 'tool-approval:call-1' }));
+
+      await model.markAsReadByDedupeKeys(['tool-approval:call-1']);
+
+      const rows = await model.list();
+      expect(rows.find((r) => r.id === answered!.id)!.isRead).toBe(true);
+      expect(rows.find((r) => r.id === waiting!.id)!.isRead).toBe(false);
+      expect(await otherModel.getUnreadCount()).toBe(1);
+    });
+  });
+
   describe('markAllAsRead', () => {
     it('marks all unread notifications for the user as read', async () => {
       const model = new NotificationModel(serverDB, userId);

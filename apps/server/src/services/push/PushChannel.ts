@@ -54,18 +54,22 @@ export class PushChannel {
       return { failedReason: 'invalid_tokens', status: 'failed' };
     }
 
-    const messages: ExpoPushMessage[] = validTokens.map((t) => ({
-      body: ctx.content,
-      channelId: DEFAULT_PUSH_CHANNEL_ID,
-      data: {
-        notificationId: ctx.notificationId,
-        url: ctx.actionUrl,
-      },
-      priority: 'high',
-      sound: 'default',
-      title: ctx.title,
-      to: t.expoToken,
-    }));
+    const messages: ExpoPushMessage[] = validTokens.map((t) => {
+      const text = (t.locale && ctx.translations?.[t.locale.split('-')[0].toLowerCase()]) || ctx;
+
+      return {
+        body: text.content,
+        channelId: DEFAULT_PUSH_CHANNEL_ID,
+        data: {
+          notificationId: ctx.notificationId,
+          url: ctx.actionUrl,
+        },
+        priority: 'high',
+        sound: 'default',
+        title: text.title,
+        to: t.expoToken,
+      };
+    });
 
     const ticketRecords: PushTicketRecord[] = [];
     const chunks = this.expo.chunkPushNotifications(messages);

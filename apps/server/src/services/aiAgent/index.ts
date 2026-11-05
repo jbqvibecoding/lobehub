@@ -83,6 +83,7 @@ import { ConnectorToolModel } from '@/database/models/connectorTool';
 import { DeviceModel } from '@/database/models/device';
 import { FileModel } from '@/database/models/file';
 import { MessageModel } from '@/database/models/message';
+import { NotificationModel } from '@/database/models/notification';
 import { PluginModel } from '@/database/models/plugin';
 import { TaskModel } from '@/database/models/task';
 import { ThreadModel } from '@/database/models/thread';
@@ -135,6 +136,7 @@ import {
   resolveAgentSelfIterationCapability,
 } from '@/server/services/agentSignal/featureGate';
 import { shouldSuppressSignal } from '@/server/services/agentSignal/suppressSignal';
+import { toolApprovalDedupeKey } from '@/server/services/approvalNotification';
 import { ComposioService } from '@/server/services/composio';
 import { deviceGateway } from '@/server/services/deviceGateway';
 import { getScopedOnlineDevices } from '@/server/services/deviceGateway/scopedDevices';
@@ -1436,6 +1438,15 @@ export class AiAgentService {
         resumeToolResult.parentMessageId,
         resumeToolResult.toolCallId,
       );
+    }
+
+    // 2.8. The call was answered (web or phone), so its "waiting for you" notification is done.
+    // Best effort: a stale inbox row must not stop the run from resuming.
+    const answeredToolCallId = resumeApproval?.toolCallId ?? resumeToolResult?.toolCallId;
+    if (answeredToolCallId) {
+      await new NotificationModel(this.db, this.userId)
+        .markAsReadByDedupeKeys([toolApprovalDedupeKey(answeredToolCallId)])
+        .catch((error) => log('execAgent: clearing the approval notification failed: %O', error));
     }
 
     // 3. Handle topic creation: if no topicId provided, create a new topic; otherwise reuse existing

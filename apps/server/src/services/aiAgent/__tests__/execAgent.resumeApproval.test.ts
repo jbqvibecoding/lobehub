@@ -10,9 +10,11 @@ const {
   mockFindMessagePlugin,
   mockMessageCreate,
   mockMessageQuery,
+  mockMarkAsReadByDedupeKeys,
   mockUpdateMessagePlugin,
   mockUpdateToolMessage,
 } = vi.hoisted(() => ({
+  mockMarkAsReadByDedupeKeys: vi.fn(),
   mockCreateOperation: vi.fn(),
   mockFindById: vi.fn(),
   mockFindMessagePlugin: vi.fn(),
@@ -39,6 +41,12 @@ vi.mock('@/database/models/message', () => ({
     update: vi.fn().mockResolvedValue({}),
     updateMessagePlugin: mockUpdateMessagePlugin,
     updateToolMessage: mockUpdateToolMessage,
+  })),
+}));
+
+vi.mock('@/database/models/notification', () => ({
+  NotificationModel: vi.fn().mockImplementation(() => ({
+    markAsReadByDedupeKeys: mockMarkAsReadByDedupeKeys,
   })),
 }));
 
@@ -177,6 +185,7 @@ describe('AiAgentService.execAgent - resumeApproval', () => {
     mockMessageCreate.mockResolvedValue({ id: 'assistant-msg-new' });
     mockUpdateMessagePlugin.mockResolvedValue(undefined);
     mockUpdateToolMessage.mockResolvedValue(undefined);
+    mockMarkAsReadByDedupeKeys.mockResolvedValue(undefined);
     // `MessageModel` is fully mocked above, so the service never touches the
     // raw `db` arg — cast an empty stub through `unknown` to satisfy the
     // `LobeChatDatabase` parameter type without dragging the real schema.
@@ -267,6 +276,22 @@ describe('AiAgentService.execAgent - resumeApproval', () => {
         }),
       );
     });
+  });
+
+  it("clears the answered call's waiting-for-you notification, and resumes even if that fails", async () => {
+    mockMarkAsReadByDedupeKeys.mockRejectedValueOnce(new Error('db busy'));
+
+    await service.execAgent({
+      ...baseParams,
+      resumeApproval: {
+        decision: 'approved',
+        parentMessageId: 'tool-msg-1',
+        toolCallId: 'call_xyz',
+      },
+    });
+
+    expect(mockMarkAsReadByDedupeKeys).toHaveBeenCalledWith(['tool-approval:call_xyz']);
+    expect(mockCreateOperation).toHaveBeenCalled();
   });
 
   it('falls back to the no-reason rejection string when rejectionReason is omitted', async () => {

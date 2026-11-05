@@ -77,6 +77,22 @@ export class NotificationModel {
       .where(and(this.ownership(), inArray(notifications.id, ids)));
   }
 
+  /** Marks read the notifications created with these dedupe keys, e.g. once their cause is resolved. */
+  async markAsReadByDedupeKeys(dedupeKeys: string[]) {
+    if (dedupeKeys.length === 0) return;
+
+    return this.db
+      .update(notifications)
+      .set({ isRead: true, updatedAt: new Date() })
+      .where(
+        and(
+          this.ownership(),
+          eq(notifications.isRead, false),
+          inArray(notifications.dedupeKey, dedupeKeys),
+        ),
+      );
+  }
+
   async markAllAsRead() {
     return this.db
       .update(notifications)

@@ -60,6 +60,11 @@ vi.mock('@/server/modules/ModelRuntime', () => ({
   }),
 }));
 
+const mockNotifyPendingApprovals = vi.fn();
+vi.mock('@/server/services/approvalNotification', () => ({
+  notifyPendingApprovals: (...args: unknown[]) => mockNotifyPendingApprovals(...args),
+}));
+
 vi.mock('@/server/services/message', () => ({
   MessageService: vi.fn().mockImplementation(() => ({
     createCompressionGroup: mockCreateCompressionGroup,
@@ -3348,6 +3353,44 @@ describe('RuntimeExecutors', { timeout: 60_000 }, () => {
         'tool-call-1': 'tool-msg-1',
         'tool-call-2': 'tool-msg-2',
       });
+    });
+
+    it('tells the user the run waits for them once the pending calls are saved', async () => {
+      const executors = createRuntimeExecutors(ctx);
+      mockMessageModel.create
+        .mockResolvedValueOnce({ id: 'tool-msg-1' })
+        .mockResolvedValueOnce({ id: 'tool-msg-2' });
+      const pending = makePendingTools();
+
+      await executors.request_human_approve!(
+        { pendingToolsCalling: pending, type: 'request_human_approve' as const },
+        createMockState(),
+      );
+
+      expect(mockNotifyPendingApprovals).toHaveBeenCalledWith(ctx.serverDB, {
+        agentId: 'agent-123',
+        pendingTools: pending,
+        topicId: 'topic-123',
+        userId: 'user-123',
+      });
+      expect(mockNotifyPendingApprovals.mock.invocationCallOrder[0]).toBeGreaterThan(
+        mockMessageModel.create.mock.invocationCallOrder[1],
+      );
+    });
+
+    it('still pauses the run when the user cannot be notified', async () => {
+      const executors = createRuntimeExecutors(ctx);
+      mockMessageModel.create
+        .mockResolvedValueOnce({ id: 'tool-msg-1' })
+        .mockResolvedValueOnce({ id: 'tool-msg-2' });
+      mockNotifyPendingApprovals.mockRejectedValueOnce(new Error('Expo is down'));
+
+      const result = await executors.request_human_approve!(
+        { pendingToolsCalling: makePendingTools(), type: 'request_human_approve' as const },
+        createMockState(),
+      );
+
+      expect(result.newState.status).toBe('waiting_for_human');
     });
 
     it('should skip message creation when skipCreateToolMessage is true', async () => {

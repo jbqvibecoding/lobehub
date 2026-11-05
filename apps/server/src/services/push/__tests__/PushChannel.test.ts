@@ -163,4 +163,31 @@ describe('PushChannel', () => {
     const channel = new PushChannel(expo as any);
     await expect(channel.deliver(ctx)).rejects.toThrow('network down');
   });
+
+  it('writes to each phone in the language it registered with', async () => {
+    mockListByUserId.mockResolvedValueOnce([
+      { deviceId: 'iphone', expoToken: 'ExponentPushToken[A]', locale: 'zh-Hans-CN' },
+      { deviceId: 'pixel', expoToken: 'ExponentPushToken[B]', locale: 'de-DE' },
+      { deviceId: 'ipad', expoToken: 'ExponentPushToken[C]', locale: null },
+    ]);
+
+    const expo = makeExpoMock();
+    expo.sendPushNotificationsAsync.mockResolvedValueOnce([
+      { id: 'ticket-1', status: 'ok' },
+      { id: 'ticket-2', status: 'ok' },
+      { id: 'ticket-3', status: 'ok' },
+    ]);
+
+    await new PushChannel(expo as any).deliver({
+      ...ctx,
+      translations: { zh: { content: '图片已生成。', title: '生成完成' } },
+    });
+
+    const sent = expo.sendPushNotificationsAsync.mock.calls[0][0];
+    expect(sent.map((m: any) => [m.title, m.body])).toEqual([
+      ['生成完成', '图片已生成。'],
+      [ctx.title, ctx.content],
+      [ctx.title, ctx.content],
+    ]);
+  });
 });

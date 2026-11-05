@@ -18,6 +18,11 @@ export interface PushDeliveryContext {
   notificationId: string;
   /** Notification title */
   title: string;
+  /**
+   * Title and body per language code (`zh`, `en`, ...), picked by the locale each phone registered
+   * with; phones in other languages get `title` and `content`.
+   */
+  translations?: Record<string, { content: string; title: string }>;
   /** Ignored by push (kept for cloud `NotificationChannel` compatibility) */
   userEmail?: string;
   /** Target user — push channel fans out to all of this user's `push_tokens` */
