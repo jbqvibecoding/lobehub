@@ -6,6 +6,9 @@ it. The agent runs on the server and on agent computers, never on the phone.
 - **Approvals**: the list of tool calls waiting for the user, with what each one will do. Approving
   asks for Face ID, Touch ID or the device passcode first. An answer given on another device wins,
   and the card says so.
+- **Tasks**: the user's tasks grouped like the web board (needs you, in progress, not started,
+  done). A task's page shows why it stopped, its subtasks and its history (runs and their
+  outcome, agents' reports, comments), and starts it again with Run now.
 - **Activity**: what agents did for the user, newest first: what they asked, what was approved
   or rejected and where, what was blocked, and whether each action succeeded. It shows who a
   call went to, never message content or credentials, which the server does not keep.

@@ -17,6 +17,10 @@ export default function TabsLayout() {
           <NativeTabs.Trigger.Badge>{String(waiting)}</NativeTabs.Trigger.Badge>
         ) : null}
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="(tasks)">
+        <NativeTabs.Trigger.Icon md="checklist" sf="checklist" />
+        <NativeTabs.Trigger.Label>{t('tasksTitle')}</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="(activity)">
         <NativeTabs.Trigger.Icon md="history" sf="clock.arrow.circlepath" />
         <NativeTabs.Trigger.Label>{t('activityTitle')}</NativeTabs.Trigger.Label>

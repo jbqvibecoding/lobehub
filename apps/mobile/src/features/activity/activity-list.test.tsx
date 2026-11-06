@@ -22,7 +22,9 @@ const renderList = async (pages: (ActivityPage | Error)[]) => {
     if (next instanceof Error) throw next;
     return next;
   });
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { gcTime: Infinity, retry: false } },
+  });
   await render(
     <QueryClientProvider client={queryClient}>
       <ActivityList api={{ query } as unknown as ApiClient} />
