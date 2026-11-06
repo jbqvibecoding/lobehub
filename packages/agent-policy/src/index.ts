@@ -10,6 +10,7 @@ export {
   openApproval,
   resolveApproval,
 } from './approval';
+export { parseToolArguments, REDACTED, redactForAudit, toolCallDigest } from './audit';
 export {
   decideToolCall,
   PolicyEngine,

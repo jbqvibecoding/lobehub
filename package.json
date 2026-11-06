@@ -213,6 +213,7 @@
     "@lexical/utils": "^0.42.0",
     "@lobechat/agent-gateway-client": "workspace:*",
     "@lobechat/agent-mock": "workspace:*",
+    "@lobechat/agent-policy": "workspace:*",
     "@lobechat/agent-runtime": "workspace:*",
     "@lobechat/agent-signal": "workspace:*",
     "@lobechat/agent-templates": "workspace:*",

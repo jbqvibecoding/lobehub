@@ -81,6 +81,28 @@ table agents_knowledge_bases {
   }
 }
 
+table agent_action_audits {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id text [not null]
+  workspace_id text
+  event_type text [not null]
+  identifier text [not null]
+  api_name text [not null]
+  tool_class text [not null]
+  tool_call_id text
+  operation_id text
+  agent_id text
+  topic_id text
+  call_digest text [not null]
+  payload jsonb [not null, default: `{}`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (user_id, created_at) [name: 'agent_action_audits_user_id_created_at_idx']
+    tool_call_id [name: 'agent_action_audits_tool_call_id_idx']
+  }
+}
+
 table agent_bot_providers {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   agent_id text [not null]

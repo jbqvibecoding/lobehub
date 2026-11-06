@@ -60,6 +60,11 @@ vi.mock('@/server/modules/ModelRuntime', () => ({
   }),
 }));
 
+const mockRecordAgentAction = vi.fn();
+vi.mock('@/server/services/agentActionAudit', () => ({
+  recordAgentAction: (...args: unknown[]) => mockRecordAgentAction(...args),
+}));
+
 const mockNotifyPendingApprovals = vi.fn();
 vi.mock('@/server/services/approvalNotification', () => ({
   notifyPendingApprovals: (...args: unknown[]) => mockNotifyPendingApprovals(...args),
@@ -3378,6 +3383,36 @@ describe('RuntimeExecutors', { timeout: 60_000 }, () => {
       );
     });
 
+    it('records each call it asks about, but not again when a pause resumes', async () => {
+      const executors = createRuntimeExecutors(ctx);
+      mockMessageModel.create
+        .mockResolvedValueOnce({ id: 'tool-msg-1' })
+        .mockResolvedValueOnce({ id: 'tool-msg-2' });
+      mockMessageModel.query.mockResolvedValue([]);
+      const pending = makePendingTools();
+
+      await executors.request_human_approve!(
+        { pendingToolsCalling: pending, type: 'request_human_approve' as const },
+        createMockState(),
+      );
+      await executors.request_human_approve!(
+        {
+          pendingToolsCalling: [pending[1]],
+          skipCreateToolMessage: true,
+          type: 'request_human_approve' as const,
+        },
+        createMockState(),
+      );
+
+      expect(mockRecordAgentAction.mock.calls.map((call) => [call[1], call[2].id])).toEqual([
+        ['approval_requested', 'tool-call-1'],
+        ['approval_requested', 'tool-call-2'],
+      ]);
+      expect(mockRecordAgentAction.mock.calls[0][3]).toEqual(
+        expect.objectContaining({ agentId: 'agent-123', topicId: 'topic-123', userId: 'user-123' }),
+      );
+    });
+
     it('still pauses the run when the user cannot be notified', async () => {
       const executors = createRuntimeExecutors(ctx);
       mockMessageModel.create
@@ -4492,6 +4527,17 @@ describe('RuntimeExecutors', { timeout: 60_000 }, () => {
         parentMessageId: 'msg-123',
         toolCount: 1,
       });
+      expect(mockRecordAgentAction).toHaveBeenCalledWith(
+        ctx.serverDB,
+        'blocked',
+        expect.objectContaining({ apiName: 'bash', id: 'tool-call-1' }),
+        expect.objectContaining({
+          agentId: 'agent-123',
+          operationId: 'op-123',
+          userId: 'user-123',
+        }),
+        { errorCode: 'blocked_by_security_privacy' },
+      );
     });
   });
 

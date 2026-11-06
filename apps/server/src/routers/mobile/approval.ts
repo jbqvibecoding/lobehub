@@ -75,6 +75,7 @@ export const approvalRouter = router({
           parentMessageId: toolMessageId,
           rejectionReason: reason,
           toolCallId: plugin.toolCallId,
+          via: 'mobile',
         },
         trigger: RequestTrigger.Chat,
         // Later calls in the resumed run ask again rather than running unattended

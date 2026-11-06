@@ -13,6 +13,7 @@ import {
 } from '@lobechat/agent-runtime';
 import debug from 'debug';
 
+import { recordAgentAction } from '@/server/services/agentActionAudit';
 import { notifyPendingApprovals } from '@/server/services/approvalNotification';
 
 import { buildHost } from './buildHost';
@@ -29,6 +30,7 @@ export const createRuntimeExecutors = (
   // operation context) instead of the raw server ctx. Built once per operation.
   const host = buildHost(ctx);
   const requestHumanApprove = createRequestHumanApproveExecutor(host);
+  const resolveBlockedTools = createResolveBlockedToolsExecutor(host);
 
   return {
     call_llm: createCallLlmExecutor(host),
@@ -42,12 +44,60 @@ export const createRuntimeExecutors = (
     finish: createFinishExecutor(host),
     request_human_approve: async (instruction, state) => {
       const result = await requestHumanApprove(instruction, state);
+      await recordApprovalRequests(ctx, instruction, state);
       await tellUserTheRunWaits(ctx, instruction, state);
       return result;
     },
     resolve_aborted_tools: createResolveAbortedToolsExecutor(host),
-    resolve_blocked_tools: createResolveBlockedToolsExecutor(host),
+    resolve_blocked_tools: async (instruction, state) => {
+      const result = await resolveBlockedTools(instruction, state);
+      await recordBlockedCalls(ctx, instruction, state);
+      return result;
+    },
   };
+};
+
+const auditScope = (ctx: RuntimeExecutorContext, state: AgentState, userId: string) => ({
+  agentId: state.metadata?.agentId,
+  operationId: ctx.operationId,
+  topicId: ctx.topicId ?? state.metadata?.topicId,
+  userId,
+  workspaceId: ctx.workspaceId,
+});
+
+/** A resumed pause re-asks only calls that were already recorded when it first paused. */
+const recordApprovalRequests = async (
+  ctx: RuntimeExecutorContext,
+  instruction: AgentInstruction,
+  state: AgentState,
+) => {
+  if (!ctx.userId || instruction.type !== 'request_human_approve') return;
+  if (instruction.skipCreateToolMessage) return;
+
+  for (const call of instruction.pendingToolsCalling) {
+    await recordAgentAction(
+      ctx.serverDB,
+      'approval_requested',
+      call,
+      auditScope(ctx, state, ctx.userId),
+    );
+  }
+};
+
+/** Calls the policy refused outright, typically ones needing approval in a run nobody watches. */
+const recordBlockedCalls = async (
+  ctx: RuntimeExecutorContext,
+  instruction: AgentInstruction,
+  state: AgentState,
+) => {
+  if (!ctx.userId || instruction.type !== 'resolve_blocked_tools') return;
+
+  const { blockedReason, toolsCalling } = instruction.payload;
+  for (const call of toolsCalling) {
+    await recordAgentAction(ctx.serverDB, 'blocked', call, auditScope(ctx, state, ctx.userId), {
+      errorCode: blockedReason ?? 'blocked_by_security_privacy',
+    });
+  }
 };
 
 /**

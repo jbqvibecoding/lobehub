@@ -1,4 +1,5 @@
 export * from './agent';
+export * from './agentActionAudit';
 export * from './agentBotProvider';
 export * from './agentCronJob';
 export * from './agentDocuments';

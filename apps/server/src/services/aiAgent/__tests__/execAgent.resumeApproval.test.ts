@@ -11,10 +11,12 @@ const {
   mockMessageCreate,
   mockMessageQuery,
   mockMarkAsReadByDedupeKeys,
+  mockRecordAgentAction,
   mockUpdateMessagePlugin,
   mockUpdateToolMessage,
 } = vi.hoisted(() => ({
   mockMarkAsReadByDedupeKeys: vi.fn(),
+  mockRecordAgentAction: vi.fn(),
   mockCreateOperation: vi.fn(),
   mockFindById: vi.fn(),
   mockFindMessagePlugin: vi.fn(),
@@ -42,6 +44,10 @@ vi.mock('@/database/models/message', () => ({
     updateMessagePlugin: mockUpdateMessagePlugin,
     updateToolMessage: mockUpdateToolMessage,
   })),
+}));
+
+vi.mock('@/server/services/agentActionAudit', () => ({
+  recordAgentAction: mockRecordAgentAction,
 }));
 
 vi.mock('@/database/models/notification', () => ({
@@ -276,6 +282,32 @@ describe('AiAgentService.execAgent - resumeApproval', () => {
         }),
       );
     });
+  });
+
+  it('records who answered, how and where, against the exact call', async () => {
+    await service.execAgent({
+      ...baseParams,
+      resumeApproval: {
+        decision: 'rejected_continue',
+        parentMessageId: 'tool-msg-1',
+        rejectionReason: 'wrong folder',
+        toolCallId: 'call_xyz',
+        via: 'mobile',
+      },
+    });
+
+    expect(mockRecordAgentAction).toHaveBeenCalledWith(
+      expect.anything(),
+      'rejected',
+      {
+        apiName: 'runCommand',
+        arguments: '{"command":"echo"}',
+        id: 'call_xyz',
+        identifier: 'lobe-local-system',
+      },
+      expect.objectContaining({ agentId: 'agent-1', topicId: 'topic-1', userId: 'user-1' }),
+      { rejectionReason: 'wrong folder', via: 'mobile' },
+    );
   });
 
   it("clears the answered call's waiting-for-you notification, and resumes even if that fails", async () => {

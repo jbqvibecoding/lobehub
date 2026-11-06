@@ -8,6 +8,7 @@ import {
   buildBlockedToolResponse,
   getConnectorToolPermission,
 } from '@/libs/mcp/connectorPermissionCheck';
+import { isAuditedRun, recordAgentAction } from '@/server/services/agentActionAudit';
 import { deviceGateway } from '@/server/services/deviceGateway';
 import { contentBlocksToString } from '@/server/services/mcp/contentProcessor';
 import {
@@ -96,6 +97,7 @@ export class ToolExecutionService {
       );
       if (permission === ConnectorToolPermission.disabled) {
         log('Tool %s:%s is disabled by user — blocking execution', identifier, apiName);
+        await auditRun(payload, context, 'blocked', { errorCode: 'disabled_by_user' });
         const blocked = buildBlockedToolResponse(apiName);
         return { ...blocked, executionTime: 0 };
       }
@@ -141,14 +143,15 @@ export class ToolExecutionService {
       }
 
       if (!data.success) {
-        return {
-          ...data,
-          content: truncatedContent,
-          error: normalizeExecutionError(data.error, data.content),
-          executionTime,
-        };
+        const error = normalizeExecutionError(data.error, data.content);
+        await auditRun(payload, context, 'failed', {
+          errorCode: error?.code,
+          executionTimeMs: executionTime,
+        });
+        return { ...data, content: truncatedContent, error, executionTime };
       }
 
+      await auditRun(payload, context, 'succeeded', { executionTimeMs: executionTime });
       return {
         ...data,
         content: truncatedContent,
@@ -160,10 +163,15 @@ export class ToolExecutionService {
       const executionTime = Date.now() - startTime;
       log('Error executing tool %s:%s: %O', identifier, apiName, error);
       const errorMessage = (error as Error).message;
+      const normalizedError = normalizeExecutionError(error, errorMessage);
+      await auditRun(payload, context, 'failed', {
+        errorCode: normalizedError?.code,
+        executionTimeMs: executionTime,
+      });
 
       return {
         content: context.skipResultTruncation ? errorMessage : truncateToolResult(errorMessage),
-        error: normalizeExecutionError(error, errorMessage),
+        error: normalizedError,
         executionTime,
         success: false,
       };
@@ -371,3 +379,31 @@ export class ToolExecutionService {
 }
 
 export * from './types';
+
+/**
+ * Every run that can change something leaves a row, approved or not, so the trail answers what an
+ * agent did on its own as well as what the user let it do.
+ */
+const auditRun = async (
+  payload: ChatToolPayload,
+  context: ToolExecutionContext,
+  eventType: 'blocked' | 'failed' | 'succeeded',
+  details: { errorCode?: string; executionTimeMs?: number },
+) => {
+  if (!context.serverDB || !context.userId) return;
+  if (eventType !== 'blocked' && !isAuditedRun(payload.apiName)) return;
+
+  await recordAgentAction(
+    context.serverDB,
+    eventType,
+    { ...payload, id: context.toolCallId ?? payload.id },
+    {
+      agentId: context.agentId,
+      operationId: context.operationId,
+      topicId: context.topicId,
+      userId: context.userId,
+      workspaceId: context.workspaceId,
+    },
+    details,
+  );
+};

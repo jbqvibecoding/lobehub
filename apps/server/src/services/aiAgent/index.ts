@@ -109,6 +109,7 @@ import type { EvalContext, ServerAgentToolsContext } from '@/server/modules/Mech
 import { createServerAgentToolsEngine } from '@/server/modules/Mecha';
 import type { ServerUserMemoryConfig } from '@/server/modules/Mecha/ContextEngineering/types';
 import { AgentService } from '@/server/services/agent';
+import { recordAgentAction } from '@/server/services/agentActionAudit';
 import { AgentDocumentsService } from '@/server/services/agentDocuments';
 import type {
   AgentExecutionParams,
@@ -386,6 +387,8 @@ interface InternalExecAgentParams extends ExecAgentParams {
     parentMessageId: string;
     rejectionReason?: string;
     toolCallId: string;
+    /** Where the user answered, e.g. `mobile`; kept in the agent action trail */
+    via?: string;
   };
   /**
    * When present, this execAgent call resumes a previous op that paused on a
@@ -1374,6 +1377,24 @@ export class AiAgentService {
           intervention: { rejectedReason: rejectionReason, status: 'rejected' },
         });
       }
+
+      await recordAgentAction(
+        this.db,
+        decision === 'approved' ? 'approved' : 'rejected',
+        {
+          apiName: resumeApprovalPlugin.apiName ?? '',
+          arguments: resumeApprovalPlugin.arguments ?? '',
+          id: resumeApproval.toolCallId,
+          identifier: resumeApprovalPlugin.identifier ?? '',
+        },
+        {
+          agentId,
+          topicId: appContext?.topicId ?? undefined,
+          userId: this.userId,
+          workspaceId: this.workspaceId,
+        },
+        { rejectionReason, via: resumeApproval.via ?? trigger },
+      );
 
       log(
         'execAgent: resumeApproval decision=%s applied to tool message %s (toolCallId=%s)',

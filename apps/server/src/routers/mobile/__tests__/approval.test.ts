@@ -88,6 +88,7 @@ describe('mobile approvalRouter', () => {
           parentMessageId: 'tool-owner',
           rejectionReason: undefined,
           toolCallId: 'call-tool-owner',
+          via: 'mobile',
         },
         userInterventionConfig: { approvalMode: 'manual' },
       }),
