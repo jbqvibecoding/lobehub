@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { activityKey } from '@/features/activity/use-activity';
 import type { ApiClient } from '@/lib/api-client';
 import { apiErrorCode } from '@/lib/api-client';
 
@@ -36,6 +37,10 @@ export const useRespondToApproval = (api: ApiClient) => {
         throw error;
       }
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: pendingApprovalsKey }),
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: pendingApprovalsKey }),
+        queryClient.invalidateQueries({ queryKey: activityKey }),
+      ]),
   });
 };

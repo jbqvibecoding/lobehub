@@ -1,6 +1,20 @@
 import { getLocales } from 'expo-localization';
 
 const en = {
+  activityBlockedByUser: 'You turned this tool off.',
+  activityBlockedUnattended: 'It needed your approval in a run nobody was watching.',
+  activityEmpty: 'Nothing yet. What agents do for you, and what you approve, shows up here.',
+  activityError: 'Could not load the activity.',
+  activityRefreshError: 'Could not refresh. Showing what was loaded before.',
+  activityTitle: 'Activity',
+  answeredInApp: 'in the app',
+  answeredOnPhone: 'on your phone',
+  eventApprovalRequested: 'Asked you',
+  eventApproved: 'Approved',
+  eventBlocked: 'Blocked',
+  eventFailed: 'Failed',
+  eventRejected: 'Rejected',
+  eventSucceeded: 'Done',
   alreadyAnswered: 'Already answered on another device.',
   approve: 'Approve',
   approvePrompt: 'Approve this action',
@@ -23,6 +37,20 @@ const en = {
 };
 
 const zh: typeof en = {
+  activityBlockedByUser: '你关闭了这个工具。',
+  activityBlockedUnattended: '它需要你批准，但这次运行没有人在看。',
+  activityEmpty: '还没有记录。Agent 替你做的事、你批准过的操作，都会出现在这里。',
+  activityError: '没能加载动态。',
+  activityRefreshError: '刷新失败，显示的是之前加载的内容。',
+  activityTitle: '动态',
+  answeredInApp: '在网页或电脑上',
+  answeredOnPhone: '在手机上',
+  eventApprovalRequested: '请你批准',
+  eventApproved: '已批准',
+  eventBlocked: '已拦下',
+  eventFailed: '失败',
+  eventRejected: '已拒绝',
+  eventSucceeded: '已完成',
   alreadyAnswered: '已在另一台设备上处理。',
   approve: '批准',
   approvePrompt: '批准这项操作',

@@ -8,6 +8,8 @@ const light = {
   danger: '#d70015',
   label: '#000000',
   secondaryLabel: '#6c6c70',
+  success: '#248a3d',
+  warning: '#c93400',
 };
 
 const dark: typeof light = {
@@ -18,6 +20,8 @@ const dark: typeof light = {
   danger: '#ff453a',
   label: '#ffffff',
   secondaryLabel: '#98989f',
+  success: '#30d158',
+  warning: '#ff9f0a',
 };
 
 export type Palette = typeof light;

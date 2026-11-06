@@ -28,7 +28,9 @@ const toText = (value: unknown) =>
   typeof value === 'string' ? value : (JSON.stringify(value) ?? String(value));
 
 /** What the approval card shows: exactly what the agent wants to do, readable at a glance. */
-export const describeToolCall = (approval: PendingApproval): ToolCallSummary => {
+export const describeToolCall = (
+  approval: Pick<PendingApproval, 'apiName' | 'arguments' | 'identifier' | 'type'>,
+): ToolCallSummary => {
   let fields: ToolCallSummary['fields'] = [];
 
   if (approval.arguments) {

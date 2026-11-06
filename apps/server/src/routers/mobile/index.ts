@@ -32,9 +32,11 @@ import { taskTemplateRouter } from '../lambda/taskTemplate';
 import { topicRouter } from '../lambda/topic';
 import { uploadRouter } from '../lambda/upload';
 import { userRouter } from '../lambda/user';
+import { activityRouter } from './activity';
 import { approvalRouter } from './approval';
 
 export const mobileRouter = router({
+  activity: activityRouter,
   agent: agentRouter,
   agentDocument: agentDocumentRouter,
   agentSkills: agentSkillsRouter,

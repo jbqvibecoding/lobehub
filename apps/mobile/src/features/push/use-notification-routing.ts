@@ -3,6 +3,7 @@ import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { useEffect } from 'react';
 
+import { activityKey } from '@/features/activity/use-activity';
 import { pendingApprovalsKey } from '@/features/approvals/use-approvals';
 
 Notifications.setNotificationHandler({
@@ -22,7 +23,11 @@ export const useNotificationRouting = () => {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const refresh = () => queryClient.invalidateQueries({ queryKey: pendingApprovalsKey });
+    const refresh = () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: pendingApprovalsKey }),
+        queryClient.invalidateQueries({ queryKey: activityKey }),
+      ]);
 
     const received = Notifications.addNotificationReceivedListener(refresh);
     const tapped = Notifications.addNotificationResponseReceivedListener(() => {

@@ -6,6 +6,9 @@ it. The agent runs on the server and on agent computers, never on the phone.
 - **Approvals**: the list of tool calls waiting for the user, with what each one will do. Approving
   asks for Face ID, Touch ID or the device passcode first. An answer given on another device wins,
   and the card says so.
+- **Activity**: what agents did for the user, newest first: what they asked, what was approved
+  or rejected and where, what was blocked, and whether each action succeeded. It shows who a
+  call went to, never message content or credentials, which the server does not keep.
 - **Push**: the server notifies the phone when something needs the user. Tapping the notification
   opens the approvals list.
 - **Sign-in**: better-auth with the Expo client; the session cookie stays in the device keychain.
