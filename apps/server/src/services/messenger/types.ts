@@ -49,6 +49,8 @@ export interface InboundCallbackAction {
 
 /** Result the router asks the binder to deliver after handling a callback. */
 export interface CallbackAcknowledgement {
+  /** When set, replace the tapped message's text and remove its buttons (e.g. an answered approval). */
+  replaceText?: string;
   /** Optional toast text shown above the user's keyboard. */
   toast?: string;
   /** When set, edit the picker message in place to reflect the new state.
@@ -195,6 +197,22 @@ export interface MessengerPlatformBinder {
       entries: AgentPickerEntry[];
       ephemeralTo?: string;
       interaction?: { applicationId: string; token: string };
+      text: string;
+    },
+  ) => Promise<void>;
+
+  /**
+   * Show a run's pending tool approval with Approve / Reject buttons that emit
+   * `messenger:approve:<toolMessageId>` / `messenger:reject:<toolMessageId>`. Edits `messageId`
+   * (the run's progress message) when given and editable, else posts a new message. Platforms
+   * without tap buttons leave this unset; the chat then gets a plain-text request instead.
+   */
+  sendApprovalRequest?: (
+    chatId: string,
+    params: {
+      approvals: { toolMessageId: string }[];
+      labels: { approve: string; reject: string };
+      messageId?: string;
       text: string;
     },
   ) => Promise<void>;

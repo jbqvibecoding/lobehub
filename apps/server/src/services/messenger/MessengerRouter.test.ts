@@ -112,6 +112,22 @@ vi.mock('@/server/services/bot/AgentBridgeService', () => ({
 
 const mockFindLink = vi.fn();
 const mockSetActiveScope = vi.fn();
+const { mockAnswerToolApproval, MockToolApprovalError } = vi.hoisted(() => {
+  class MockToolApprovalError extends Error {
+    constructor(
+      readonly code: string,
+      message: string,
+    ) {
+      super(message);
+    }
+  }
+  return { mockAnswerToolApproval: vi.fn(), MockToolApprovalError };
+});
+vi.mock('@/server/services/toolApproval', () => ({
+  answerToolApproval: (...args: any[]) => mockAnswerToolApproval(...args),
+  ToolApprovalError: MockToolApprovalError,
+}));
+
 vi.mock('@/database/models/messengerAccountLink', () => ({
   MessengerAccountLinkModel: {
     findByPlatformUser: (...args: any[]) => mockFindLink(...args),
@@ -132,6 +148,7 @@ vi.mock('@/server/services/aiAgent', () => ({
   AiAgentService: class {},
 }));
 vi.mock('@/server/services/bot/replyTemplate', () => ({
+  renderApprovalReply: (key: string) => key,
   renderInlineError: (msg: string) => msg,
 }));
 
@@ -1153,5 +1170,73 @@ describe('MessengerRouter /switch', () => {
         }),
       }),
     );
+  });
+});
+
+describe('MessengerRouter approval buttons', () => {
+  const telegram = { platform: 'telegram', tenantId: '' };
+  const tap = (data: string) => ({
+    callbackId: 'cb_1',
+    chatId: '4242',
+    data,
+    fromUserId: '4242',
+    messageId: 77,
+  });
+  const tapWith = async (data: string) => {
+    const binder = { acknowledgeCallback: vi.fn() };
+    await (new MessengerRouter() as any).handleCallbackAction(binder, telegram, tap(data));
+    return binder.acknowledgeCallback;
+  };
+
+  beforeEach(() => {
+    mockAnswerToolApproval.mockReset();
+    mockAnswerToolApproval.mockResolvedValue({ operationId: 'op-resumed' });
+    mockFindLink.mockResolvedValue({
+      id: 'link_1',
+      platformUserId: '4242',
+      tenantId: '',
+      userId: 'user_alice',
+      workspaceId: null,
+    });
+  });
+
+  it("answers the linked user's call and keeps the outcome in place of the buttons", async () => {
+    const ack = await tapWith('messenger:approve:msg_tool_1');
+
+    expect(mockAnswerToolApproval).toHaveBeenCalledWith(expect.anything(), {
+      chatMessageId: '77',
+      decision: 'approved',
+      toolMessageId: 'msg_tool_1',
+      userId: 'user_alice',
+      via: 'telegram',
+      workspaceId: undefined,
+    });
+    expect(ack.mock.calls[0][1]).toEqual({
+      replaceText: 'toolApprovalApproved',
+      toast: 'toolApprovalApproved',
+    });
+  });
+
+  it('says so when the call was already answered elsewhere', async () => {
+    mockAnswerToolApproval.mockRejectedValue(
+      new MockToolApprovalError('CONFLICT', 'This tool call was already answered'),
+    );
+
+    const ack = await tapWith('messenger:reject:msg_tool_1');
+
+    expect(mockAnswerToolApproval.mock.calls[0][1].decision).toBe('rejected');
+    expect(ack.mock.calls[0][1]).toEqual({
+      replaceText: 'toolApprovalAlreadyAnswered',
+      toast: 'toolApprovalAlreadyAnswered',
+    });
+  });
+
+  it('does nothing for a sender who is not linked', async () => {
+    mockFindLink.mockResolvedValue(null);
+
+    const ack = await tapWith('messenger:approve:msg_tool_1');
+
+    expect(mockAnswerToolApproval).not.toHaveBeenCalled();
+    expect(ack.mock.calls[0][1]).toEqual({ toast: 'Not linked. Send /start first.' });
   });
 });

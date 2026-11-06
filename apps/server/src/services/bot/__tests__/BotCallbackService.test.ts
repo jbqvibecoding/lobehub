@@ -71,7 +71,15 @@ const mockMessengerCreateBinder = vi.hoisted(() =>
   vi.fn().mockImplementation(() => ({ createClient: mockMessengerBinderCreateClient })),
 );
 
+const mockListPendingInterventions = vi.hoisted(() => vi.fn());
+
 // ==================== vi.mock ====================
+
+vi.mock('@/database/models/message', () => ({
+  MessageModel: vi.fn().mockImplementation(() => ({
+    listPendingInterventions: mockListPendingInterventions,
+  })),
+}));
 
 vi.mock('@/database/models/agentBotProvider', () => ({
   AgentBotProviderModel: {
@@ -1267,6 +1275,79 @@ describe('BotCallbackService', () => {
         'progress-msg-1',
         expect.not.stringContaining('Rate limit exceeded'),
       );
+    });
+  });
+
+  describe('a run paused for approval', () => {
+    const pendingEmail = {
+      apiName: 'send_email',
+      arguments: '{"to":"ana@example.com","body":"the code is 4512"}',
+      id: 'tool-msg-1',
+      identifier: 'gmail-mcp',
+      topicId: 'topic-1',
+    };
+    const paused = (overrides: Partial<BotCallbackBody> = {}) =>
+      makeTelegramBody({
+        isOwner: true,
+        reason: 'waiting_for_human',
+        topicId: 'topic-1',
+        type: 'completion',
+        userId: 'user-1',
+        ...overrides,
+      });
+
+    beforeEach(() => {
+      mockListPendingInterventions.mockResolvedValue([
+        pendingEmail,
+        { ...pendingEmail, id: 'tool-msg-elsewhere', topicId: 'topic-2' },
+      ]);
+    });
+
+    it('puts Approve / Reject on the request in a Telegram Messenger chat', async () => {
+      const mockSendApprovalRequest = vi.fn();
+      mockMessengerCreateBinder.mockImplementationOnce(() => ({
+        createClient: mockMessengerBinderCreateClient,
+        sendApprovalRequest: mockSendApprovalRequest,
+      }));
+
+      await service.handleCallback(paused({ messengerInstallationKey: 'telegram:singleton' }));
+
+      expect(mockSendApprovalRequest).toHaveBeenCalledWith('chat-456', {
+        approvals: [{ toolMessageId: 'tool-msg-1' }],
+        labels: { approve: 'Approve', reject: 'Reject' },
+        messageId: 'progress-msg-1',
+        text: '⏸ Waiting for your approval\n\nSend email · gmail-mcp\nTo: ana@example.com',
+      });
+      expect(mockEditMessage).not.toHaveBeenCalled();
+      expect(mockCreateMessage).not.toHaveBeenCalled();
+    });
+
+    it('points to the app where the chat has no buttons', async () => {
+      await service.handleCallback(paused());
+
+      expect(mockEditMessage).toHaveBeenCalledWith(
+        'progress-msg-1',
+        '⏸ Waiting for your approval\n\nSend email · gmail-mcp\nTo: ana@example.com\n\nApprove or reject it in the Biber app.',
+      );
+    });
+
+    it('tells anyone but the owner only that it waits', async () => {
+      await service.handleCallback(paused({ isOwner: false }));
+
+      expect(mockListPendingInterventions).not.toHaveBeenCalled();
+      expect(mockEditMessage).toHaveBeenCalledWith(
+        'progress-msg-1',
+        "⏸ Waiting for the owner's approval.",
+      );
+    });
+
+    it('posts nothing when everything was already answered elsewhere', async () => {
+      mockListPendingInterventions.mockResolvedValue([]);
+
+      await service.handleCallback(paused());
+
+      expect(mockEditMessage).not.toHaveBeenCalled();
+      expect(mockCreateMessage).not.toHaveBeenCalled();
     });
   });
 });

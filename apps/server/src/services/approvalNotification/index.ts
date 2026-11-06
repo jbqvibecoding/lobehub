@@ -5,6 +5,7 @@ import { NotificationModel } from '@/database/models/notification';
 import type { LobeChatDatabase } from '@/database/type';
 
 import { PushChannel } from '../push/PushChannel';
+import { describeApprovalCall } from '../toolApproval/describe';
 
 const log = debug('lobe-server:approval-notification');
 
@@ -95,13 +96,4 @@ const TEXT = {
   },
 };
 
-const describeTool = ({ apiName, identifier }: PendingTool) => {
-  const words = apiName
-    .replaceAll(/([a-z\d])([A-Z])/g, '$1 $2')
-    .replaceAll(/[_-]+/g, ' ')
-    .trim()
-    .toLowerCase();
-  const action = words ? words[0].toUpperCase() + words.slice(1) : apiName;
-
-  return identifier ? `${action} · ${identifier}` : action;
-};
+const describeTool = (tool: PendingTool) => describeApprovalCall(tool).title;

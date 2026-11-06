@@ -34,6 +34,33 @@ const buildSwitchKeyboard = (
     },
   ]);
 
+/** One row per pending call; numbered when a pause asks about several. */
+const buildApprovalKeyboard = (
+  approvals: { toolMessageId: string }[],
+  labels: { approve: string; reject: string },
+): Array<Array<{ callback_data: string; text: string }>> =>
+  approvals.map(({ toolMessageId }, index) => {
+    const suffix = approvals.length > 1 ? ` ${index + 1}` : '';
+    return [
+      {
+        callback_data: `${CALLBACK_PREFIX}approve:${toolMessageId}`,
+        text: `${labels.approve}${suffix}`,
+      },
+      {
+        callback_data: `${CALLBACK_PREFIX}reject:${toolMessageId}`,
+        text: `${labels.reject}${suffix}`,
+      },
+    ];
+  });
+
+/** chat-sdk message ids may be composite (`<chatId>:<messageId>`); Telegram wants the number. */
+const telegramMessageId = (id: string | number | undefined) => {
+  if (id === undefined) return undefined;
+  const text = String(id);
+  const value = Number(text.slice(text.lastIndexOf(':') + 1));
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+};
+
 const log = debug('lobe-server:messenger:telegram');
 
 const buildVerifyImUrl = (params: {
@@ -198,6 +225,37 @@ export class MessengerTelegramBinder implements MessengerPlatformBinder {
     }
   }
 
+  async sendApprovalRequest(
+    chatId: string,
+    params: {
+      approvals: { toolMessageId: string }[];
+      labels: { approve: string; reject: string };
+      messageId?: string;
+      text: string;
+    },
+  ): Promise<void> {
+    const config = await getMessengerTelegramConfig();
+    if (!config) return;
+    const api = new TelegramApi(config.botToken);
+    const keyboard = buildApprovalKeyboard(params.approvals, params.labels);
+    const text = escapeHtml(params.text);
+
+    const messageId = telegramMessageId(params.messageId);
+    if (messageId) {
+      try {
+        await api.editMessageWithCallbackKeyboard(chatId, messageId, text, keyboard);
+        return;
+      } catch (error) {
+        log('sendApprovalRequest: edit failed, posting instead: %O', error);
+      }
+    }
+    try {
+      await api.sendMessageWithCallbackKeyboard(chatId, text, keyboard);
+    } catch (error) {
+      log('sendApprovalRequest: failed for chat=%s: %O', chatId, error);
+    }
+  }
+
   /**
    * Pull our `messenger:switch:<agentId>` action out of a Telegram webhook
    * update. Returns null when the update is anything else (regular message,
@@ -234,6 +292,22 @@ export class MessengerTelegramBinder implements MessengerPlatformBinder {
     const config = await getMessengerTelegramConfig();
     if (!config) return;
     const api = new TelegramApi(config.botToken);
+
+    // An answered request keeps its text as a record but loses its buttons, so it cannot be
+    // tapped again.
+    const tappedMessageId = telegramMessageId(action.messageId);
+    if (ack.replaceText && tappedMessageId) {
+      try {
+        await api.editMessageWithCallbackKeyboard(
+          action.chatId,
+          tappedMessageId,
+          escapeHtml(ack.replaceText),
+          [],
+        );
+      } catch (error) {
+        log('acknowledgeCallback: replacing the tapped message failed: %O', error);
+      }
+    }
 
     // Re-render the picker first so the user sees the new active marker
     // before the toast fires (and even if the toast fails).

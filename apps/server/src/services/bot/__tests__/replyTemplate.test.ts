@@ -4,6 +4,7 @@ import type { RenderStepParams } from '../replyTemplate';
 import {
   formatTokens,
   renderAgentError,
+  renderApprovalRequest,
   renderCommandReply,
   renderDmRejected,
   renderError,
@@ -792,5 +793,25 @@ describe('replyTemplate', () => {
       for (const c of chunks) expect(c.trim().length).toBeGreaterThan(0);
       expect(chunks.join('')).toContain('AAA');
     });
+  });
+});
+
+describe('renderApprovalRequest', () => {
+  it('numbers several waiting calls and speaks the chat language', () => {
+    expect(
+      renderApprovalRequest(
+        {
+          hasButtons: true,
+          isOwner: true,
+          items: [
+            { details: ['To: ana@example.com'], title: 'Send email · gmail-mcp' },
+            { details: [], title: 'Delete file · drive' },
+          ],
+        },
+        'zh-CN',
+      ),
+    ).toBe(
+      '⏸ 等你批准\n\n1. Send email · gmail-mcp\nTo: ana@example.com\n\n2. Delete file · drive',
+    );
   });
 });

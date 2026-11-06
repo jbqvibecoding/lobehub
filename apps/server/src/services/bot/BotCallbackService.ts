@@ -2,6 +2,7 @@ import debug from 'debug';
 
 import type { MessengerPlatform } from '@/config/messenger';
 import { AgentBotProviderModel } from '@/database/models/agentBotProvider';
+import { MessageModel } from '@/database/models/message';
 import { TopicModel } from '@/database/models/topic';
 import { type LobeChatDatabase } from '@/database/type';
 import { getAgentRuntimeRedisClient } from '@/server/modules/AgentRuntime/redis';
@@ -12,7 +13,9 @@ import {
   messengerConnectionIdForUser,
 } from '@/server/services/messenger/installations';
 import { messengerPlatformRegistry } from '@/server/services/messenger/platforms';
+import type { MessengerPlatformBinder } from '@/server/services/messenger/types';
 import { SystemAgentService } from '@/server/services/systemAgent';
+import { describeApprovalCall } from '@/server/services/toolApproval/describe';
 
 import { AgentBridgeService } from './AgentBridgeService';
 import type {
@@ -31,6 +34,8 @@ import {
 import { clearReactionState, getReactionState, saveReactionState } from './reactionState';
 import {
   renderAgentError,
+  renderApprovalReply,
+  renderApprovalRequest,
   renderFinalReply,
   renderStepProgress,
   renderStopped,
@@ -91,6 +96,11 @@ export interface BotCallbackBody {
   hookId?: string;
   /** Hook type from HookDispatcher (e.g. 'afterStep', 'onComplete') */
   hookType?: string;
+  /**
+   * Whether the message that started the run came from the bot's owner. Decides what a paused
+   * run shows: the owner sees the request and can answer it, anyone else only that it waits.
+   */
+  isOwner?: boolean;
   lastAssistantContent?: string;
   lastLLMContent?: string;
   lastToolsCalling?: any;
@@ -149,7 +159,7 @@ export class BotCallbackService {
     } = body;
     const platform = platformThreadId.split(':')[0];
 
-    const { client, connectionId, messenger, charLimit, settings, workspaceId } =
+    const { binder, client, connectionId, messenger, charLimit, settings, workspaceId } =
       await this.createMessenger({
         applicationId,
         messengerInstallationKey,
@@ -181,15 +191,20 @@ export class BotCallbackService {
       // Stop typing on the gateway
       this.stopGatewayTyping(connectionId, platformThreadId);
 
-      await this.handleCompletion(
-        body,
-        messenger,
-        progressMessageId ?? '',
-        client,
-        replyLocale,
-        charLimit,
-        canEdit,
-      );
+      if (body.reason === 'waiting_for_human') {
+        // The run paused for the user; it resumes as a new run once they answer.
+        await this.handleApprovalRequest(body, { binder, canEdit, messenger, replyLocale });
+      } else {
+        await this.handleCompletion(
+          body,
+          messenger,
+          progressMessageId ?? '',
+          client,
+          replyLocale,
+          charLimit,
+          canEdit,
+        );
+      }
       await this.clearStepReaction(body, client, platform);
       // Clear the active thread tracker so the thread can accept new messages.
       // In queue mode, the bridge handler's finally block skips this cleanup
@@ -210,6 +225,8 @@ export class BotCallbackService {
     userId?: string;
     workspaceId?: string;
   }): Promise<{
+    /** The shared Messenger bot's platform glue, for runs that came through it */
+    binder?: MessengerPlatformBinder;
     charLimit?: number;
     connectionId: string;
     client: PlatformClient;
@@ -299,6 +316,7 @@ export class BotCallbackService {
     userId?: string,
     workspaceId?: string,
   ): Promise<{
+    binder: MessengerPlatformBinder;
     charLimit?: number;
     connectionId: string;
     client: PlatformClient;
@@ -343,7 +361,15 @@ export class BotCallbackService {
       ? messengerConnectionIdForUser({ connectionMode, installationKey, userId })
       : '';
 
-    return { charLimit: undefined, client, connectionId, messenger, settings: {}, workspaceId };
+    return {
+      binder,
+      charLimit: undefined,
+      client,
+      connectionId,
+      messenger,
+      settings: {},
+      workspaceId,
+    };
   }
 
   private async handleStep(
@@ -528,6 +554,78 @@ export class BotCallbackService {
    * actual reply still reaches the user — silent edit failures were causing
    * "agent ran but no reply appeared" reports on Telegram.
    */
+  /**
+   * A run paused for approval: show what it waits for. The owner gets the calls (without message
+   * content or credentials) and, where the platform has tap buttons, Approve / Reject; otherwise a
+   * pointer to the app. Anyone else only learns that it waits. Calls already answered elsewhere
+   * before this arrived are left out, and with none left nothing is posted.
+   */
+  private async handleApprovalRequest(
+    body: BotCallbackBody,
+    {
+      binder,
+      canEdit,
+      messenger,
+      replyLocale,
+    }: {
+      binder?: MessengerPlatformBinder;
+      canEdit: boolean;
+      messenger: PlatformMessenger;
+      replyLocale: BotReplyLocale;
+    },
+  ): Promise<void> {
+    const progressMessageId = body.progressMessageId ?? '';
+    const isOwner = body.isOwner === true;
+
+    if (!isOwner) {
+      const text = renderApprovalRequest({ hasButtons: false, isOwner, items: [] }, replyLocale);
+      await this.deliverFirstChunk(messenger, progressMessageId, text, canEdit);
+      return;
+    }
+
+    const pending = await this.pendingCallsInTopic(body);
+    if (pending.length === 0) {
+      log('handleApprovalRequest: nothing left to answer in topic=%s', body.topicId);
+      return;
+    }
+
+    const items = pending.map((call) =>
+      describeApprovalCall({
+        apiName: call.apiName ?? 'tool',
+        arguments: call.arguments,
+        identifier: call.identifier,
+      }),
+    );
+    const hasButtons = !!binder?.sendApprovalRequest;
+    const text = renderApprovalRequest({ hasButtons, isOwner, items }, replyLocale);
+
+    if (hasButtons) {
+      await binder!.sendApprovalRequest!(body.platformThreadId.split(':')[1], {
+        approvals: pending.map((call) => ({ toolMessageId: call.id })),
+        labels: {
+          approve: renderApprovalReply('toolApprovalApprove', replyLocale),
+          reject: renderApprovalReply('toolApprovalReject', replyLocale),
+        },
+        messageId: body.progressMessageId,
+        text,
+      });
+      return;
+    }
+
+    await this.deliverFirstChunk(messenger, progressMessageId, text, canEdit);
+  }
+
+  private async pendingCallsInTopic(body: BotCallbackBody) {
+    if (!body.topicId || !body.userId) return [];
+
+    const pending = await new MessageModel(
+      this.db,
+      body.userId,
+      body.workspaceId,
+    ).listPendingInterventions();
+    return pending.filter((call) => call.topicId === body.topicId);
+  }
+
   private async deliverFirstChunk(
     messenger: PlatformMessenger,
     progressMessageId: string,

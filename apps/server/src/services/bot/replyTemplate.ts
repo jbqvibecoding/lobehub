@@ -266,6 +266,15 @@ type SystemStrings = {
    */
   senderRejected: string;
   stoppedDefault: string;
+  toolApprovalAlreadyAnswered: string;
+  toolApprovalApprove: string;
+  toolApprovalApproved: string;
+  toolApprovalGone: string;
+  toolApprovalOpenApp: string;
+  toolApprovalReject: string;
+  toolApprovalRejected: string;
+  toolApprovalWaitingForOwner: string;
+  toolApprovalWaitingForYou: string;
   toolsCallingHeader: (count: number, time: string) => string;
 };
 
@@ -349,6 +358,15 @@ const SYSTEM_STRINGS: Partial<Record<BotReplyLocale, SystemStrings>> = {
     senderRejected:
       "Sorry, you aren't authorized to interact with this bot. Please contact the bot's owner if you need access.",
     stoppedDefault: 'Execution stopped.',
+    toolApprovalAlreadyAnswered: 'Already answered.',
+    toolApprovalApprove: 'Approve',
+    toolApprovalApproved: '✅ Approved. Continuing…',
+    toolApprovalGone: 'This request is no longer waiting.',
+    toolApprovalOpenApp: 'Approve or reject it in the Biber app.',
+    toolApprovalReject: 'Reject',
+    toolApprovalRejected: '❌ Rejected. Letting the agent know…',
+    toolApprovalWaitingForOwner: "⏸ Waiting for the owner's approval.",
+    toolApprovalWaitingForYou: '⏸ Waiting for your approval',
     toolsCallingHeader: (count, time) => `> total **${count}** tools calling ${time}\n\n`,
   },
   'zh-CN': {
@@ -422,6 +440,15 @@ const SYSTEM_STRINGS: Partial<Record<BotReplyLocale, SystemStrings>> = {
     processing: '处理中…',
     senderRejected: '抱歉，您没有与该机器人交互的权限。如需访问请联系机器人管理员。',
     stoppedDefault: '执行已停止。',
+    toolApprovalAlreadyAnswered: '已经处理过了。',
+    toolApprovalApprove: '批准',
+    toolApprovalApproved: '✅ 已批准，继续执行…',
+    toolApprovalGone: '这个请求已经不在等待了。',
+    toolApprovalOpenApp: '请在 Biber App 里批准或拒绝。',
+    toolApprovalReject: '拒绝',
+    toolApprovalRejected: '❌ 已拒绝，正在告诉 Agent…',
+    toolApprovalWaitingForOwner: '⏸ 正在等机器人主人批准。',
+    toolApprovalWaitingForYou: '⏸ 等你批准',
     toolsCallingHeader: (count, time) => `> 共 **${count}** 次工具调用 ${time}\n\n`,
   },
 };
@@ -702,4 +729,48 @@ export function renderStepProgress(params: RenderStepParams, lng?: BotReplyLocal
     return renderLLMGenerating(params, lng);
   }
   return renderToolExecuting(params, lng);
+}
+
+export interface ApprovalRequestItem {
+  details: string[];
+  title: string;
+}
+
+/**
+ * The message a chat shows while a run waits for approval: what the agent wants to do, and how to
+ * answer. A sender who is not the owner only learns that it waits, not what for.
+ */
+export function renderApprovalRequest(
+  {
+    hasButtons,
+    isOwner,
+    items,
+  }: { hasButtons: boolean; isOwner: boolean; items: ApprovalRequestItem[] },
+  lng?: BotReplyLocale,
+): string {
+  const strings = getSystemStrings(lng);
+  if (!isOwner) return strings.toolApprovalWaitingForOwner;
+
+  const numbered = items.length > 1;
+  const blocks = items.map((item, index) =>
+    [numbered ? `${index + 1}. ${item.title}` : item.title, ...item.details].join('\n'),
+  );
+
+  return [
+    strings.toolApprovalWaitingForYou,
+    ...blocks,
+    ...(hasButtons ? [] : [strings.toolApprovalOpenApp]),
+  ].join('\n\n');
+}
+
+export type ApprovalReplyKey =
+  | 'toolApprovalAlreadyAnswered'
+  | 'toolApprovalApprove'
+  | 'toolApprovalApproved'
+  | 'toolApprovalGone'
+  | 'toolApprovalReject'
+  | 'toolApprovalRejected';
+
+export function renderApprovalReply(key: ApprovalReplyKey, lng?: BotReplyLocale): string {
+  return getSystemStrings(lng)[key];
 }

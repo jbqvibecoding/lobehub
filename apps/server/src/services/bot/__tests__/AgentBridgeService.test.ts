@@ -147,6 +147,41 @@ describe('AgentBridgeService', () => {
     );
   });
 
+  it('lets a call that needs approval pause the run instead of being refused', async () => {
+    const service = new AgentBridgeService(FAKE_DB, USER_ID);
+
+    await service.handleMention(createThread(), createMessage(), {
+      agentId: 'agent-1',
+      botContext: { isOwner: true, platformThreadId: THREAD_ID } as any,
+      client: createClient(),
+    });
+
+    const params = mockExecAgent.mock.calls[0][0];
+    expect(params.userInterventionConfig).toEqual({ approvalMode: 'manual' });
+    expect(
+      params.hooks.find((hook: any) => hook.id === 'bot-completion').webhook.body,
+    ).toMatchObject({ isOwner: true, platformThreadId: THREAD_ID, type: 'completion' });
+  });
+
+  it('keeps refusing such calls when runs are not queued, since nothing could show the request', async () => {
+    mockIsQueueAgentRuntimeEnabled.mockReturnValue(false);
+    mockExecAgent.mockReturnValue(new Promise(() => {}));
+    const service = new AgentBridgeService(FAKE_DB, USER_ID);
+
+    void service.handleMention(createThread(), createMessage(), {
+      agentId: 'agent-1',
+      botContext: { platformThreadId: THREAD_ID } as any,
+      client: createClient(),
+    });
+    await vi.waitFor(() => expect(mockExecAgent).toHaveBeenCalled());
+
+    expect(mockExecAgent.mock.calls[0][0].userInterventionConfig).toEqual({
+      approvalMode: 'headless',
+    });
+    // The local run never completes here; free its thread for the tests that follow
+    AgentBridgeService.clearActiveThread(THREAD_ID);
+  });
+
   it('constructs AiAgentService with workspaceId for workspace bot runs', async () => {
     const service = new AgentBridgeService(FAKE_DB, USER_ID, 'workspace-1');
     const thread = createThread();
@@ -233,8 +268,7 @@ describe('AgentBridgeService', () => {
     const progressMessageIdFromHooks = (): unknown => {
       const call = mockExecAgent.mock.calls.at(-1);
       const hooks = call?.[0]?.hooks as
-        | Array<{ id?: string; webhook?: { body?: Record<string, unknown> } }>
-        | undefined;
+        Array<{ id?: string; webhook?: { body?: Record<string, unknown> } }> | undefined;
       return hooks?.find((h) => h.id === 'bot-completion')?.webhook?.body?.progressMessageId;
     };
 

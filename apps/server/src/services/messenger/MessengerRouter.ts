@@ -22,11 +22,14 @@ import { AgentBridgeService } from '@/server/services/bot/AgentBridgeService';
 import { buildBotContext } from '@/server/services/bot/buildBotContext';
 import { submitBotFeedback } from '@/server/services/bot/feedbackSubmit';
 import type { PlatformClient } from '@/server/services/bot/platforms';
+import { getBotReplyLocale } from '@/server/services/bot/platforms/const';
 import {
+  renderApprovalReply,
   renderCommandReply,
   renderFeedbackSubmitted,
   renderInlineError,
 } from '@/server/services/bot/replyTemplate';
+import { answerToolApproval, ToolApprovalError } from '@/server/services/toolApproval';
 
 import { getInstallationStore } from './installations';
 import type { InstallationCredentials } from './installations/types';
@@ -1405,6 +1408,18 @@ export class MessengerRouter {
       return;
     }
 
+    const approvalMatch = action.data.match(/^messenger:(approve|reject):(.+)$/);
+    if (approvalMatch) {
+      await this.handleApprovalCallback(
+        creds,
+        action,
+        approvalMatch[1] === 'approve' ? 'approved' : 'rejected',
+        approvalMatch[2],
+        ack,
+      );
+      return;
+    }
+
     const switchMatch = action.data.match(/^messenger:switch:(.+)$/);
     if (!switchMatch) {
       await ack({ toast: 'Unknown action.' });
@@ -1444,6 +1459,61 @@ export class MessengerRouter {
         text: 'Pick an agent to receive your messages:',
       },
     });
+  }
+
+  /**
+   * Handle a tap on Approve / Reject under a paused run's request
+   * (`messenger:approve|reject:<toolMessageId>`). Only the linked sender can answer, and only
+   * their own run's call: the tool message is looked up within their account. The answer goes
+   * through the same path as the phone's, so whichever comes first wins; the tapped message keeps
+   * the outcome as text and loses its buttons, and the resumed run edits its reply into it.
+   */
+  private async handleApprovalCallback(
+    creds: InstallationCredentials,
+    action: InboundCallbackAction,
+    decision: 'approved' | 'rejected',
+    toolMessageId: string,
+    ack: (ack: CallbackAcknowledgement) => Promise<void>,
+  ): Promise<void> {
+    const lng = getBotReplyLocale(creds.platform);
+    const serverDB = await getServerDB();
+    const link = await MessengerAccountLinkModel.findByPlatformUser(
+      serverDB,
+      creds.platform,
+      action.fromUserId,
+      creds.tenantId,
+    );
+    if (!link) {
+      await ack({ toast: 'Not linked. Send /start first.' });
+      return;
+    }
+
+    try {
+      await answerToolApproval(serverDB, {
+        chatMessageId: action.messageId === undefined ? undefined : String(action.messageId),
+        decision,
+        toolMessageId,
+        userId: link.userId,
+        via: creds.platform,
+        workspaceId: link.workspaceId ?? undefined,
+      });
+    } catch (error) {
+      if (!(error instanceof ToolApprovalError)) throw error;
+
+      const key = error.code === 'CONFLICT' ? 'toolApprovalAlreadyAnswered' : 'toolApprovalGone';
+      log('handleApprovalCallback: %s refused (%s)', toolMessageId, error.code);
+      await ack({
+        replaceText: renderApprovalReply(key, lng),
+        toast: renderApprovalReply(key, lng),
+      });
+      return;
+    }
+
+    const outcome = renderApprovalReply(
+      decision === 'approved' ? 'toolApprovalApproved' : 'toolApprovalRejected',
+      lng,
+    );
+    await ack({ replaceText: outcome, toast: outcome });
   }
 
   /**

@@ -441,3 +441,78 @@ describe('MessengerTelegramBinder.acknowledgeCallback', () => {
     expect(answerCallbackQuery).not.toHaveBeenCalled();
   });
 });
+
+describe('MessengerTelegramBinder approvals', () => {
+  const labels = { approve: 'Approve', reject: 'Reject' };
+
+  it('turns the progress message into the request with a pair of buttons per call', async () => {
+    await new MessengerTelegramBinder().sendApprovalRequest('100', {
+      approvals: [{ toolMessageId: 'msg_a' }, { toolMessageId: 'msg_b' }],
+      labels,
+      messageId: '100:9',
+      text: 'Pay <Ana> & co',
+    });
+
+    expect(editMessageWithCallbackKeyboard).toHaveBeenCalledWith(
+      '100',
+      9,
+      'Pay &lt;Ana&gt; &amp; co',
+      [
+        [
+          { callback_data: 'messenger:approve:msg_a', text: 'Approve 1' },
+          { callback_data: 'messenger:reject:msg_a', text: 'Reject 1' },
+        ],
+        [
+          { callback_data: 'messenger:approve:msg_b', text: 'Approve 2' },
+          { callback_data: 'messenger:reject:msg_b', text: 'Reject 2' },
+        ],
+      ],
+    );
+    expect(sendMessageWithCallbackKeyboard).not.toHaveBeenCalled();
+  });
+
+  it('posts the request when there is no progress message to edit, or the edit fails', async () => {
+    const binder = new MessengerTelegramBinder();
+    await binder.sendApprovalRequest('100', {
+      approvals: [{ toolMessageId: 'msg_a' }],
+      labels,
+      text: 'Send email',
+    });
+    editMessageWithCallbackKeyboard.mockRejectedValueOnce(new Error('message to edit not found'));
+    await binder.sendApprovalRequest('100', {
+      approvals: [{ toolMessageId: 'msg_a' }],
+      labels,
+      messageId: '9',
+      text: 'Send email',
+    });
+
+    expect(sendMessageWithCallbackKeyboard).toHaveBeenCalledTimes(2);
+    expect(sendMessageWithCallbackKeyboard).toHaveBeenLastCalledWith('100', 'Send email', [
+      [
+        { callback_data: 'messenger:approve:msg_a', text: 'Approve' },
+        { callback_data: 'messenger:reject:msg_a', text: 'Reject' },
+      ],
+    ]);
+  });
+
+  it('keeps an answered request as text without its buttons', async () => {
+    await new MessengerTelegramBinder().acknowledgeCallback(
+      {
+        callbackId: 'cb1',
+        chatId: '100',
+        data: 'messenger:approve:msg_a',
+        fromUserId: '12345',
+        messageId: 9,
+      },
+      { replaceText: '✅ Approved. Continuing…', toast: '✅ Approved. Continuing…' },
+    );
+
+    expect(editMessageWithCallbackKeyboard).toHaveBeenCalledWith(
+      '100',
+      9,
+      '✅ Approved. Continuing…',
+      [],
+    );
+    expect(answerCallbackQuery).toHaveBeenCalledWith('cb1', '✅ Approved. Continuing…');
+  });
+});

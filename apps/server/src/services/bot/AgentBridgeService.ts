@@ -15,6 +15,7 @@ import { getMessageGatewayClient } from '@/server/services/gateway/MessageGatewa
 import { isQueueAgentRuntimeEnabled } from '@/server/services/queue/impls';
 import { SystemAgentService } from '@/server/services/systemAgent';
 
+import { BOT_CALLBACK_URL, buildBotDeliveryHooks } from './deliveryHooks';
 import { formatPrompt as formatPromptUtil } from './formatPrompt';
 import type { BotReplyLocale, PlatformClient } from './platforms';
 import {
@@ -846,9 +847,12 @@ export class AgentBridgeService {
     }
 
     // Build webhook config for production mode
-    const callbackUrl = '/api/agent/webhooks/bot-callback';
+    const callbackUrl = BOT_CALLBACK_URL;
     const webhookBody = {
       applicationId: botContext?.applicationId,
+      // Who sent the message decides what a paused run shows in the chat: the owner sees the
+      // request and can answer it, anyone else only learns that it waits.
+      isOwner: botContext?.isOwner,
       // Forward the messenger discriminator (set by MessengerRouter for runs
       // originated by the shared Messenger bot). The callback uses this — not
       // the synthetic applicationId shape — to decide which credential source
@@ -888,7 +892,6 @@ export class AgentBridgeService {
         agentId,
         botContext,
         botPlatformContext,
-        callbackUrl,
         channelContext,
         client,
         files,
@@ -934,7 +937,6 @@ export class AgentBridgeService {
       agentId: string;
       botContext?: ChatTopicBotContext;
       botPlatformContext?: { platformName: string; supportsMarkdown: boolean };
-      callbackUrl: string;
       channelContext?: DiscordChannelContext;
       client?: PlatformClient;
       files?: any;
@@ -950,7 +952,6 @@ export class AgentBridgeService {
       agentId,
       botContext,
       botPlatformContext,
-      callbackUrl,
       channelContext,
       client,
       files,
@@ -979,37 +980,14 @@ export class AgentBridgeService {
               }
             : undefined,
           files,
-          hooks: [
-            {
-              handler: async () => {
-                /* local handler not used in queue mode */
-              },
-              id: 'bot-step-progress',
-              type: 'afterStep',
-              webhook: {
-                body: { ...webhookBody, type: 'step' },
-                delivery: 'qstash',
-                url: callbackUrl,
-              },
-            },
-            {
-              handler: async () => {
-                /* local handler not used in queue mode */
-              },
-              id: 'bot-completion',
-              type: 'onComplete',
-              webhook: {
-                body: { ...webhookBody, type: 'completion', userPrompt: prompt },
-                delivery: 'qstash',
-                url: callbackUrl,
-              },
-            },
-          ],
+          hooks: buildBotDeliveryHooks({ userPrompt: prompt, webhookBody }),
           prompt,
           signal,
           title: '',
           trigger,
-          userInterventionConfig: { approvalMode: 'headless' },
+          // A call that needs approval pauses the run; the completion callback shows the
+          // request in the chat, and the answer resumes it, from the chat or the phone.
+          userInterventionConfig: { approvalMode: 'manual' },
         }),
       );
     } catch (error) {
