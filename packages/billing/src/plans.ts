@@ -3,6 +3,11 @@ import { Plans } from '@lobechat/types';
 import type { BillingInterval } from './types';
 
 export interface PlanDefinition {
+  /**
+   * The App Store auto-renewable subscriptions that sell this plan in the phone app. Product ids
+   * are unique within an app, so every edition's app uses the same ones.
+   */
+  appleProductIds?: Record<BillingInterval, string>;
   /** Credits included each month; 1,000,000 credits pay for one US dollar of model usage */
   monthlyCredits: number;
   /**
@@ -22,14 +27,17 @@ export const PLAN_CATALOG: Record<Plans, PlanDefinition> = {
   [Plans.Hobby]: { monthlyCredits: 0 },
   [Plans.Starter]: {
     monthlyCredits: 5_000_000,
+    appleProductIds: { monthly: 'ai.biber.starter.monthly', yearly: 'ai.biber.starter.yearly' },
     stripeLookupKeys: { monthly: 'biber_starter_monthly', yearly: 'biber_starter_yearly' },
   },
   [Plans.Premium]: {
     monthlyCredits: 15_000_000,
+    appleProductIds: { monthly: 'ai.biber.premium.monthly', yearly: 'ai.biber.premium.yearly' },
     stripeLookupKeys: { monthly: 'biber_premium_monthly', yearly: 'biber_premium_yearly' },
   },
   [Plans.Ultimate]: {
     monthlyCredits: 35_000_000,
+    appleProductIds: { monthly: 'ai.biber.ultimate.monthly', yearly: 'ai.biber.ultimate.yearly' },
     stripeLookupKeys: { monthly: 'biber_ultimate_monthly', yearly: 'biber_ultimate_yearly' },
   },
 };
@@ -54,6 +62,23 @@ export const planForStripeLookupKey = (
     const keys = PLAN_CATALOG[plan].stripeLookupKeys;
     if (keys?.monthly === lookupKey) return { interval: 'monthly', plan };
     if (keys?.yearly === lookupKey) return { interval: 'yearly', plan };
+  }
+  return undefined;
+};
+
+export const appleProductIdFor = (plan: Plans, interval: BillingInterval): string | undefined =>
+  PLAN_CATALOG[plan].appleProductIds?.[interval];
+
+/** The plan and interval an App Store product sells. */
+export const planForAppleProductId = (
+  productId: string | null | undefined,
+): { interval: BillingInterval; plan: Plans } | undefined => {
+  if (!productId) return undefined;
+
+  for (const plan of PLAN_ORDER) {
+    const ids = PLAN_CATALOG[plan].appleProductIds;
+    if (ids?.monthly === productId) return { interval: 'monthly', plan };
+    if (ids?.yearly === productId) return { interval: 'yearly', plan };
   }
   return undefined;
 };

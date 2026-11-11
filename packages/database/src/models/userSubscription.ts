@@ -55,6 +55,49 @@ export class UserSubscriptionModel {
     return (await this.findByProvider(provider))!;
   }
 
+  /** A provider customer's row, whoever it belongs to; provider events name the customer. */
+  static async findByCustomer(
+    db: LobeChatDatabase,
+    provider: SubscriptionProvider,
+    providerCustomerId: string,
+  ) {
+    const [row] = await db
+      .select()
+      .from(userSubscriptions)
+      .where(
+        and(
+          eq(userSubscriptions.provider, provider),
+          eq(userSubscriptions.providerCustomerId, providerCustomerId),
+        ),
+      )
+      .limit(1);
+
+    return row;
+  }
+
+  /**
+   * The row holding a provider subscription, whoever it belongs to. App Store events that carry
+   * no account token are matched to their user this way.
+   */
+  static async findByProviderSubscription(
+    db: LobeChatDatabase,
+    provider: SubscriptionProvider,
+    providerSubscriptionId: string,
+  ) {
+    const [row] = await db
+      .select()
+      .from(userSubscriptions)
+      .where(
+        and(
+          eq(userSubscriptions.provider, provider),
+          eq(userSubscriptions.providerSubscriptionId, providerSubscriptionId),
+        ),
+      )
+      .limit(1);
+
+    return row;
+  }
+
   /**
    * Rewrites a customer's row from what the provider reports. Provider events name the customer,
    * not our user, so this is not scoped to one; it returns nothing for a customer we never linked.

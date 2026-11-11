@@ -13,7 +13,8 @@ it. The agent runs on the server and on agent computers, never on the phone.
   or rejected and where, what was blocked, and whether each action succeeded. It shows who a
   call went to, never message content or credentials, which the server does not keep.
 - **Account**: the current plan, when it renews or ends, who bills it, and how much of this
-  month's credits is used. Sign out is here too.
+  month's credits is used. On iPhone it sells the paid plans through the App Store (see below),
+  with restore and subscription management. Sign out is here too.
 - **Push**: the server notifies the phone when something needs the user. Tapping the notification
   opens the approvals list.
 - **Sign-in**: better-auth with the Expo client; the session cookie stays in the device keychain.
@@ -69,3 +70,18 @@ npx eas-cli@latest submit --profile production-global --platform all
 
 The mainland edition (`production-cn`) builds today with the same features. Its own sign-in and
 push providers come after the Global edition.
+
+## Selling plans on the App Store
+
+The iPhone app sells plans as auto-renewable subscriptions with StoreKit 2 (`expo-iap`, which
+needs a development build, not Expo Go). The server checks every purchase and keeps it in sync.
+
+1. In App Store Connect, create one subscription group with the products
+   `ai.biber.{starter,premium,ultimate}.{monthly,yearly}` (ids are per app, so each edition's app
+   uses the same ones).
+2. Set the App Store Server Notifications (version 2) URL, for production and sandbox, to
+   `<server>/api/webhooks/apple`.
+3. Give the server Apple's root certificates in `APPLE_ROOT_CERTIFICATES` (see `.env.example`).
+
+Each purchase carries a token that names the Biber account it was bought for, so a subscription
+stays with that account. Buying is hidden while a plan is billed on the web, and on Android.

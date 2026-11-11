@@ -1,0 +1,54 @@
+import { createPrivateKey, sign } from 'node:crypto';
+
+/**
+ * A throwaway certificate chain shaped like the App Store's, made for these tests with openssl:
+ * a root, an intermediate carrying Apple's WWDR marker extension, and a signing certificate
+ * carrying Apple's App Store marker. Nothing here is Apple's.
+ */
+export const TEST_ROOT =
+  'MIIBwTCCAWegAwIBAgIUPchP1b+HXHD0p9yqfXC48wHoVGIwCgYIKoZIzj0EAwIwLTEVMBMGA1UEAwwMVGVzdCBSb290IENBMRQwEgYDVQQKDAtCaWJlciBUZXN0czAgFw0yNjExMTExNzMxMzlaGA8yMDUxMDcwMzE3MzEzOVowLTEVMBMGA1UEAwwMVGVzdCBSb290IENBMRQwEgYDVQQKDAtCaWJlciBUZXN0czBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABLuwHmbcEukDwLAN/Y8VONwuy+74e3GNvH4js8srcVS3odM6r5HO4gBrlYPQAaPLRjyz4KOaiSiIVY9NwDkRrUKjYzBhMB0GA1UdDgQWBBS2c/EqJOmdbKaaQQOECCUVejs5jjAfBgNVHSMEGDAWgBS2c/EqJOmdbKaaQQOECCUVejs5jjAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBBjAKBggqhkjOPQQDAgNIADBFAiEA/eOIBSZ/B3VTQepEPiCf9s9UcYAPaX9pM+UUTJCrVcECIGehA7E1YS55QgEoh4/NRPJ6AOa0wFH5td8uSwG6e8x4';
+export const TEST_INTERMEDIATE =
+  'MIIByTCCAW6gAwIBAgIBAjAKBggqhkjOPQQDAjAtMRUwEwYDVQQDDAxUZXN0IFJvb3QgQ0ExFDASBgNVBAoMC0JpYmVyIFRlc3RzMCAXDTI2MTExMTE3MzEzOVoYDzIwNTEwNzAzMTczMTM5WjAyMRowGAYDVQQDDBFUZXN0IEludGVybWVkaWF0ZTEUMBIGA1UECgwLQmliZXIgVGVzdHMwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARTr9+H/Rd5+3yr/SRSo5oK/FmyMpF0w+CjdanAny71O33cFm6iOaqw6EAqOyb4b1PDl22uE4tzssGGGDL6g3ALo3gwdjASBgNVHRMBAf8ECDAGAQH/AgEAMA4GA1UdDwEB/wQEAwIBBjAdBgNVHQ4EFgQUINgeq3eoQlUNFAVkOFsR+Cbg8bEwHwYDVR0jBBgwFoAUtnPxKiTpnWymmkEDhAglFXo7OY4wEAYKKoZIhvdjZAYCAQQCBQAwCgYIKoZIzj0EAwIDSQAwRgIhAMh95xnPH3HvXRlp4hmJOaf2v+PUBuJOFWlepcHz1fzzAiEA7nBEAWbXosqsQ0s3OM5X3bukpm3JUq5IwiSKE7m/Em8=';
+export const TEST_SIGNER =
+  'MIIBwTCCAWegAwIBAgIBAzAKBggqhkjOPQQDAjAyMRowGAYDVQQDDBFUZXN0IEludGVybWVkaWF0ZTEUMBIGA1UECgwLQmliZXIgVGVzdHMwIBcNMjYxMTExMTczMTM5WhgPMjA1MTA3MDMxNzMxMzlaMCwxFDASBgNVBAMMC1Rlc3QgU2lnbmVyMRQwEgYDVQQKDAtCaWJlciBUZXN0czBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABLKXu4KPoXjY/UlmmCE3ChW/9uJXnHkr1ylytUB7RtAB6pWI26rS0jLvGIWx0UIxXUsUrz+RsFs0abZk++WU86ujcjBwMAwGA1UdEwEB/wQCMAAwDgYDVR0PAQH/BAQDAgeAMB0GA1UdDgQWBBRdYpqEDzhfrWV5UkD7daWVDGt77jAfBgNVHSMEGDAWgBQg2B6rd6hCVQ0UBWQ4WxH4JuDxsTAQBgoqhkiG92NkBgsBBAIFADAKBggqhkjOPQQDAgNIADBFAiEA1ls1+2FGWY6EqU/4Wopb/4uM4owm4Xy28hmxJUK7HrACIHWRGL0GzpjhJWS+8k8q+YmKIUEOWiMTBPeKvTP7vE9c';
+/** Issued by the same intermediate, without the App Store marker. */
+export const TEST_UNMARKED_SIGNER =
+  'MIIBszCCAVmgAwIBAgIBBDAKBggqhkjOPQQDAjAyMRowGAYDVQQDDBFUZXN0IEludGVybWVkaWF0ZTEUMBIGA1UECgwLQmliZXIgVGVzdHMwIBcNMjYxMTExMTczNTAyWhgPMjA1MTA3MDMxNzM1MDJaMDAxGDAWBgNVBAMMD1VubWFya2VkIFNpZ25lcjEUMBIGA1UECgwLQmliZXIgVGVzdHMwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQZtwI6T4CpNGc0ocSg72ZxmuveC0GVJMcvs5VQuh+6dnpqU8knrMif7Oymin2N6TqVGbcnItxIOfXqNitMsW1jo2AwXjAMBgNVHRMBAf8EAjAAMA4GA1UdDwEB/wQEAwIHgDAdBgNVHQ4EFgQUPDiWiooMM19t1lzlXGDwT+CgMrswHwYDVR0jBBgwFoAUINgeq3eoQlUNFAVkOFsR+Cbg8bEwCgYIKoZIzj0EAwIDSAAwRQIhAKfWBO2vEV9GKuM7FNwPgAoMx/rDKiDI62k5IsbgOekTAiAMcs1Ger1vaPSBIZmJAy1OGOZzQH1GvF0C25VgP4tV9w==';
+/** An unrelated root the chain does not lead to. */
+export const OTHER_ROOT =
+  'MIIBrjCCAVOgAwIBAgIUNxIxN6q3w61VM/Cs3QT5k3va9wswCgYIKoZIzj0EAwIwKzETMBEGA1UEAwwKT3RoZXIgUm9vdDEUMBIGA1UECgwLQmliZXIgVGVzdHMwIBcNMjYxMTExMTczMTM5WhgPMjA1MTA3MDMxNzMxMzlaMCsxEzARBgNVBAMMCk90aGVyIFJvb3QxFDASBgNVBAoMC0JpYmVyIFRlc3RzMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEO9bn+N8KTWRFVJ4IWnTCkM2//34QVtyClazs6og9MUGy595kcMRlKyC78rnVCWeq5U6Pg+d+IsAQY46ovq9ms6NTMFEwHQYDVR0OBBYEFFWXvCw73BdcRF3yPU5v1rQXtadVMB8GA1UdIwQYMBaAFFWXvCw73BdcRF3yPU5v1rQXtadVMA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDSQAwRgIhAMmnjlq4nJXc9aqm4rj0lTXlxV5cIDl46NM/bLGGDkrlAiEA+hOIj4wtkh3cjM/viuZgQwojP9OaZCsaRRQP7CnmzWU=';
+
+const SIGNER_KEY = `
+-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgztu7Qm77SXjPOLV1
+tunHbGAfTZ7hKxKbw/YrSJMNEDahRANCAASyl7uCj6F42P1JZpghNwoVv/biV5x5
+K9cpcrVAe0bQAeqViNuq0tIy7xiFsdFCMV1LFK8/kbBbNGm2ZPvllPOr
+-----END PRIVATE KEY-----
+`;
+const UNMARKED_SIGNER_KEY = `
+-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgSfIFA4GW6VVbKACQ
+8IrXmdnTHDhUgryG2zg0TOyhq0ChRANCAAQZtwI6T4CpNGc0ocSg72ZxmuveC0GV
+JMcvs5VQuh+6dnpqU8knrMif7Oymin2N6TqVGbcnItxIOfXqNitMsW1j
+-----END PRIVATE KEY-----
+`;
+
+export const testRoots = [Buffer.from(TEST_ROOT, 'base64')];
+
+const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+
+/** Signs a payload the way the App Store does: ES256 with the chain in the `x5c` header. */
+export const signLikeApple = (
+  payload: unknown,
+  { alg = 'ES256', unmarked = false }: { alg?: string; unmarked?: boolean } = {},
+) => {
+  const signer = unmarked ? TEST_UNMARKED_SIGNER : TEST_SIGNER;
+  const header = encode({ alg, x5c: [signer, TEST_INTERMEDIATE, TEST_ROOT] });
+  const body = encode(payload);
+  const key = createPrivateKey(unmarked ? UNMARKED_SIGNER_KEY : SIGNER_KEY);
+  const signature = sign('sha256', Buffer.from(`${header}.${body}`), {
+    dsaEncoding: 'ieee-p1363',
+    key,
+  });
+  return `${header}.${body}.${signature.toString('base64url')}`;
+};

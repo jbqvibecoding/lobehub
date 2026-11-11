@@ -1,4 +1,5 @@
 import {
+  appleProductIdFor,
   type BillingInterval,
   creditPeriodAt,
   effectivePlan,
@@ -20,6 +21,13 @@ import type { UserSubscriptionItem } from '@/database/schemas';
 import type { LobeChatDatabase } from '@/database/type';
 import { appEnv } from '@/envs/app';
 
+import {
+  appleAccountToken,
+  AppleJwsError,
+  AppleSyncError,
+  isAppleOffered,
+  syncApplePurchases,
+} from './apple';
 import { getStripe, isStripeConfigured, isStripeOffered } from './stripe';
 import { syncStripeCustomer } from './stripeSync';
 
@@ -121,6 +129,10 @@ export class BillingService {
         used: credits.usedCredits,
       },
       plan: effectivePlan(rows),
+      apple: {
+        /** Whether a plan can be bought through the App Store on this deployment */
+        available: isAppleOffered(),
+      },
       stripe: {
         /** Whether a plan can be bought with Stripe on this deployment */
         available: isStripeOffered(),
@@ -208,6 +220,52 @@ export class BillingService {
     return session.url;
   }
 
+  /** The paid plans the phone app sells, by App Store product id. */
+  appleProducts() {
+    const products = Object.entries(PLAN_CATALOG).flatMap(([plan, definition]) =>
+      (['monthly', 'yearly'] as const).flatMap((interval) => {
+        const productId = appleProductIdFor(plan as Plans, interval);
+        return productId
+          ? [
+              {
+                interval,
+                monthlyCredits: definition.monthlyCredits,
+                plan: plan as Plans,
+                productId,
+              },
+            ]
+          : [];
+      }),
+    );
+    return { available: isAppleOffered(), products };
+  }
+
+  /** The token the phone attaches to App Store purchases so they come back to this user. */
+  async appleAccountToken() {
+    this.requireApple();
+    return appleAccountToken(this.db, this.userId);
+  }
+
+  /** Records the App Store purchases the phone reports (after buying or restoring). */
+  async syncApplePurchases(signedTransactions: string[]) {
+    this.requireApple();
+    try {
+      await syncApplePurchases(this.db, this.userId, signedTransactions);
+    } catch (error) {
+      if (error instanceof AppleSyncError) {
+        throw new BillingError(
+          error.code === 'CONFLICT' ? 'ALREADY_SUBSCRIBED' : 'NOT_FOR_SALE',
+          error.message,
+        );
+      }
+      if (error instanceof AppleJwsError) {
+        throw new BillingError('NOT_FOR_SALE', `Not a valid App Store purchase: ${error.message}`);
+      }
+      throw error;
+    }
+    return this.getStatus();
+  }
+
   /**
    * Re-reads the user's subscription from Stripe now. The page a user returns to from Checkout
    * calls this, so the new plan shows without waiting for the webhook.
@@ -242,6 +300,12 @@ export class BillingService {
   private async signedUpAt() {
     const user = await UserModel.findById(this.db, this.userId);
     return user?.createdAt ?? new Date(0);
+  }
+
+  private requireApple() {
+    if (!isAppleOffered()) {
+      throw new BillingError('UNAVAILABLE', 'The App Store is not available on this deployment');
+    }
   }
 
   private requireStripe() {

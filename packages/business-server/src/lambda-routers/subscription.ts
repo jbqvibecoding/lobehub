@@ -25,7 +25,7 @@ const TRPC_CODE: Record<BillingErrorCode, TRPCError['code']> = {
   UNAVAILABLE: 'PRECONDITION_FAILED',
 };
 
-const answering = async <T>(work: () => Promise<T>): Promise<T> => {
+export const answering = async <T>(work: () => Promise<T>): Promise<T> => {
   try {
     return await work();
   } catch (error) {

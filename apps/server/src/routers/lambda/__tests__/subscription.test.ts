@@ -16,10 +16,13 @@ const { billing, MockBillingError } = vi.hoisted(() => {
   }
   return {
     billing: {
+      appleAccountToken: vi.fn(),
+      appleProducts: vi.fn(),
       createCheckoutUrl: vi.fn(),
       createPortalUrl: vi.fn(),
       getStatus: vi.fn(),
       refresh: vi.fn(),
+      syncApplePurchases: vi.fn(),
     },
     MockBillingError,
   };
@@ -71,12 +74,24 @@ describe('subscription router', () => {
     await expect(caller().createPortal()).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
   });
 
-  it('lets the phone read the plan but not buy one', async () => {
+  // Selling a digital plan inside the iPhone app has to go through the App Store.
+  it('lets the phone buy through the App Store only, never through Stripe', async () => {
     billing.getStatus.mockResolvedValue({ plan: Plans.Starter });
     const phone = mobileSubscriptionRouter.createCaller({ jwtPayload: {}, userId: 'u' } as any);
 
     await expect(phone.status()).resolves.toEqual({ plan: Plans.Starter });
-    expect(Object.keys(mobileSubscriptionRouter._def.procedures)).toEqual(['status']);
+    const procedures = Object.keys(mobileSubscriptionRouter._def.procedures);
+    expect(procedures).not.toContain('createCheckout');
+    expect(procedures).not.toContain('createPortal');
+  });
+
+  it('tells the phone when an App Store subscription belongs to another account', async () => {
+    billing.syncApplePurchases.mockRejectedValue(new MockBillingError('ALREADY_SUBSCRIBED', 'x'));
+    const phone = mobileSubscriptionRouter.createCaller({ jwtPayload: {}, userId: 'u' } as any);
+
+    await expect(phone.syncApplePurchases({ signedTransactions: ['jws'] })).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
   });
 
   it('refuses callers who are not signed in', async () => {

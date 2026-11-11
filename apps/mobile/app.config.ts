@@ -47,6 +47,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'expo-local-authentication',
       { faceIDPermission: 'Biber asks for Face ID before it approves an action for you.' },
     ],
+    // App Store subscriptions (StoreKit 2)
+    'expo-iap',
   ],
   scheme: identity.scheme,
   slug: 'biber',
