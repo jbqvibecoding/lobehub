@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   betterAuth: vi.fn((options) => options),
+  isPhoneSignInEnabled: vi.fn(() => false),
   EnvHttpProxyAgent: vi.fn((options) => ({ options })),
   setGlobalDispatcher: vi.fn(),
 }));
@@ -45,6 +46,13 @@ vi.mock('better-auth/plugins', () => ({
   emailOTP: vi.fn(() => ({ id: 'email-otp' })),
   genericOAuth: vi.fn(() => ({ id: 'generic-oauth' })),
   magicLink: vi.fn(() => ({ id: 'magic-link' })),
+  phoneNumber: vi.fn((options) => ({ id: 'phone-number', options })),
+}));
+
+vi.mock('@/server/services/sms', () => ({
+  isMainlandMobileNumber: vi.fn(),
+  isPhoneSignInEnabled: mocks.isPhoneSignInEnabled,
+  sendVerificationCode: vi.fn(),
 }));
 
 vi.mock('undici', () => ({
@@ -135,6 +143,26 @@ describe('defineConfig', () => {
         }),
       }),
     );
+  });
+
+  it('offers phone sign-in only where it is enabled, storing the number in users.phone', async () => {
+    const { defineConfig } = await import('./define-config');
+    const pluginIds = () =>
+      (mocks.betterAuth.mock.calls.at(-1)![0].plugins as { id: string }[]).map((p) => p.id);
+
+    defineConfig({ plugins: [] });
+    expect(pluginIds()).not.toContain('phone-number');
+
+    mocks.isPhoneSignInEnabled.mockReturnValue(true);
+    defineConfig({ plugins: [] });
+    const phone = (mocks.betterAuth.mock.calls.at(-1)![0].plugins as any[]).find(
+      (plugin) => plugin.id === 'phone-number',
+    );
+    expect(phone.options.schema).toEqual({ user: { fields: { phoneNumber: 'phone' } } });
+    expect(phone.options.signUpOnVerification.getTempEmail('+8613800138000')).toBe(
+      'phone-8613800138000@phone.biber.invalid',
+    );
+    mocks.isPhoneSignInEnabled.mockReturnValue(false);
   });
 
   it('should respect NO_PROXY when configuring the development proxy dispatcher', async () => {

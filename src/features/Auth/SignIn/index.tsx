@@ -1,8 +1,15 @@
 'use client';
 
+import { Text } from '@lobehub/ui/base-ui';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { serverConfigSelectors, useServerConfigStore } from '@/store/serverConfig';
+
 import { SignInEmailSentStep } from './SignInEmailSentStep';
 import { SignInEmailStep } from './SignInEmailStep';
 import { SignInPasswordStep } from './SignInPasswordStep';
+import { SignInPhoneStep } from './SignInPhoneStep';
 import { useSignIn } from './useSignIn';
 
 const SignIn = () => {
@@ -28,6 +35,11 @@ const SignIn = () => {
     socialLoading,
     step,
   } = useSignIn();
+  const { t } = useTranslation('auth');
+  const enablePhoneSignIn = useServerConfigStore(serverConfigSelectors.enablePhoneSignIn);
+  const [withPhone, setWithPhone] = useState(false);
+
+  if (withPhone) return <SignInPhoneStep onBack={() => setWithPhone(false)} />;
 
   if (step === 'emailSent' && sentInfo)
     return (
@@ -53,7 +65,7 @@ const SignIn = () => {
       />
     );
 
-  return (
+  const emailStep = (
     <SignInEmailStep
       disableEmailPassword={disableEmailPassword}
       form={form as any}
@@ -69,6 +81,30 @@ const SignIn = () => {
       onSetPassword={handleForgotPassword}
       onSocialSignIn={handleSocialSignIn}
     />
+  );
+  if (!enablePhoneSignIn) return emailStep;
+
+  // Mainland edition: phone numbers sign in too
+  return (
+    <>
+      {emailStep}
+      <Text align={'center'} fontSize={13} style={{ marginTop: 12 }}>
+        <a
+          role="button"
+          style={{ cursor: 'pointer', textDecoration: 'underline' }}
+          tabIndex={0}
+          onClick={() => setWithPhone(true)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setWithPhone(true);
+            }
+          }}
+        >
+          {t('betterAuth.signin.phone.link')}
+        </a>
+      </Text>
+    </>
   );
 };
 

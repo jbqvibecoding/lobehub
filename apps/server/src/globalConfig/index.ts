@@ -13,6 +13,7 @@ import { toolsEnv } from '@/envs/tools';
 import { parseSSOProviders } from '@/libs/better-auth/utils/server';
 import { parseSystemAgent } from '@/server/globalConfig/parseSystemAgent';
 import { isStripeOffered } from '@/server/services/billing/stripe';
+import { isPhoneSignInEnabled } from '@/server/services/sms';
 import { type GlobalServerConfig } from '@/types/serverConfig';
 import { cleanObject } from '@/utils/object';
 
@@ -104,6 +105,7 @@ export const getServerGlobalConfig = async () => {
     },
     disableEmailPassword: authEnv.AUTH_DISABLE_EMAIL_PASSWORD,
     enableBilling: isStripeOffered(),
+    enablePhoneSignIn: isPhoneSignInEnabled(),
     enableBusinessFeatures: ENABLE_BUSINESS_FEATURES,
     enableEmailVerification: authEnv.AUTH_EMAIL_VERIFICATION,
     enableComposio: !!composioEnv.COMPOSIO_API_KEY,

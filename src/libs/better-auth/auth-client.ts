@@ -3,6 +3,7 @@ import {
   genericOAuthClient,
   inferAdditionalFields,
   magicLinkClient,
+  phoneNumberClient,
 } from 'better-auth/client/plugins';
 import { createAuthClient } from 'better-auth/react';
 
@@ -12,6 +13,7 @@ export const {
   changeEmail,
   linkSocial,
   oauth2,
+  phoneNumber,
   accountInfo,
   listAccounts,
   requestPasswordReset,
@@ -29,5 +31,7 @@ export const {
     genericOAuthClient(),
     // Always include magicLinkClient - server will reject if not enabled
     magicLinkClient(),
+    // Phone sign-in exists in the mainland edition only; elsewhere the server rejects it
+    phoneNumberClient(),
   ],
 });

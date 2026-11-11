@@ -18,6 +18,7 @@ it. The agent runs on the server and on agent computers, never on the phone.
 - **Push**: the server notifies the phone when something needs the user. Tapping the notification
   opens the approvals list.
 - **Sign-in**: better-auth with the Expo client; the session cookie stays in the device keychain.
+  The mainland edition signs in with a code texted to a mainland China mobile number.
 
 ## Regions
 

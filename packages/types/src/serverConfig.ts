@@ -80,6 +80,8 @@ export interface GlobalServerConfig {
   enableLobehubSkill?: boolean;
   enableMagicLink?: boolean;
   enableMarketTrustedClient?: boolean;
+  /** Whether people can sign in with a code texted to their phone (mainland edition) */
+  enablePhoneSignIn?: boolean;
   enableUploadFileToServer?: boolean;
   enableVisualUnderstanding?: boolean;
   image?: PartialDeep<UserImageConfig>;

@@ -7,7 +7,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { verifyPassword as defaultVerifyPassword } from 'better-auth/crypto';
 import { type BetterAuthOptions } from 'better-auth/minimal';
 import { betterAuth } from 'better-auth/minimal';
-import { admin, emailOTP, genericOAuth, magicLink } from 'better-auth/plugins';
+import { admin, emailOTP, genericOAuth, magicLink, phoneNumber } from 'better-auth/plugins';
 import { type BetterAuthPlugin } from 'better-auth/types';
 import { EnvHttpProxyAgent, setGlobalDispatcher } from 'undici';
 
@@ -25,6 +25,11 @@ import { initBetterAuthSSOProviders } from '@/libs/better-auth/sso';
 import { createSecondaryStorage, getTrustedOrigins } from '@/libs/better-auth/utils/config';
 import { parseSSOProviders } from '@/libs/better-auth/utils/server';
 import { EmailService } from '@/server/services/email';
+import {
+  isMainlandMobileNumber,
+  isPhoneSignInEnabled,
+  sendVerificationCode,
+} from '@/server/services/sms';
 import { UserService } from '@/server/services/user';
 
 const LOCAL_NO_PROXY_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
@@ -96,6 +101,8 @@ const getPasskeyOrigins = (): string[] | undefined => {
 const MAGIC_LINK_EXPIRES_IN = 900;
 // OTP expiration time (in seconds) - 5 minutes for mobile OTP verification
 const OTP_EXPIRES_IN = 300;
+// Phone sign-in codes expire after 5 minutes
+const PHONE_CODE_EXPIRES_IN = 300;
 const enableMagicLink = authEnv.AUTH_ENABLE_MAGIC_LINK;
 const enabledSSOProviders = parseSSOProviders(authEnv.AUTH_SSO_PROVIDERS);
 
@@ -269,6 +276,7 @@ export function defineConfig(customOptions: CustomBetterAuthOptions) {
     },
     rateLimit: {
       customRules: {
+        '/phone-number/send-otp': { max: 3, window: 60 },
         '/request-password-reset': { max: 3, window: 60 },
         '/send-verification-email': { max: 3, window: 60 },
       },
@@ -316,6 +324,24 @@ export function defineConfig(customOptions: CustomBetterAuthOptions) {
         ? [
             genericOAuth({
               config: genericOAuthProviders,
+            }),
+          ]
+        : []),
+      ...(isPhoneSignInEnabled()
+        ? [
+            // Mainland edition: sign in, or sign up, with a code texted to a mainland mobile
+            phoneNumber({
+              allowedAttempts: 3,
+              expiresIn: PHONE_CODE_EXPIRES_IN,
+              otpLength: 6,
+              phoneNumberValidator: isMainlandMobileNumber,
+              schema: { user: { fields: { phoneNumber: 'phone' } } },
+              sendOTP: ({ code, phoneNumber }) => sendVerificationCode(phoneNumber, code),
+              signUpOnVerification: {
+                // Accounts need an email; a phone-only account gets one nobody can receive
+                getTempEmail: (phone) => `phone-${phone.replaceAll(/\D/g, '')}@phone.biber.invalid`,
+                getTempName: (phone) => `${phone.slice(-4)}`,
+              },
             }),
           ]
         : []),

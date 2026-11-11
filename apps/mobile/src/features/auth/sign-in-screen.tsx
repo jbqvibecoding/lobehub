@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { isMainlandEdition } from '@/config/app-config';
+import { PhoneSignIn } from '@/features/auth/phone-sign-in';
 import { t } from '@/i18n/strings';
 import { authClient } from '@/lib/auth-client';
 import { type Palette, useColors } from '@/theme/colors';
@@ -53,6 +54,13 @@ export const SignInScreen = () => {
       >
         <Text style={styles.brand}>Biber</Text>
         {isMainlandEdition ? <Text style={styles.edition}>{t('mainlandEdition')}</Text> : null}
+
+        {isMainlandEdition ? (
+          <>
+            <PhoneSignIn auth={authClient.phoneNumber} />
+            <Text style={styles.edition}>{t('orUseEmail')}</Text>
+          </>
+        ) : null}
 
         <TextInput
           autoCapitalize="none"
