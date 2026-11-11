@@ -7,6 +7,7 @@ import * as electronIs from 'electron-is';
 
 import { getIpcContext } from '@/utils/ipc';
 import { createLogger } from '@/utils/logger';
+import { DESKTOP_PRODUCT_NAME } from '~common/identity';
 
 import { ControllerModule, IpcMethod } from './index';
 
@@ -56,7 +57,7 @@ export default class NotificationCtr extends ControllerModule {
     }
 
     const notification = new Notification({
-      body: 'LobeHub can now send you notifications.',
+      body: `${DESKTOP_PRODUCT_NAME} can now send you notifications.`,
       title: 'Notification Permission',
     });
 

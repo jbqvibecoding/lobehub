@@ -30,6 +30,7 @@ import GatewayConnectionService from '@/services/gatewayConnectionSrv';
 import ImessageBridgeService from '@/services/imessageBridgeSrv';
 import { createLogger } from '@/utils/logger';
 import { setDesktopUserAgentHeader } from '@/utils/user-agent';
+import { DESKTOP_PRODUCT_NAME } from '~common/identity';
 
 import BrowserControlCtr from './BrowserControlCtr';
 import HeterogeneousAgentCtr from './HeterogeneousAgentCtr';
@@ -53,7 +54,7 @@ const BrowserIdentifier = 'lobe-browser';
  */
 function buildNotifyProtocol(lhPath: string, topicId: string): string {
   return (
-    `## Context: This task was dispatched by LobeHub\n\n` +
+    `## Context: This task was dispatched by ${DESKTOP_PRODUCT_NAME}\n\n` +
     `This conversation / task was sent to you by the **LobeHub platform** on behalf of a user. You are running as a background agent; the user is waiting for your response inside the LobeHub chat interface.\n\n` +
     `**When to call notify**: any time you have something meaningful to tell the user — a key finding, a decision you made, a result, a question, or your final answer.\n\n` +
     `**What to hide**: internal work details such as tool call sequences, file reads, intermediate command output, retries, or low-level reasoning steps.\n\n` +

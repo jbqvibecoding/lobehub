@@ -27,7 +27,7 @@ describe('Protocol', () => {
         marketId: 'higress',
       });
 
-      expect(url).toMatch(/^lobehub:\/\/plugin\/install\?/);
+      expect(url).toMatch(/^biber-desktop:\/\/plugin\/install\?/);
       expect(url).toContain('id=edgeone-mcp');
       expect(url).toContain('marketId=higress');
 
@@ -62,7 +62,7 @@ describe('Protocol', () => {
         marketId: 'smithery',
       });
 
-      expect(url).toMatch(/^lobehub:\/\/plugin\/install\?/);
+      expect(url).toMatch(/^biber-desktop:\/\/plugin\/install\?/);
       expect(url).toContain('id=awesome-api');
       expect(url).toContain('marketId=smithery');
     });
@@ -125,7 +125,7 @@ describe('Protocol', () => {
     });
 
     it('should parse URLs with any action', () => {
-      const result = parseProtocolUrl('lobehub://plugin/configure?id=test');
+      const result = parseProtocolUrl('biber-desktop://plugin/configure?id=test');
       expect(result).toBeTruthy();
       expect(result?.urlType).toBe('plugin');
       expect(result?.action).toBe('configure');
@@ -133,7 +133,7 @@ describe('Protocol', () => {
     });
 
     it('should parse URLs with any query parameters', () => {
-      const result = parseProtocolUrl('lobehub://plugin/install?custom=value&another=param');
+      const result = parseProtocolUrl('biber-desktop://plugin/install?custom=value&another=param');
       expect(result).toBeTruthy();
       expect(result?.urlType).toBe('plugin');
       expect(result?.action).toBe('install');
@@ -142,7 +142,7 @@ describe('Protocol', () => {
     });
 
     it('should handle URLs without query parameters', () => {
-      const result = parseProtocolUrl('lobehub://plugin/install');
+      const result = parseProtocolUrl('biber-desktop://plugin/install');
       expect(result).toBeTruthy();
       expect(result?.urlType).toBe('plugin');
       expect(result?.action).toBe('install');
@@ -150,7 +150,7 @@ describe('Protocol', () => {
     });
 
     it('should return null for URLs without action', () => {
-      const result = parseProtocolUrl('lobehub://plugin/');
+      const result = parseProtocolUrl('biber-desktop://plugin/');
       expect(result).toBeNull();
     });
   });
@@ -182,12 +182,19 @@ describe('Protocol', () => {
       expect(parsedSchema).toEqual(schema);
     });
 
+    // LobeHub's own desktop app owns these; Biber must not answer its links.
+    it("ignores LobeHub's desktop links", () => {
+      expect(parseProtocolUrl('lobehub://plugin/install?test=value')).toBeNull();
+      expect(parseProtocolUrl('lobehub-nightly://plugin/install?test=value')).toBeNull();
+    });
+
     it('should handle different protocol schemes', () => {
       const testCases = [
-        'lobehub://plugin/install?test=value',
-        'lobehub-dev://plugin/install?test=value',
-        'lobehub-beta://plugin/install?test=value',
-        'lobehub-nightly://plugin/install?test=value',
+        'biber-desktop://plugin/install?test=value',
+        'biber-desktop-dev://plugin/install?test=value',
+        'biber-desktop-beta://plugin/install?test=value',
+        'biber-desktop-nightly://plugin/install?test=value',
+        'biber-desktop-cn://plugin/install?test=value',
       ];
 
       testCases.forEach((url) => {

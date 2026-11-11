@@ -727,7 +727,7 @@ export default {
   'protocolInstall.official.loadingTitle': 'Loading',
   'protocolInstall.official.title': 'Install official Skill',
   'protocolInstall.stdio.commandExecution.description':
-    'STDIO MCPs connect through a local command. During installation, LobeHub will start the command shown below to test the connection. Continue only if you trust this source.',
+    'STDIO MCPs connect through a local command. During installation, Biber will start the command shown below to test the connection. Continue only if you trust this source.',
   'protocolInstall.stdio.commandExecution.title': 'This STDIO MCP will run a local command',
   'protocolInstall.title': 'Install MCP',
   'protocolInstall.warning': 'Verify the Skill source. Disable or remove anytime in settings.',
@@ -785,7 +785,7 @@ export default {
   'skillDetail.tabs.tools': 'Capabilities',
   'skillDetail.tools': 'Tools',
   'skillDetail.trustWarning':
-    "Only use connectors from developers you trust. LobeHub does not control which tools developers make available and cannot verify that they will work as intended or that they won't change.",
+    "Only use connectors from developers you trust. Biber does not control which tools developers make available and cannot verify that they will work as intended or that they won't change.",
   'store.actions.cancel': 'Cancel',
   'store.actions.configure': 'Configure',
   'store.actions.confirmUninstall': 'Uninstalling will clear Skill config. Continue?',

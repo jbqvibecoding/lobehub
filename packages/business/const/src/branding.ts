@@ -4,15 +4,16 @@
 
 export const LOBE_CHAT_CLOUD = 'LobeHub Cloud';
 
-export const BRANDING_NAME = 'LobeHub';
-export const BRANDING_LOGO_URL = '';
+export const BRANDING_NAME = 'Biber';
+/** Generated with the rest of the icons by `scripts/brand/generate-icons.mjs`. */
+export const BRANDING_LOGO_URL = '/icons/icon-512x512.png';
 
-export const ORG_NAME = 'LobeHub';
+export const ORG_NAME = 'Biber';
 
 export const BRANDING_URL = {
   help: undefined,
   privacy: undefined,
-  subscription: 'https://app.lobehub.com/settings/plans',
+  subscription: '/settings/plans',
   support: undefined,
   terms: undefined,
 };
@@ -30,8 +31,8 @@ export const FILE_URL = {
 };
 
 export const BRANDING_EMAIL = {
-  business: 'hello@lobehub.com',
-  support: 'support@lobehub.com',
+  business: 'hello@biber.ai',
+  support: 'support@biber.ai',
 };
 
 export const BRANDING_PROVIDER = 'lobehub';

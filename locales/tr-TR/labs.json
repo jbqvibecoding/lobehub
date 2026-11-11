@@ -13,7 +13,7 @@
   "features.foldFinishedTurn.title": "Tamamlanmış Dönüşleri Daralt",
   "features.groupChat.desc": "Çoklu temsilci grup sohbeti koordinasyonunu etkinleştirin.",
   "features.groupChat.title": "Grup Sohbeti (Çoklu Temsilci)",
-  "features.imessage.desc": "Ajanları, yerel LobeHub Masaüstü BlueBubbles köprüsü aracılığıyla iMessage'a bağlayın.",
+  "features.imessage.desc": "Ajanları, yerel Biber Masaüstü BlueBubbles köprüsü aracılığıyla iMessage'a bağlayın.",
   "features.imessage.title": "iMessage Kanalı",
   "features.inAppBrowser.desc": "Konuşma yan panelinde Tarayıcı sekmesini göster: arama sonuçlarını yerinde açan ve temsilcilerin görünür bir şekilde gezinmesine olanak tanıyan gömülü bir tarayıcı.",
   "features.inAppBrowser.title": "Uygulama İçi Tarayıcı",

@@ -13,7 +13,7 @@
   "features.foldFinishedTurn.title": "Colapsar Turnos Finalizados",
   "features.groupChat.desc": "Ative a coordenação de bate-papo em grupo com múltiplos agentes.",
   "features.groupChat.title": "Bate-Papo em Grupo (Multiagente)",
-  "features.imessage.desc": "Conectar agentes ao iMessage através da ponte local LobeHub Desktop BlueBubbles.",
+  "features.imessage.desc": "Conectar agentes ao iMessage através da ponte local Biber Desktop BlueBubbles.",
   "features.imessage.title": "Canal iMessage",
   "features.inAppBrowser.desc": "Exibir a aba do navegador no painel lateral da conversa: um navegador embutido que abre os resultados de pesquisa no lugar e permite que os agentes naveguem visivelmente.",
   "features.inAppBrowser.title": "Navegador In-App",

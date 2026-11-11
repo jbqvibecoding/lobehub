@@ -1,7 +1,8 @@
-import { OFFICIAL_URL } from '@lobechat/const/url';
 import { createEnv } from '@t3-oss/env-core';
 import { memoize } from 'es-toolkit';
 import { z } from 'zod';
+
+import { desktopCloudServer, desktopRegion } from '~common/identity';
 
 const normalizeEnvString = (input: unknown) => {
   if (typeof input !== 'string') return undefined;
@@ -100,8 +101,11 @@ export const getDesktopEnv = memoize(() =>
       // - unset NODE_ENV should behave like "not production" in logger runtime paths
       NODE_ENV: z.enum(['development', 'production', 'test']).optional(),
 
-      // cloud server url (can be overridden for selfhost/dev)
-      OFFICIAL_CLOUD_SERVER: z.string().optional().default(OFFICIAL_URL),
+      // cloud server url (can be overridden for selfhost/dev); defaults to this edition's service
+      OFFICIAL_CLOUD_SERVER: z
+        .string()
+        .optional()
+        .default(desktopCloudServer(desktopRegion(process.env.APP_REGION))),
 
       // updater
       // process.env.xxx will replace in build stage

@@ -6,11 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import dotenv from 'dotenv';
 
-import {
-  regionalIdentifier,
-  requireAppRegion,
-  resolveAppRegion,
-} from '../../packages/region/src/region.ts';
+import { requireAppRegion, resolveAppRegion } from '../../packages/region/src/region.ts';
 import {
   copyExternalRuntimeModulesToSource,
   getExternalRuntimeModulesFilesConfig,
@@ -21,6 +17,11 @@ import {
   getAsarUnpackPatterns,
   getNativeModulesFilesConfig,
 } from './native-deps.config.mjs';
+import {
+  DESKTOP_PRODUCT_NAME,
+  desktopAppId,
+  desktopProtocolScheme,
+} from './src/common/identity.ts';
 
 dotenv.config();
 
@@ -94,14 +95,11 @@ if (!hasAppleCertificate) {
   console.info('⚠️ Apple certificate link not found, macOS artifacts will be unsigned.');
 }
 
-// 根据版本类型确定协议 scheme
-const getProtocolScheme = () => {
-  if (isCanary) return 'lobehub-canary';
-  if (isNightly) return 'lobehub-nightly';
-  return 'lobehub';
-};
-
-const protocolScheme = getProtocolScheme();
+// The scheme the app listens on (src/common/identity.ts), per edition and pre-release channel
+const protocolScheme = desktopProtocolScheme(
+  region,
+  isCanary ? 'canary' : isNightly ? 'nightly' : undefined,
+);
 
 // Determine icon file based on version type
 const getIconFileName = () => {
@@ -226,7 +224,7 @@ const config = {
       console.info(`⏭️  Skipping Assets.car (not found or copy failed)`);
     }
   },
-  appId: regionalIdentifier('com.lobehub.lobehub-desktop', region),
+  appId: desktopAppId(region),
   appImage: {
     artifactName: '${productName}-${version}.${ext}',
   },
@@ -286,7 +284,7 @@ const config = {
       CFBundleIconName: 'AppIcon',
       CFBundleURLTypes: [
         {
-          CFBundleURLName: 'LobeHub Protocol',
+          CFBundleURLName: `${DESKTOP_PRODUCT_NAME} Protocol`,
           CFBundleURLSchemes: [protocolScheme],
         },
       ],
@@ -324,7 +322,7 @@ const config = {
   },
   protocols: [
     {
-      name: 'LobeHub Protocol',
+      name: `${DESKTOP_PRODUCT_NAME} Protocol`,
       schemes: [protocolScheme],
     },
   ],
@@ -343,7 +341,7 @@ const config = {
   ],
 
   win: {
-    executableName: 'LobeHub',
+    executableName: DESKTOP_PRODUCT_NAME,
   },
 };
 

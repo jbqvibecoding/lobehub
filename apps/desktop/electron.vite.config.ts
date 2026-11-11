@@ -16,6 +16,7 @@ import {
 } from '../../plugins/vite/sharedRendererConfig';
 import { externalRuntimeModules } from './external-runtime-deps.config.mjs';
 import { getNativeExternalDependencies } from './native-deps.config.mjs';
+import { desktopRegion } from './src/common/identity';
 
 // Renderer dev-server port. Overridable per instance (e.g. one git worktree per
 // concurrent dev instance) via LOBE_DESKTOP_VITE_PORT; `electron-vite dev` injects
@@ -287,6 +288,8 @@ export default defineConfig({
       sourcemap: isDev ? 'inline' : false,
     },
     define: {
+      // The edition is fixed per build: it picks the app's URL scheme and default cloud server.
+      'process.env.APP_REGION': JSON.stringify(desktopRegion(process.env.APP_REGION)),
       'process.env.DESKTOP_EXTERNAL_NAVIGATION_HOSTS': JSON.stringify(externalNavigationHosts),
       'process.env.UPDATE_CHANNEL': JSON.stringify(process.env.UPDATE_CHANNEL),
       'process.env.UPDATE_SERVER_URL': JSON.stringify(process.env.UPDATE_SERVER_URL),

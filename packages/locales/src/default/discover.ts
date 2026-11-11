@@ -348,7 +348,7 @@ export default {
     '- Navigate to **Settings**, then select Cursor settings\n- Choose **MCP** on the left\n- Click **Add New Global MCP Server** at the top right\n- Copy and paste the server configuration into the existing file, then save',
 
   'mcp.details.deployment.platform.steps.lobeChat':
-    '- Open the **LobeHub Desktop** app\n- Go to **Settings** - **Default Agent**\n- Then select **Skill Settings** - **Custom Skills**\n- Click **Quick Import JSON Configuration**\n- Copy and paste the server configuration into the text box, then install',
+    '- Open the **Biber Desktop** app\n- Go to **Settings** - **Default Agent**\n- Then select **Skill Settings** - **Custom Skills**\n- Click **Quick Import JSON Configuration**\n- Copy and paste the server configuration into the text box, then install',
 
   'mcp.details.deployment.platform.steps.openai':
     '- Open your **OpenAI app** or development environment\n- Configure MCP tools in the **Responses API**\n- Add MCP blocks to the **tools** array in API requests\n- Set **server_url** to your MCP server endpoint\n- Include required authentication headers (API key, token, etc.)\n- Use the `allowed_tools` parameter to restrict exposed tools\n- Set `require_approval` to control tool execution approval',
@@ -737,7 +737,7 @@ export default {
 
   'models.parameterList.type': 'Type',
 
-  'models.providerInfo.apiTooltip': 'LobeHub supports using a custom API key for this provider.',
+  'models.providerInfo.apiTooltip': 'Biber supports using a custom API key for this provider.',
 
   'models.providerInfo.input': 'Input Price',
 

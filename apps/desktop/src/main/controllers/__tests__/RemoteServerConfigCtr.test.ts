@@ -503,7 +503,7 @@ describe('RemoteServerConfigCtr', () => {
         expect.objectContaining({
           body: expect.stringContaining('grant_type=refresh_token'),
           headers: expect.objectContaining({
-            'User-Agent': 'LobeHub Desktop/1.2.3',
+            'User-Agent': 'Biber Desktop/1.2.3',
           }),
           method: 'POST',
         }),

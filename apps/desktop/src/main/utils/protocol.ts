@@ -1,26 +1,26 @@
 import { app } from 'electron';
 
+import { desktopProtocolScheme, desktopRegion, isDesktopProtocol } from '~common/identity';
+
 import type { McpSchema, ProtocolUrlParsed } from '../types/protocol';
 
 export type AppChannel = 'stable' | 'beta' | 'nightly';
 
-export const getProtocolScheme = (): string => {
-  // In Electron environment, version can be determined in multiple ways
+/** The release channel, from the app's name or install path (`Biber-Nightly`, ...). */
+const detectChannel = (): string | undefined => {
   const bundleId = app.name;
   const appPath = app.getPath('exe');
 
-  // Determine by bundle identifier
-  if (bundleId?.toLowerCase().includes('nightly')) return 'lobehub-nightly';
-  if (bundleId?.toLowerCase().includes('beta')) return 'lobehub-beta';
-  if (bundleId?.includes('dev')) return 'lobehub-dev';
-
-  // Determine by executable file path
-  if (appPath?.toLowerCase().includes('nightly')) return 'lobehub-nightly';
-  if (appPath?.toLowerCase().includes('beta')) return 'lobehub-beta';
-  if (appPath?.includes('dev')) return 'lobehub-dev';
-
-  return 'lobehub';
+  for (const name of [bundleId, appPath]) {
+    if (name?.toLowerCase().includes('nightly')) return 'nightly';
+    if (name?.toLowerCase().includes('beta')) return 'beta';
+    if (name?.includes('dev')) return 'dev';
+  }
+  return undefined;
 };
+
+export const getProtocolScheme = (): string =>
+  desktopProtocolScheme(desktopRegion(process.env.APP_REGION), detectChannel());
 
 export const getVersionInfo = (): { channel: AppChannel; protocolScheme: string } => {
   const protocolScheme = getProtocolScheme();
@@ -81,14 +81,13 @@ function validateMcpSchema(schema: any): schema is McpSchema {
 }
 
 /**
- * Parse lobehub:// protocol URL (supports multi-version protocols)
+ * Parse a desktop deep link (every edition and channel)
  *
  * Supported URL formats:
- * - lobehub://plugin/install?id=figma&schema=xxx&marketId=lobehub
- * - lobehub://plugin/configure?id=xxx&...
- * - lobehub-bet://plugin/install?id=figma&schema=xxx&marketId=lobehub
- * - lobehub-nightly://plugin/install?id=figma&schema=xxx&marketId=lobehub
- * - lobehub-dev://plugin/install?id=figma&schema=xxx&marketId=lobehub
+ * - biber-desktop://plugin/install?id=figma&schema=xxx&marketId=lobehub
+ * - biber-desktop://plugin/configure?id=xxx&...
+ * - biber-desktop-nightly://plugin/install?id=figma&schema=xxx&marketId=lobehub
+ * - biber-desktop-cn://plugin/install?id=figma&schema=xxx&marketId=lobehub
  *
  * @param url Protocol URL
  * @returns Parse result, including basic structure and all query parameters
@@ -97,14 +96,13 @@ export const parseProtocolUrl = (url: string): ProtocolUrlParsed | null => {
   try {
     const parsedUrl = new URL(url);
 
-    // Support multiple protocol schemes
-    const validProtocols = ['lobehub:', 'lobehub-dev:', 'lobehub-nightly:', 'lobehub-beta:'];
-    if (!validProtocols.includes(parsedUrl.protocol)) {
+    // Every edition and channel of the desktop app (`biber-desktop:`, `biber-desktop-nightly:`, ...)
+    if (!isDesktopProtocol(parsedUrl.protocol)) {
       return null;
     }
 
     // For custom protocols, after URL parsing:
-    // lobehub://plugin/install -> hostname: "plugin", pathname: "/install"
+    // biber-desktop://plugin/install -> hostname: "plugin", pathname: "/install"
     const urlType = parsedUrl.hostname; // "plugin"
     const pathParts = parsedUrl.pathname.split('/').filter(Boolean); // ["install"]
 
@@ -147,10 +145,10 @@ export function generateRFCProtocolUrl(params: {
   marketId?: string;
   /** MCP Schema object */
   schema: McpSchema;
-  /** Protocol scheme (default: lobehub) */
+  /** Protocol scheme (default: the Global edition's `biber-desktop`) */
   scheme?: string;
 }): string {
-  const { id, schema, marketId, scheme = 'lobehub' } = params;
+  const { id, schema, marketId, scheme = desktopProtocolScheme('global') } = params;
 
   // Validate schema.identifier matches id
   if (schema.identifier !== id) {
@@ -205,6 +203,6 @@ export function generateRFCProtocolUrl(params: {
  *   },
  *   marketId: 'higress'
  * });
- * // Result: lobehub://plugin/install?id=edgeone-mcp&schema=%7B%22identifier%22%3A...&marketId=higress
+ * // Result: biber-desktop://plugin/install?id=edgeone-mcp&schema=%7B%22identifier%22%3A...&marketId=higress
  * ```
  */

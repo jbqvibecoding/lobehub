@@ -1,8 +1,10 @@
 import { app } from 'electron';
 
+import { DESKTOP_PRODUCT_NAME } from '~common/identity';
+
 type RequestHeaders = Headers | Record<string, number | string | string[] | undefined>;
 
-const DESKTOP_USER_AGENT_NAME = 'LobeHub Desktop';
+const DESKTOP_USER_AGENT_NAME = `${DESKTOP_PRODUCT_NAME} Desktop`;
 
 export const getDesktopUserAgent = () => `${DESKTOP_USER_AGENT_NAME}/${app.getVersion()}`;
 

@@ -1,6 +1,10 @@
 import urlJoin from 'url-join';
 
-export const OFFICIAL_URL = 'https://app.lobehub.com';
+/**
+ * The hosted Biber app (Global edition). LobeHub's own services below (site, Market, gateways)
+ * keep their addresses.
+ */
+export const OFFICIAL_URL = 'https://app.biber.ai';
 export const OFFICIAL_SITE = 'https://lobehub.com';
 export const OFFICIAL_DOMAIN = 'lobehub.com';
 

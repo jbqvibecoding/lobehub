@@ -13,7 +13,7 @@
   "features.foldFinishedTurn.title": "完了したターンを折りたたむ",
   "features.groupChat.desc": "複数のAIアシスタントによるグループチャット機能を有効にします。",
   "features.groupChat.title": "グループチャット（マルチアシスタント）",
-  "features.imessage.desc": "LobeHub Desktop BlueBubblesブリッジを介してエージェントをiMessageに接続します。",
+  "features.imessage.desc": "Biber Desktop BlueBubblesブリッジを介してエージェントをiMessageに接続します。",
   "features.imessage.title": "iMessageチャンネル",
   "features.inAppBrowser.desc": "会話サイドパネルにブラウザータブを表示します: 検索結果をその場で開き、エージェントが目に見える形でブラウズできる埋め込みブラウザー。",
   "features.inAppBrowser.title": "インアプリブラウザー",

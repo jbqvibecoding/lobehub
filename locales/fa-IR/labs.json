@@ -13,7 +13,7 @@
   "features.foldFinishedTurn.title": "جمع کردن نوبت‌های پایان‌یافته",
   "features.groupChat.desc": "فعال‌سازی هماهنگی گفت‌وگوی گروهی چندعاملی.",
   "features.groupChat.title": "گفت‌وگوی گروهی (چندعاملی)",
-  "features.imessage.desc": "اتصال نمایندگان به iMessage از طریق پل BlueBubbles دسکتاپ LobeHub محلی.",
+  "features.imessage.desc": "اتصال نمایندگان به iMessage از طریق پل BlueBubbles دسکتاپ Biber محلی.",
   "features.imessage.title": "کانال iMessage",
   "features.inAppBrowser.desc": "نمایش تب مرورگر در پانل کناری مکالمه: یک مرورگر داخلی که نتایج جستجو را در همانجا باز می‌کند و به نمایندگان اجازه می‌دهد به صورت قابل مشاهده مرور کنند.",
   "features.inAppBrowser.title": "مرورگر داخلی",

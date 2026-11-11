@@ -204,7 +204,7 @@ describe('AuthCtr', () => {
         expect(pollingCalls.length).toBeGreaterThan(0);
         expect(pollingCalls[0][1]).toEqual(
           expect.objectContaining({
-            headers: expect.objectContaining({ 'User-Agent': 'LobeHub Desktop/1.2.3' }),
+            headers: expect.objectContaining({ 'User-Agent': 'Biber Desktop/1.2.3' }),
           }),
         );
       });

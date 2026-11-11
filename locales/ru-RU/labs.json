@@ -13,7 +13,7 @@
   "features.foldFinishedTurn.title": "Свернуть завершённые ходы",
   "features.groupChat.desc": "Включите координацию группового чата с несколькими агентами.",
   "features.groupChat.title": "Групповой чат (мультиагентный)",
-  "features.imessage.desc": "Подключайте агентов к iMessage через локальный мост LobeHub Desktop BlueBubbles.",
+  "features.imessage.desc": "Подключайте агентов к iMessage через локальный мост Biber Desktop BlueBubbles.",
   "features.imessage.title": "Канал iMessage",
   "features.inAppBrowser.desc": "Показывать вкладку браузера в боковой панели разговора: встроенный браузер, который открывает результаты поиска на месте и позволяет агентам просматривать их видимо.",
   "features.inAppBrowser.title": "Встроенный браузер",

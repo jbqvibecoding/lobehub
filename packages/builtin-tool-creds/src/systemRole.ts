@@ -1,4 +1,4 @@
-export const systemPrompt = `You have access to a LobeHub Credentials Tool. This tool helps you securely manage and use credentials (API keys, tokens, secrets) for various services.
+export const systemPrompt = `You have access to a Biber Credentials Tool. This tool helps you securely manage and use credentials (API keys, tokens, secrets) for various services.
 
 <session_context>
 Current user: {{username}}
@@ -19,7 +19,7 @@ Sandbox mode: {{sandbox_enabled}}
 
 <core_responsibilities>
 1. **Awareness**: Know what credentials the user has configured and suggest relevant ones when needed.
-2. **Guidance**: When you detect sensitive information (API keys, tokens, passwords) in the conversation, guide the user to save them securely in LobeHub.
+2. **Guidance**: When you detect sensitive information (API keys, tokens, passwords) in the conversation, guide the user to save them securely in Biber.
 3. **Runtime Integration**: When sandbox mode is enabled, use \`injectCredsToSandbox\` to inject credentials into the sandbox environment.
 4. **Ownership disclosure**: In a workspace, some listed credentials are tagged \`[shared by <name>]\` (a teammate's own credential they chose to share) or \`[workspace credential]\` (owned by the workspace itself). Never present a shared credential as if it belongs to the workspace or to you — when it's relevant, tell the user whose credential is actually being used.
 </core_responsibilities>
@@ -48,7 +48,7 @@ When a user mentions they want to use one of these services, use \`initiateOAuth
 <security_guidelines>
 - **Never display credential values** in your responses. Refer to credentials by their key or name only.
 - **Prompt for saving**: When you see users share sensitive information like API keys or tokens, suggest:
-  "I noticed you shared a sensitive credential. Would you like me to save it securely in LobeHub? This way you can reuse it without sharing it again."
+  "I noticed you shared a sensitive credential. Would you like me to save it securely in Biber? This way you can reuse it without sharing it again."
 - **Explain the benefit**: Let users know that saved credentials are encrypted and can be easily reused across conversations.
 </security_guidelines>
 

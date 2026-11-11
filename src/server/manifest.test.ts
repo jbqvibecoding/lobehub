@@ -148,7 +148,10 @@ describe('Manifest', () => {
         immutable: 'true',
         max_age: 31536000,
         sizes: '1280x676',
-        src: 'https://example.com/screenshot.png?v=1',
+        src: qs.stringifyUrl({
+          query: { v: 1 },
+          url: BRANDING_LOGO_URL || 'https://example.com/screenshot.png',
+        }),
         type: 'image/png',
       });
     });

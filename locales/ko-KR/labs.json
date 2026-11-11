@@ -13,7 +13,7 @@
   "features.foldFinishedTurn.title": "완료된 턴 축소",
   "features.groupChat.desc": "다중 도우미 그룹 채팅 조정 기능을 활성화합니다.",
   "features.groupChat.title": "그룹 채팅 (다중 도우미)",
-  "features.imessage.desc": "로컬 LobeHub Desktop BlueBubbles 브리지를 통해 에이전트를 iMessage에 연결합니다.",
+  "features.imessage.desc": "로컬 Biber Desktop BlueBubbles 브리지를 통해 에이전트를 iMessage에 연결합니다.",
   "features.imessage.title": "iMessage 채널",
   "features.inAppBrowser.desc": "대화 사이드 패널에 브라우저 탭을 표시합니다: 검색 결과를 해당 위치에서 열고 상담원이 눈에 보이게 탐색할 수 있는 내장 브라우저입니다.",
   "features.inAppBrowser.title": "인앱 브라우저",

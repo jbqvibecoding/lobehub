@@ -1,3 +1,4 @@
+import { BRANDING_NAME } from '@lobechat/business-const';
 import { CURRENT_VERSION, isDesktop } from '@lobechat/const';
 import { type ToolManifest } from '@lobechat/types';
 import { type PluginItem, type PluginListResponse } from '@lobehub/market-sdk';
@@ -235,7 +236,7 @@ export class PluginMCPStoreActionImpl {
     let data: any;
     let result: CheckMcpInstallResult | undefined;
     let connection: any;
-    const userAgent = `LobeHub Desktop/${CURRENT_VERSION}`;
+    const userAgent = `${BRANDING_NAME} Desktop/${CURRENT_VERSION}`;
 
     try {
       // Check if already cancelled

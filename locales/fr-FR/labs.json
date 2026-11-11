@@ -13,7 +13,7 @@
   "features.foldFinishedTurn.title": "Réduire les tours terminés",
   "features.groupChat.desc": "Activez la coordination de discussions de groupe multi-agents.",
   "features.groupChat.title": "Discussion de groupe (multi-agents)",
-  "features.imessage.desc": "Connecter les agents à iMessage via le pont local LobeHub Desktop BlueBubbles.",
+  "features.imessage.desc": "Connecter les agents à iMessage via le pont local Biber Desktop BlueBubbles.",
   "features.imessage.title": "Canal iMessage",
   "features.inAppBrowser.desc": "Afficher l'onglet Navigateur dans le panneau latéral de la conversation : un navigateur intégré qui ouvre les résultats de recherche sur place et permet aux agents de naviguer de manière visible.",
   "features.inAppBrowser.title": "Navigateur intégré",
