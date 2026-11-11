@@ -1,5 +1,5 @@
 import { isDesktop } from '@lobechat/const';
-import { Avatar } from '@lobehub/ui';
+import { Avatar } from '@lobehub/ui/base-ui';
 import { SkillsIcon } from '@lobehub/ui/icons';
 import {
   BellIcon,
@@ -81,6 +81,7 @@ export const useCategory = () => {
     return avatar;
   }, [avatar, remoteServerUrl]);
   const enableBusinessFeatures = useServerConfigStore(serverConfigSelectors.enableBusinessFeatures);
+  const enableBilling = useServerConfigStore(serverConfigSelectors.enableBilling);
   const categoryGroups: CategoryGroup[] = useMemo(() => {
     const groups: CategoryGroup[] = [];
 
@@ -138,6 +139,13 @@ export const useCategory = () => {
 
       groups.push({
         items: subscriptionItems,
+        key: SettingsGroupKey.Subscription,
+        title: t('group.subscription'),
+      });
+    } else if (enableBilling) {
+      // A deployment that sells plans itself: only the plans page applies
+      groups.push({
+        items: [{ icon: Map, key: SettingsTabs.Plans, label: tSubscription('tab.plans') }],
         key: SettingsGroupKey.Subscription,
         title: t('group.subscription'),
       });
@@ -240,6 +248,7 @@ export const useCategory = () => {
     t,
     tAuth,
     tSubscription,
+    enableBilling,
     enableBusinessFeatures,
     hideDocs,
     mobile,

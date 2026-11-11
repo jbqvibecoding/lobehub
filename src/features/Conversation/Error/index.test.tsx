@@ -56,7 +56,7 @@ vi.mock('@lobehub/ui', async (importOriginal) => {
     Block: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
     Highlighter: ({ children }: { children?: ReactNode }) => <pre>{children}</pre>,
     Skeleton: {
-      ...actual.Skeleton,
+      ...(actual.Skeleton as object),
       Button: () => <div>loading</div>,
     },
   };

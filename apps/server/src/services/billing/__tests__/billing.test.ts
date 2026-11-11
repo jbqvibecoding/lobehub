@@ -13,7 +13,7 @@ import {
   createTestUser,
 } from '@/server/routers/lambda/__tests__/integration/setup';
 
-import { BillingService } from '../index';
+import { BillingService, listPlanPrices } from '../index';
 import type * as StripeModule from '../stripe';
 import { handleStripeWebhook } from '../stripeSync';
 
@@ -278,5 +278,28 @@ describe('a missed provider event', () => {
     expect(await service.getPlan()).toBe(Plans.Premium);
     expect(await service.getPlan()).toBe(Plans.Premium);
     expect(stripe.subscriptions.list).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('plan prices', () => {
+  it('reads the prices of the sold plans from Stripe, once per ten minutes', async () => {
+    stripe.prices.list.mockResolvedValue({
+      data: [
+        { currency: 'usd', lookup_key: 'biber_starter_monthly', unit_amount: 900 },
+        { currency: 'usd', lookup_key: 'biber_starter_yearly', unit_amount: 9000 },
+        { currency: 'usd', lookup_key: 'someone_elses', unit_amount: 100 },
+      ],
+    });
+    const now = Date.now() + 60 * 60 * 1000;
+
+    const prices = await listPlanPrices(now);
+    await listPlanPrices(now + 60_000);
+
+    expect(prices).toEqual([
+      { currency: 'usd', interval: 'monthly', plan: Plans.Starter, unitAmount: 900 },
+      { currency: 'usd', interval: 'yearly', plan: Plans.Starter, unitAmount: 9000 },
+    ]);
+    expect(stripe.prices.list).toHaveBeenCalledTimes(1);
+    expect(stripe.prices.list.mock.calls[0][0].lookup_keys).toHaveLength(6);
   });
 });

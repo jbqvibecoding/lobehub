@@ -53,6 +53,7 @@ export const useCategory = (): CategoryGroup[] => {
   const { t } = useTranslation(['setting', 'auth', 'subscription']);
   const { hideDocs, showApiKeyManage, showProvider } = useServerConfigStore(featureFlagsSelectors);
   const enableBusinessFeatures = useServerConfigStore(serverConfigSelectors.enableBusinessFeatures);
+  const enableBilling = useServerConfigStore(serverConfigSelectors.enableBilling);
   const isDevMode = useUserStore((s) => userGeneralSettingsSelectors.config(s).isDevMode);
 
   return useMemo(() => {
@@ -98,7 +99,9 @@ export const useCategory = (): CategoryGroup[] => {
             label: t('subscription:tab.referral'),
           }),
         ]
-      : [];
+      : enableBilling
+        ? [makeItem({ icon: Map, key: SettingsTabs.Plans, label: t('subscription:tab.plans') })]
+        : [];
 
     const agent: CategoryItem[] = [
       // Provider settings should not depend on Advanced tools: new users may need
@@ -140,5 +143,14 @@ export const useCategory = (): CategoryGroup[] => {
       { items: agent, key: SettingsGroupKey.Agent, title: t('setting:group.aiConfig') },
       { items: system, key: SettingsGroupKey.System, title: t('setting:group.system') },
     ].filter((group) => group.items.length > 0);
-  }, [t, enableBusinessFeatures, hideDocs, showApiKeyManage, showProvider, isDevMode, navigate]);
+  }, [
+    t,
+    enableBilling,
+    enableBusinessFeatures,
+    hideDocs,
+    showApiKeyManage,
+    showProvider,
+    isDevMode,
+    navigate,
+  ]);
 };

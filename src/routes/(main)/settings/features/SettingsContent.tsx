@@ -26,6 +26,7 @@ interface SettingsContentProps {
 
 const SettingsContent = ({ mobile, activeTab }: SettingsContentProps) => {
   const enableBusinessFeatures = useServerConfigStore(serverConfigSelectors.enableBusinessFeatures);
+  const enableBilling = useServerConfigStore(serverConfigSelectors.enableBilling);
   const navigate = useWorkspaceAwareNavigate();
 
   useSettingsAnchorScroll();
@@ -55,7 +56,9 @@ const SettingsContent = ({ mobile, activeTab }: SettingsContentProps) => {
         SettingsTabs.Security,
         ...(enableBusinessFeatures
           ? [SettingsTabs.Plans, SettingsTabs.Credits, SettingsTabs.Billing, SettingsTabs.Referral]
-          : []),
+          : enableBilling
+            ? [SettingsTabs.Plans]
+            : []),
       ].includes(tab as any)
     ) {
       componentProps.mobile = mobile;

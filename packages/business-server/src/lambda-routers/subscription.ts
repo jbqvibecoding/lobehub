@@ -4,7 +4,12 @@ import { z } from 'zod';
 
 import { authedProcedure, router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
-import { BillingError, type BillingErrorCode, BillingService } from '@/server/services/billing';
+import {
+  BillingError,
+  type BillingErrorCode,
+  BillingService,
+  listPlanPrices,
+} from '@/server/services/billing';
 
 /** Plans are personal: they follow the user across workspaces. */
 export const billingProcedure = authedProcedure
@@ -48,6 +53,9 @@ export const subscriptionRouter = router({
     .mutation(async ({ ctx, input }) => ({
       url: await answering(() => ctx.billing.createCheckoutUrl(input)),
     })),
+
+  /** What each paid plan costs, per billing interval. */
+  prices: billingProcedure.query(() => listPlanPrices()),
 
   /** Re-reads the subscription from the provider, e.g. right after returning from Checkout. */
   refresh: billingProcedure.mutation(({ ctx }) => ctx.billing.refresh()),

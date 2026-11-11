@@ -5,6 +5,8 @@ import {
   isEntitledStatus,
   monthlyCreditsFor,
   needsResync,
+  PLAN_CATALOG,
+  planForStripeLookupKey,
   planRank,
   stripeLookupKeyFor,
 } from '@lobechat/billing';
@@ -49,6 +51,45 @@ const resyncAttempts = new Map<string, number>();
 
 const plansPageUrl = (checkout?: 'canceled' | 'success') =>
   `${appEnv.APP_URL}/settings/plans${checkout ? `?checkout=${checkout}` : ''}`;
+
+export interface PlanPrice {
+  /** ISO currency code in lower case, as Stripe gives it, e.g. `usd` */
+  currency: string;
+  interval: BillingInterval;
+  plan: Plans;
+  /** In the currency's smallest unit, e.g. cents */
+  unitAmount: number;
+}
+
+const PRICE_CACHE_MS = 10 * 60 * 1000;
+let priceCache: { fetchedAt: number; prices: PlanPrice[] } | undefined;
+
+/**
+ * What each paid plan costs, read from Stripe by the catalog's lookup keys so prices are set in
+ * one place. Cached for ten minutes; empty where Stripe does not sell.
+ */
+export const listPlanPrices = async (now = Date.now()): Promise<PlanPrice[]> => {
+  if (!isStripeOffered()) return [];
+  if (priceCache && now - priceCache.fetchedAt < PRICE_CACHE_MS) return priceCache.prices;
+
+  const lookupKeys = Object.values(PLAN_CATALOG).flatMap((plan) =>
+    plan.stripeLookupKeys ? Object.values(plan.stripeLookupKeys) : [],
+  );
+  const { data } = await getStripe().prices.list({
+    active: true,
+    limit: lookupKeys.length,
+    lookup_keys: lookupKeys,
+  });
+
+  const prices = data.flatMap((price) => {
+    const sold = planForStripeLookupKey(price.lookup_key);
+    return sold && price.unit_amount !== null
+      ? [{ currency: price.currency, ...sold, unitAmount: price.unit_amount }]
+      : [];
+  });
+  priceCache = { fetchedAt: now, prices };
+  return prices;
+};
 
 export class BillingService {
   private readonly db: LobeChatDatabase;
