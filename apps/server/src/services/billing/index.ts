@@ -1,19 +1,25 @@
 import {
   appleProductIdFor,
   type BillingInterval,
+  cnyPriceFor,
   creditPeriodAt,
   effectivePlan,
   isEntitledStatus,
+  isGranting,
+  isPrepaidProvider,
   monthlyCreditsFor,
   needsResync,
   PLAN_CATALOG,
   planForStripeLookupKey,
   planRank,
+  prepaidPeriod,
+  type PrepaidProvider,
   stripeLookupKeyFor,
 } from '@lobechat/billing';
 import type { Plans } from '@lobechat/types';
 import debug from 'debug';
 
+import { PaymentOrderModel } from '@/database/models/paymentOrder';
 import { UserModel } from '@/database/models/user';
 import { UserCreditUsageModel } from '@/database/models/userCreditUsage';
 import { UserSubscriptionModel } from '@/database/models/userSubscription';
@@ -28,6 +34,17 @@ import {
   isAppleOffered,
   syncApplePurchases,
 } from './apple';
+import {
+  getAlipay,
+  getWechatPay,
+  grantingPrepaid,
+  isPrepaidOffered,
+  newOrderNumber,
+  ORDER_TTL_MS,
+  orderSubject,
+  refreshPrepaidOrder,
+  webhookUrl,
+} from './mainland';
 import { getStripe, isStripeConfigured, isStripeOffered } from './stripe';
 import { syncStripeCustomer } from './stripeSync';
 
@@ -36,8 +53,12 @@ const log = debug('lobe-server:billing');
 export type BillingErrorCode =
   /** The user already holds a subscription; plans are changed in the provider's portal */
   | 'ALREADY_SUBSCRIBED'
+  /** A lower prepaid plan cannot be bought while a higher one is running */
+  | 'LOWER_PLAN'
   /** There is nothing to manage: the user never started a purchase */
   | 'NO_CUSTOMER'
+  /** The user has no such payment order */
+  | 'NO_ORDER'
   /** The plan has no price to buy, in the catalog or at the provider */
   | 'NOT_FOR_SALE'
   /** This deployment does not sell through this provider */
@@ -61,7 +82,7 @@ const plansPageUrl = (checkout?: 'canceled' | 'success') =>
   `${appEnv.APP_URL}/settings/plans${checkout ? `?checkout=${checkout}` : ''}`;
 
 export interface PlanPrice {
-  /** ISO currency code in lower case, as Stripe gives it, e.g. `usd` */
+  /** ISO currency code in lower case, as Stripe gives it, e.g. `usd` or `cny` */
   currency: string;
   interval: BillingInterval;
   plan: Plans;
@@ -72,11 +93,22 @@ export interface PlanPrice {
 const PRICE_CACHE_MS = 10 * 60 * 1000;
 let priceCache: { fetchedAt: number; prices: PlanPrice[] } | undefined;
 
+/** The mainland edition's prepaid prices, from the catalog. */
+const cnyPlanPrices = (): PlanPrice[] =>
+  (Object.keys(PLAN_CATALOG) as Plans[]).flatMap((plan) =>
+    (['monthly', 'yearly'] as const).flatMap((interval) => {
+      const unitAmount = cnyPriceFor(plan, interval);
+      return unitAmount ? [{ currency: 'cny', interval, plan, unitAmount }] : [];
+    }),
+  );
+
 /**
- * What each paid plan costs, read from Stripe by the catalog's lookup keys so prices are set in
- * one place. Cached for ten minutes; empty where Stripe does not sell.
+ * What each paid plan costs. Stripe's prices are read by the catalog's lookup keys so they are
+ * set in one place, and cached for ten minutes; the mainland edition's prepaid prices come from
+ * the catalog. Empty where neither sells.
  */
 export const listPlanPrices = async (now = Date.now()): Promise<PlanPrice[]> => {
+  if (isPrepaidOffered('wechat') || isPrepaidOffered('alipay')) return cnyPlanPrices();
   if (!isStripeOffered()) return [];
   if (priceCache && now - priceCache.fetchedAt < PRICE_CACHE_MS) return priceCache.prices;
 
@@ -111,14 +143,14 @@ export class BillingService {
   }
 
   /** The plan the user is on right now. */
-  async getPlan(): Promise<Plans> {
-    return effectivePlan(await this.currentSubscriptions());
+  async getPlan(now = new Date()): Promise<Plans> {
+    return effectivePlan(await this.currentSubscriptions(now), now);
   }
 
-  async getStatus() {
-    const rows = await this.currentSubscriptions();
-    const granting = grantingSubscription(rows);
-    const credits = await this.allowanceFrom(rows);
+  async getStatus(now = new Date()) {
+    const rows = await this.currentSubscriptions(now);
+    const granting = grantingSubscription(rows, now);
+    const credits = await this.allowanceFrom(rows, now);
 
     return {
       /** This month's included credits and what is left of them */
@@ -128,7 +160,11 @@ export class BillingService {
         remaining: credits.remainingCredits,
         used: credits.usedCredits,
       },
-      plan: effectivePlan(rows),
+      plan: effectivePlan(rows, now),
+      alipay: {
+        /** Whether a period can be bought with Alipay on this deployment (mainland edition) */
+        available: isPrepaidOffered('alipay'),
+      },
       apple: {
         /** Whether a plan can be bought through the App Store on this deployment */
         available: isAppleOffered(),
@@ -138,6 +174,10 @@ export class BillingService {
         available: isStripeOffered(),
         /** Whether there is a Stripe customer to open the billing portal for */
         hasCustomer: rows.some((row) => row.provider === 'stripe'),
+      },
+      wechat: {
+        /** Whether a period can be bought with WeChat Pay on this deployment (mainland edition) */
+        available: isPrepaidOffered('wechat'),
       },
       /** The subscription the plan comes from; absent on the free plan */
       subscription: granting && {
@@ -204,6 +244,102 @@ export class BillingService {
     if (!session.url) throw new Error('Stripe returned a checkout session without a URL');
 
     return session.url;
+  }
+
+  /**
+   * Starts paying for a prepaid period (mainland edition): with WeChat Pay the user scans the
+   * returned QR code link, with Alipay they go to the returned cashier page. Either way the plan
+   * changes once the provider confirms the payment.
+   */
+  async createPrepaidOrder({
+    interval,
+    plan,
+    provider,
+  }: {
+    interval: BillingInterval;
+    plan: Plans;
+    provider: PrepaidProvider;
+  }) {
+    if (!isPrepaidOffered(provider)) {
+      throw new BillingError('UNAVAILABLE', `${provider} is not available on this deployment`);
+    }
+    const amount = cnyPriceFor(plan, interval);
+    if (!amount) throw new BillingError('NOT_FOR_SALE', `The ${plan} plan cannot be bought`);
+
+    const now = new Date();
+    const rows = await this.subscriptions.list();
+    // An App Store subscription renews by itself: a prepaid period on top would be paid twice
+    if (rows.some((row) => !isPrepaidProvider(row.provider) && isGranting(row, now))) {
+      throw new BillingError(
+        'ALREADY_SUBSCRIBED',
+        'There is already a subscription; manage or cancel it where it was bought',
+      );
+    }
+    const current = grantingPrepaid(rows, now);
+    if (!prepaidPeriod({ current, interval, paidAt: now, plan }).ok) {
+      throw new BillingError(
+        'LOWER_PLAN',
+        `The ${plan} plan can be bought once the ${current?.plan} plan ends`,
+      );
+    }
+
+    const orders = new PaymentOrderModel(this.db, this.userId);
+    const order = await orders.create({
+      amount,
+      billingInterval: interval,
+      outTradeNo: newOrderNumber(now),
+      plan,
+      provider,
+    });
+    const expiresAt = new Date(now.getTime() + ORDER_TTL_MS);
+    const subject = orderSubject(plan, interval);
+
+    try {
+      if (provider === 'wechat') {
+        const codeUrl = await getWechatPay().createNativeOrder({
+          amount,
+          description: subject,
+          expiresAt,
+          notifyUrl: webhookUrl('wechat'),
+          outTradeNo: order.outTradeNo,
+        });
+        return { amount, codeUrl, expiresAt, orderId: order.id, provider };
+      }
+
+      const payUrl = getAlipay().pagePayUrl({
+        amount,
+        expiresAt,
+        notifyUrl: webhookUrl('alipay'),
+        outTradeNo: order.outTradeNo,
+        returnUrl: `${plansPageUrl()}?order=${order.id}`,
+        subject,
+      });
+      return { amount, expiresAt, orderId: order.id, payUrl, provider };
+    } catch (error) {
+      await orders.close(order.id);
+      throw error;
+    }
+  }
+
+  /**
+   * A prepaid order and whether it is paid yet. A pending one is read from its provider first, so
+   * the page waiting for the payment sees it even when the notification is late.
+   */
+  async getPrepaidOrder(orderId: string) {
+    const orders = new PaymentOrderModel(this.db, this.userId);
+    const order = await orders.findById(orderId);
+    if (!order) throw new BillingError('NO_ORDER', 'There is no such order');
+
+    await refreshPrepaidOrder(this.db, order);
+    const fresh = (await orders.findById(orderId)) ?? order;
+    return {
+      amount: fresh.amount,
+      interval: fresh.billingInterval,
+      paidAt: fresh.paidAt,
+      plan: fresh.plan,
+      provider: fresh.provider,
+      status: fresh.status,
+    };
   }
 
   /** Stripe's billing portal: change plan, update the card, cancel, download invoices. */
@@ -280,8 +416,8 @@ export class BillingService {
   }
 
   private async allowanceFrom(rows: UserSubscriptionItem[], now = new Date(), withUsage = true) {
-    const plan = effectivePlan(rows);
-    const anchor = grantingSubscription(rows)?.currentPeriodStart ?? (await this.signedUpAt());
+    const plan = effectivePlan(rows, now);
+    const anchor = grantingSubscription(rows, now)?.currentPeriodStart ?? (await this.signedUpAt());
     const period = creditPeriodAt(anchor, now);
     const monthlyCredits = monthlyCreditsFor(plan);
     const usedCredits = withUsage
@@ -357,8 +493,6 @@ export class BillingService {
   }
 }
 
-/** The subscription the plan comes from: the highest plan among those that grant one. */
-const grantingSubscription = (rows: UserSubscriptionItem[]) =>
-  rows
-    .filter((row) => isEntitledStatus(row.status))
-    .sort((a, b) => planRank(b.plan) - planRank(a.plan))[0];
+/** The subscription the plan comes from: the highest plan among those that grant one now. */
+const grantingSubscription = (rows: UserSubscriptionItem[], now: Date) =>
+  rows.filter((row) => isGranting(row, now)).sort((a, b) => planRank(b.plan) - planRank(a.plan))[0];

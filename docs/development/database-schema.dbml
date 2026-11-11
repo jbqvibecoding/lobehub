@@ -645,6 +645,27 @@ table verifications {
   }
 }
 
+table payment_orders {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id text [not null]
+  provider text [not null]
+  out_trade_no text [not null]
+  plan text [not null]
+  billing_interval text [not null]
+  amount integer [not null]
+  currency text [not null, default: 'CNY']
+  status text [not null, default: 'pending']
+  provider_transaction_id text
+  paid_at "timestamp with time zone"
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    out_trade_no [name: 'payment_orders_out_trade_no_unique', unique]
+    user_id [name: 'payment_orders_user_id_idx']
+  }
+}
+
 table user_credit_usages {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id text [not null]

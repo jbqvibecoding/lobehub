@@ -20,7 +20,9 @@ export const billingProcedure = authedProcedure
 
 const TRPC_CODE: Record<BillingErrorCode, TRPCError['code']> = {
   ALREADY_SUBSCRIBED: 'CONFLICT',
+  LOWER_PLAN: 'CONFLICT',
   NO_CUSTOMER: 'NOT_FOUND',
+  NO_ORDER: 'NOT_FOUND',
   NOT_FOR_SALE: 'BAD_REQUEST',
   UNAVAILABLE: 'PRECONDITION_FAILED',
 };
@@ -53,6 +55,25 @@ export const subscriptionRouter = router({
     .mutation(async ({ ctx, input }) => ({
       url: await answering(() => ctx.billing.createCheckoutUrl(input)),
     })),
+
+  /**
+   * Pays for a prepaid period with WeChat Pay (a QR code link to show) or Alipay (a cashier page
+   * to open), in the mainland edition. Poll `prepaidOrder` to see it paid.
+   */
+  createPrepaidOrder: billingProcedure
+    .input(
+      z.object({
+        interval: z.enum(['monthly', 'yearly']),
+        plan: z.enum([Plans.Starter, Plans.Premium, Plans.Ultimate]),
+        provider: z.enum(['alipay', 'wechat']),
+      }),
+    )
+    .mutation(({ ctx, input }) => answering(() => ctx.billing.createPrepaidOrder(input))),
+
+  /** A prepaid order and whether it has been paid. */
+  prepaidOrder: billingProcedure
+    .input(z.object({ orderId: z.string().uuid() }))
+    .query(({ ctx, input }) => answering(() => ctx.billing.getPrepaidOrder(input.orderId))),
 
   /** What each paid plan costs, per billing interval. */
   prices: billingProcedure.query(() => listPlanPrices()),

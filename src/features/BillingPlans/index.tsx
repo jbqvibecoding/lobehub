@@ -1,6 +1,12 @@
 'use client';
 
-import { type BillingInterval, monthlyCreditsFor } from '@lobechat/billing';
+import {
+  type BillingInterval,
+  isPrepaidProvider,
+  monthlyCreditsFor,
+  planRank,
+  type PrepaidProvider,
+} from '@lobechat/billing';
 import { Plans } from '@lobechat/types';
 import { Block, Flexbox } from '@lobehub/ui';
 import { Alert, Button, Progress, Segmented, Spin } from '@lobehub/ui/base-ui';
@@ -13,6 +19,7 @@ import useSWR from 'swr';
 import { subscriptionService } from '@/services/subscription';
 
 import { formatCredits, formatPlanPrice } from './format';
+import PrepaidCheckout, { usePaidOrder } from './PrepaidCheckout';
 
 const PAID_PLANS = [Plans.Starter, Plans.Premium, Plans.Ultimate] as const;
 
@@ -51,12 +58,21 @@ const BillingPlans = memo(() => {
   const { i18n, t } = useTranslation('subscription');
   const [searchParams] = useSearchParams();
   const returnedFromCheckout = searchParams.get('checkout') === 'success';
+  /** Set when Alipay's cashier sends the user back after paying */
+  const returnedOrderId = searchParams.get('order') ?? undefined;
 
   const { data: status, error, mutate } = useSWR(STATUS_KEY, subscriptionService.getStatus);
   const { data: prices } = useSWR(PRICES_KEY, subscriptionService.getPrices);
   const [interval, setInterval] = useState<BillingInterval>('monthly');
   const [opening, setOpening] = useState<string>();
   const [actionError, setActionError] = useState<string>();
+  const [buying, setBuying] = useState<(typeof PAID_PLANS)[number]>();
+  const { data: returnedOrder } = usePaidOrder(returnedOrderId);
+  const returnedOrderPaid = returnedOrder?.status === 'paid';
+
+  useEffect(() => {
+    if (returnedOrderPaid) mutate();
+  }, [returnedOrderPaid, mutate]);
 
   useEffect(() => {
     // Stripe's webhook may still be on its way: read the new plan from Stripe now
@@ -106,6 +122,15 @@ const BillingPlans = memo(() => {
   }
 
   const { credits, subscription } = status;
+  const prepaidMethods = (['wechat', 'alipay'] as PrepaidProvider[]).filter(
+    (method) => status[method].available,
+  );
+  const sellsPrepaid = prepaidMethods.length > 0;
+  const prepaid = !!subscription && isPrepaidProvider(subscription.provider);
+  const priceOf = (plan: Plans) => {
+    const price = prices?.find((p) => p.plan === plan && p.interval === interval);
+    return price && formatPlanPrice(price.unitAmount, price.currency, i18n.language);
+  };
   const usedPercent =
     credits.monthly > 0 ? Math.min(100, (credits.used / credits.monthly) * 100) : 100;
   const openPortal = () =>
@@ -114,6 +139,12 @@ const BillingPlans = memo(() => {
   return (
     <Flexbox gap={16} style={{ maxWidth: 1024, width: '100%' }}>
       {returnedFromCheckout && <Alert title={t('planPage.checkoutSuccess')} type={'success'} />}
+      {returnedOrderId &&
+        (returnedOrderPaid ? (
+          <Alert title={t('planPage.checkoutSuccess')} type={'success'} />
+        ) : (
+          <Alert title={t('planPage.pay.confirming')} type={'info'} />
+        ))}
       {subscription?.status === 'past_due' && (
         <Alert title={t('planPage.pastDue')} type={'warning'} />
       )}
@@ -126,9 +157,11 @@ const BillingPlans = memo(() => {
             <span className={styles.planName}>{t(PLAN_TITLE_KEYS[status.plan])}</span>
             {subscription && (
               <span className={styles.muted}>
-                {subscription.cancelAtPeriodEnd
-                  ? t('planPage.endsOn', { date: formatDate(subscription.currentPeriodEnd) })
-                  : t('planPage.renewsOn', { date: formatDate(subscription.currentPeriodEnd) })}
+                {prepaid
+                  ? t('planPage.paidThrough', { date: formatDate(subscription.currentPeriodEnd) })
+                  : subscription.cancelAtPeriodEnd
+                    ? t('planPage.endsOn', { date: formatDate(subscription.currentPeriodEnd) })
+                    : t('planPage.renewsOn', { date: formatDate(subscription.currentPeriodEnd) })}
               </span>
             )}
           </Flexbox>
@@ -153,7 +186,7 @@ const BillingPlans = memo(() => {
         <span className={styles.muted}>{t('planPage.ownKeyNote')}</span>
       </Block>
 
-      {status.stripe.available && (
+      {(status.stripe.available || sellsPrepaid) && (
         <>
           <Segmented
             value={interval}
@@ -165,7 +198,7 @@ const BillingPlans = memo(() => {
           />
           <Flexbox horizontal gap={12} wrap={'wrap'}>
             {PAID_PLANS.map((plan) => {
-              const price = prices?.find((p) => p.plan === plan && p.interval === interval);
+              const price = priceOf(plan);
               const isCurrent = status.plan === plan;
 
               return (
@@ -174,7 +207,7 @@ const BillingPlans = memo(() => {
                   {price && (
                     <span className={styles.price}>
                       {t(interval === 'monthly' ? 'planPage.perMonth' : 'planPage.perYear', {
-                        price: formatPlanPrice(price.unitAmount, price.currency, i18n.language),
+                        price,
                       })}
                     </span>
                   )}
@@ -183,7 +216,26 @@ const BillingPlans = memo(() => {
                       credits: formatCredits(monthlyCreditsFor(plan)),
                     })}
                   </span>
-                  {isCurrent ? (
+                  {sellsPrepaid ? (
+                    subscription && !prepaid ? (
+                      // An App Store subscription renews by itself; it is changed in the App Store
+                      <Button block disabled>
+                        {isCurrent ? t('planPage.current') : t('planPage.managedElsewhere')}
+                      </Button>
+                    ) : prepaid && planRank(plan) < planRank(status.plan) ? (
+                      <Button block disabled>
+                        {t('planPage.lowerPlanLater')}
+                      </Button>
+                    ) : (
+                      <Button
+                        block
+                        type={isCurrent ? 'default' : 'primary'}
+                        onClick={() => setBuying(plan)}
+                      >
+                        {isCurrent ? t('planPage.extend') : t('plans.changePlan')}
+                      </Button>
+                    )
+                  ) : isCurrent ? (
                     <Button block disabled>
                       {t('planPage.current')}
                     </Button>
@@ -213,6 +265,18 @@ const BillingPlans = memo(() => {
             })}
           </Flexbox>
         </>
+      )}
+
+      {buying && (
+        <PrepaidCheckout
+          interval={interval}
+          methods={prepaidMethods}
+          plan={buying}
+          planTitle={t(PLAN_TITLE_KEYS[buying])}
+          price={priceOf(buying) ?? ''}
+          onClose={() => setBuying(undefined)}
+          onPaid={() => mutate()}
+        />
       )}
     </Flexbox>
   );

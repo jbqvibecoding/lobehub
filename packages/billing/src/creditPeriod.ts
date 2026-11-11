@@ -10,7 +10,7 @@ export interface CreditPeriod {
  * that day uses its last day, and every step is counted from the anchor itself, so a 31st anchor
  * does not drift to the 28th for good after one February.
  */
-const monthsAfter = (anchor: Date, months: number): Date => {
+export const monthsAfter = (anchor: Date, months: number): Date => {
   const year = anchor.getUTCFullYear();
   const month = anchor.getUTCMonth() + months;
   const lastDayOfMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();

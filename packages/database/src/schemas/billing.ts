@@ -1,6 +1,20 @@
-import type { BillingInterval, SubscriptionProvider, SubscriptionStatus } from '@lobechat/billing';
+import type {
+  BillingInterval,
+  PrepaidProvider,
+  SubscriptionProvider,
+  SubscriptionStatus,
+} from '@lobechat/billing';
 import type { Plans } from '@lobechat/types';
-import { bigint, boolean, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  bigint,
+  boolean,
+  index,
+  integer,
+  pgTable,
+  text,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 import { createdAt, timestamptz, updatedAt } from './_helpers';
 import { users } from './user';
@@ -88,3 +102,43 @@ export const userCreditUsages = pgTable(
 
 export type NewUserCreditUsage = typeof userCreditUsages.$inferInsert;
 export type UserCreditUsageItem = typeof userCreditUsages.$inferSelect;
+
+/**
+ * Payment orders - one prepaid period a user set out to buy with WeChat Pay or Alipay. The
+ * provider's payment notification marks it paid, once, and that extends the user's plan.
+ */
+export const paymentOrders = pgTable(
+  'payment_orders',
+  {
+    id: uuid('id').defaultRandom().primaryKey().notNull(),
+
+    userId: text('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+
+    provider: text('provider').$type<PrepaidProvider>().notNull(),
+    /** Our order number, sent to the provider as `out_trade_no` */
+    outTradeNo: text('out_trade_no').notNull(),
+
+    plan: text('plan').$type<Plans>().notNull(),
+    billingInterval: text('billing_interval').$type<BillingInterval>().notNull(),
+    /** What the user pays, in the currency's smallest unit (fen for CNY) */
+    amount: integer('amount').notNull(),
+    currency: text('currency').default('CNY').notNull(),
+
+    status: text('status').$type<'closed' | 'paid' | 'pending'>().default('pending').notNull(),
+    /** The provider's id for the payment, from its notification */
+    providerTransactionId: text('provider_transaction_id'),
+    paidAt: timestamptz('paid_at'),
+
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('payment_orders_out_trade_no_unique').on(t.outTradeNo),
+    index('payment_orders_user_id_idx').on(t.userId),
+  ],
+);
+
+export type NewPaymentOrder = typeof paymentOrders.$inferInsert;
+export type PaymentOrderItem = typeof paymentOrders.$inferSelect;

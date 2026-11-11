@@ -5,9 +5,10 @@ export {
   type AppleTransaction,
 } from './apple';
 export { type CreditPeriod, creditPeriodAt } from './creditPeriod';
-export { effectivePlan, isEntitledStatus, needsResync } from './entitlement';
+export { effectivePlan, isEntitledStatus, isGranting, needsResync } from './entitlement';
 export {
   appleProductIdFor,
+  cnyPriceFor,
   monthlyCreditsFor,
   PLAN_CATALOG,
   type PlanDefinition,
@@ -16,4 +17,12 @@ export {
   planRank,
   stripeLookupKeyFor,
 } from './plans';
-export type { BillingInterval, SubscriptionProvider, SubscriptionStatus } from './types';
+export { type PrepaidHolding, type PrepaidPeriod, prepaidPeriod } from './prepaid';
+export {
+  type BillingInterval,
+  isPrepaidProvider,
+  PREPAID_PROVIDERS,
+  type PrepaidProvider,
+  type SubscriptionProvider,
+  type SubscriptionStatus,
+} from './types';

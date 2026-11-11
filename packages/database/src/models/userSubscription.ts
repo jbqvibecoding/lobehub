@@ -3,7 +3,9 @@ import { and, eq } from 'drizzle-orm';
 
 import type { UserSubscriptionItem } from '../schemas/billing';
 import { userSubscriptions } from '../schemas/billing';
-import type { LobeChatDatabase } from '../type';
+import type { LobeChatDatabase, Transaction } from '../type';
+
+type Db = LobeChatDatabase | Transaction;
 
 /** A subscription as its provider reports it; `status: null` means the customer has none. */
 export type ProviderSubscriptionSnapshot = Pick<
@@ -19,9 +21,9 @@ export type ProviderSubscriptionSnapshot = Pick<
 
 export class UserSubscriptionModel {
   private readonly userId: string;
-  private readonly db: LobeChatDatabase;
+  private readonly db: Db;
 
-  constructor(db: LobeChatDatabase, userId: string) {
+  constructor(db: Db, userId: string) {
     this.db = db;
     this.userId = userId;
   }
@@ -53,6 +55,41 @@ export class UserSubscriptionModel {
       .onConflictDoNothing({ target: [userSubscriptions.userId, userSubscriptions.provider] });
 
     return (await this.findByProvider(provider))!;
+  }
+
+  /**
+   * Stores a period the user paid for in advance through `provider` (WeChat Pay, Alipay). There is
+   * no customer at those providers, so the row is keyed by our own user id.
+   */
+  async savePrepaidPeriod(
+    provider: SubscriptionProvider,
+    snapshot: ProviderSubscriptionSnapshot,
+    syncedAt = new Date(),
+  ) {
+    const [row] = await this.db
+      .insert(userSubscriptions)
+      .values({
+        ...snapshot,
+        provider,
+        providerCustomerId: `user:${this.userId}`,
+        syncedAt,
+        userId: this.userId,
+      })
+      .onConflictDoUpdate({
+        set: { ...snapshot, syncedAt, updatedAt: new Date() },
+        target: [userSubscriptions.userId, userSubscriptions.provider],
+      })
+      .returning();
+
+    return row;
+  }
+
+  /** Ends what the user holds with a provider, e.g. a prepaid period another one replaced. */
+  async endWith(provider: SubscriptionProvider, endedAt = new Date()) {
+    await this.db
+      .update(userSubscriptions)
+      .set({ status: 'canceled', syncedAt: endedAt, updatedAt: new Date() })
+      .where(and(this.ownership(), eq(userSubscriptions.provider, provider)));
   }
 
   /** A provider customer's row, whoever it belongs to; provider events name the customer. */

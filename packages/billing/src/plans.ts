@@ -8,6 +8,11 @@ export interface PlanDefinition {
    * are unique within an app, so every edition's app uses the same ones.
    */
   appleProductIds?: Record<BillingInterval, string>;
+  /**
+   * Prepaid prices in the mainland edition, in fen (1/100 yuan), paid with WeChat Pay or Alipay.
+   * These periods do not renew on their own.
+   */
+  cnyPrices?: Record<BillingInterval, number>;
   /** Credits included each month; 1,000,000 credits pay for one US dollar of model usage */
   monthlyCredits: number;
   /**
@@ -28,16 +33,19 @@ export const PLAN_CATALOG: Record<Plans, PlanDefinition> = {
   [Plans.Starter]: {
     monthlyCredits: 5_000_000,
     appleProductIds: { monthly: 'ai.biber.starter.monthly', yearly: 'ai.biber.starter.yearly' },
+    cnyPrices: { monthly: 6800, yearly: 68_000 },
     stripeLookupKeys: { monthly: 'biber_starter_monthly', yearly: 'biber_starter_yearly' },
   },
   [Plans.Premium]: {
     monthlyCredits: 15_000_000,
     appleProductIds: { monthly: 'ai.biber.premium.monthly', yearly: 'ai.biber.premium.yearly' },
+    cnyPrices: { monthly: 19_800, yearly: 198_000 },
     stripeLookupKeys: { monthly: 'biber_premium_monthly', yearly: 'biber_premium_yearly' },
   },
   [Plans.Ultimate]: {
     monthlyCredits: 35_000_000,
     appleProductIds: { monthly: 'ai.biber.ultimate.monthly', yearly: 'ai.biber.ultimate.yearly' },
+    cnyPrices: { monthly: 46_800, yearly: 468_000 },
     stripeLookupKeys: { monthly: 'biber_ultimate_monthly', yearly: 'biber_ultimate_yearly' },
   },
 };
@@ -82,3 +90,7 @@ export const planForAppleProductId = (
   }
   return undefined;
 };
+
+/** The mainland prepaid price of a plan, in fen; undefined when it is not sold that way. */
+export const cnyPriceFor = (plan: Plans, interval: BillingInterval): number | undefined =>
+  PLAN_CATALOG[plan].cnyPrices?.[interval];
