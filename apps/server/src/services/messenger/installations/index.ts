@@ -2,6 +2,7 @@ import type { MessengerPlatform } from '@/config/messenger';
 
 import type { ConnectionMode } from '../../bot/platforms';
 import { DiscordInstallationStore } from './discord';
+import { ImessageInstallationStore } from './imessage';
 import { SlackInstallationStore } from './slack';
 import { TelegramInstallationStore } from './telegram';
 import type { MessengerInstallationStore } from './types';
@@ -24,6 +25,9 @@ const create = (platform: MessengerPlatform): MessengerInstallationStore | null 
     case 'discord': {
       return new DiscordInstallationStore();
     }
+    case 'imessage': {
+      return new ImessageInstallationStore();
+    }
     default: {
       return null;
     }
@@ -42,6 +46,14 @@ export const getInstallationStore = (
 };
 
 const SINGLETON_SUFFIX = ':singleton';
+
+/**
+ * The messenger platform an install key belongs to (`slack:T0123` → `slack`). A run's chat thread
+ * id can carry a different prefix — the Chat SDK adapter's own name, e.g. `linq:` for iMessage — so
+ * code that needs the messenger platform reads it from the key.
+ */
+export const messengerPlatformOfInstallationKey = (installationKey: string): string =>
+  installationKey.split(':')[0];
 
 /**
  * Every messenger-owned gateway connection (per-user typing DOs and SystemBot
@@ -106,6 +118,7 @@ export const messengerConnectionIdForUser = (params: {
 };
 
 export { DISCORD_INSTALLATION_KEY, DiscordInstallationStore } from './discord';
+export { IMESSAGE_INSTALLATION_KEY, ImessageInstallationStore } from './imessage';
 export { SlackInstallationStore } from './slack';
 export { TELEGRAM_INSTALLATION_KEY, TelegramInstallationStore } from './telegram';
 export type { InstallationCredentials, MessengerInstallationStore } from './types';

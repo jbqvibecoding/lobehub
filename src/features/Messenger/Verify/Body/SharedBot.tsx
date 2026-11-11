@@ -3,7 +3,7 @@
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { buildTelegramBotUrl } from '../../constants';
+import { type SharedBotPlatform, sharedBotUrl } from '../../constants';
 import {
   ConfirmCard,
   type ExistingLink,
@@ -14,9 +14,10 @@ import {
 } from './shared';
 import { isSingleAccountRebindBlocked, shouldShowSingleAccountSuccess } from './singleAccountState';
 
-interface TelegramBodyProps {
+interface SharedBotBodyProps {
   existingLink?: ExistingLink | null;
   lobeAccount: string;
+  platform: SharedBotPlatform;
   platformMeta?: PlatformMeta;
   randomId: string;
   signInUrl: string;
@@ -24,19 +25,37 @@ interface TelegramBodyProps {
   userAvatar?: string | null;
 }
 
-const TelegramBody = memo<TelegramBodyProps>(
-  ({ existingLink, lobeAccount, platformMeta, randomId, signInUrl, tokenData, userAvatar }) => {
+/** A shared bot (Telegram, the iMessage line) has one account per user and no workspace. */
+const SharedBotBody = memo<SharedBotBodyProps>(
+  ({
+    existingLink,
+    lobeAccount,
+    platform,
+    platformMeta,
+    randomId,
+    signInUrl,
+    tokenData,
+    userAvatar,
+  }) => {
     const { t } = useTranslation('messenger');
     const [done, setDone] = useState(false);
 
-    const platformLabel = platformMeta?.name ?? 'Telegram';
-    const botUsername = platformMeta?.botUsername;
+    const platformLabel = platformMeta?.name ?? (platform === 'imessage' ? 'iMessage' : 'Telegram');
+    // iMessage identifies people by their phone number or Apple ID email, which reads as-is.
+    const describeAccount = (account: {
+      platformUserId?: string;
+      platformUsername?: string | null;
+    }) =>
+      account.platformUsername ??
+      (platform === 'imessage'
+        ? (account.platformUserId ?? '')
+        : `ID ${account.platformUserId ?? ''}`);
     const rebindBlocked = isSingleAccountRebindBlocked(existingLink, tokenData);
 
     if (shouldShowSingleAccountSuccess(existingLink, tokenData, done)) {
       return (
         <SuccessCard
-          openBotUrl={botUsername ? buildTelegramBotUrl(botUsername) : null}
+          openBotUrl={sharedBotUrl(platform, platformMeta ?? {})}
           platformLabel={platformLabel}
         />
       );
@@ -44,8 +63,8 @@ const TelegramBody = memo<TelegramBodyProps>(
 
     if (!tokenData) return null;
 
-    // Telegram has no workspace/tenant concept — skip the workspace row entirely.
-    const handle = tokenData.platformUsername ?? `ID ${tokenData.platformUserId}`;
+    // Shared bots have no workspace/tenant concept — skip the workspace row entirely.
+    const handle = describeAccount(tokenData);
     const infoRows: InfoRow[] = [
       { label: t('verify.confirm.fields.lobeHubAccount'), value: lobeAccount },
       {
@@ -57,17 +76,16 @@ const TelegramBody = memo<TelegramBodyProps>(
     return (
       <ConfirmCard
         infoRows={infoRows}
-        platform="telegram"
+        platform={platform}
         randomId={randomId}
         userAvatar={userAvatar}
         blockingNotice={
           rebindBlocked
             ? {
-                ctaHref: '/settings/messenger/telegram',
+                ctaHref: `/settings/messenger/${platform}`,
                 ctaLabel: t('verify.confirm.relink.manage'),
                 description: t('verify.confirm.relink.description', {
-                  account:
-                    existingLink?.platformUsername ?? `ID ${existingLink?.platformUserId ?? ''}`,
+                  account: existingLink ? describeAccount(existingLink) : '',
                   platform: platformLabel,
                 }),
                 title: t('verify.confirm.relink.title', { platform: platformLabel }),
@@ -89,6 +107,6 @@ const TelegramBody = memo<TelegramBodyProps>(
     );
   },
 );
-TelegramBody.displayName = 'MessengerVerifyTelegramBody';
+SharedBotBody.displayName = 'MessengerVerifySharedBotBody';
 
-export default TelegramBody;
+export default SharedBotBody;

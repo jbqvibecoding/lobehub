@@ -12,6 +12,7 @@ import { createAbortError, isAbortError } from '@/server/services/agentRuntime/a
 import { AiAgentService } from '@/server/services/aiAgent';
 import { GatewayService } from '@/server/services/gateway';
 import { getMessageGatewayClient } from '@/server/services/gateway/MessageGatewayClient';
+import { messengerPlatformOfInstallationKey } from '@/server/services/messenger/installations';
 import { isQueueAgentRuntimeEnabled } from '@/server/services/queue/impls';
 import { SystemAgentService } from '@/server/services/systemAgent';
 
@@ -776,7 +777,9 @@ export class AgentBridgeService {
       // Start gateway typing immediately so the alarm keeps it alive through
       // the entire AI generation (platform typing expires after ~10s).
       if (botContext?.platformThreadId && botContext?.applicationId) {
-        const platform = botContext.platformThreadId.split(':')[0];
+        const platform = botContext.messengerInstallationKey
+          ? messengerPlatformOfInstallationKey(botContext.messengerInstallationKey)
+          : botContext.platformThreadId.split(':')[0];
         try {
           if (botContext.messengerInstallationKey) {
             // Messenger run: shard typing by `(platform, lobeUserId)` so each

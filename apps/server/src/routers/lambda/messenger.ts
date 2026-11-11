@@ -6,9 +6,11 @@ import { withScopedPermission } from '@/business/server/trpc-middlewares/rbacPer
 import {
   getEnabledMessengerPlatforms,
   getMessengerDiscordConfig,
+  getMessengerImessageConfig,
   getMessengerSlackConfig,
   getMessengerTelegramConfig,
   isMessengerPlatformEnabled,
+  MESSENGER_PLATFORMS,
   type MessengerPlatform,
 } from '@/config/messenger';
 import { AgentModel } from '@/database/models/agent';
@@ -31,6 +33,7 @@ import { SlackApi } from '@/server/services/bot/platforms/slack/api';
 import {
   consumeLinkToken,
   MessengerDiscordBinder,
+  MessengerImessageBinder,
   messengerPlatformRegistry,
   MessengerSlackBinder,
   MessengerTelegramBinder,
@@ -38,11 +41,7 @@ import {
   peekLinkToken,
 } from '@/server/services/messenger';
 
-const platformEnum = z.enum([
-  'telegram',
-  'slack',
-  'discord',
-]) satisfies z.ZodType<MessengerPlatform>;
+const platformEnum = z.enum(MESSENGER_PLATFORMS) satisfies z.ZodType<MessengerPlatform>;
 
 const REVOKED_SLACK_AUTH_ERRORS = new Set([
   'account_inactive',
@@ -208,10 +207,11 @@ export const messengerRouter = router({
       .listSerializedPlatforms()
       .filter((def) => enabledSet.has(def.id));
 
-    const [discordConfig, slackConfig, telegramConfig] = await Promise.all([
+    const [discordConfig, slackConfig, telegramConfig, imessageConfig] = await Promise.all([
       enabledSet.has('discord') ? getMessengerDiscordConfig() : Promise.resolve(null),
       enabledSet.has('slack') ? getMessengerSlackConfig() : Promise.resolve(null),
       enabledSet.has('telegram') ? getMessengerTelegramConfig() : Promise.resolve(null),
+      enabledSet.has('imessage') ? getMessengerImessageConfig() : Promise.resolve(null),
     ]);
 
     return definitions.map((def) => ({
@@ -227,6 +227,8 @@ export const messengerRouter = router({
       // IDs to deep-link to the bot.
       botUsername: def.id === 'telegram' ? telegramConfig?.botUsername : undefined,
       enabled: true,
+      // iMessage-only: the shared line's number, where users text the bot.
+      phoneNumber: def.id === 'imessage' ? imessageConfig?.phoneNumber : undefined,
       // Legacy field — older callers index by `.platform` rather than `.id`.
       // Keep until those callers migrate; safe alias of the registry id.
       platform: def.id,
@@ -650,6 +652,10 @@ const notifyLinkSuccess = async (
       }
       case 'discord': {
         await new MessengerDiscordBinder().notifyLinkSuccess(params);
+        break;
+      }
+      case 'imessage': {
+        await new MessengerImessageBinder().notifyLinkSuccess(params);
         break;
       }
     }

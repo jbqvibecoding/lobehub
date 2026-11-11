@@ -194,6 +194,18 @@ vi.mock('./platforms/telegram/binder', () => ({
   })),
 }));
 
+vi.mock('./platforms/imessage/binder', () => ({
+  MessengerImessageBinder: vi.fn().mockImplementation(() => ({
+    createClient: () => ({
+      createAdapter: () => ({}),
+      extractChatId: (id: string) => id.split(':')[1] ?? id,
+    }),
+    handleUnlinkedMessage: vi.fn(),
+    notifyLinkSuccess: vi.fn(),
+    sendDmText: vi.fn(),
+  })),
+}));
+
 const buildSlackRequest = (body: string, headers: Record<string, string> = {}): Request =>
   new Request('https://app.example.com/api/agent/messenger/webhooks/slack', {
     body,
@@ -399,6 +411,52 @@ describe('MessengerRouter.getWebhookHandler', () => {
     const res = await router.getWebhookHandler('telegram')(req);
     expect(res.status).toBe(200);
     expect(mockVerifySignature).not.toHaveBeenCalled();
+  });
+
+  describe('iMessage', () => {
+    const imessageCreds = {
+      applicationId: 'imessage:singleton',
+      botToken: 'linq-key',
+      installationKey: 'imessage:singleton',
+      metadata: {},
+      platform: 'imessage' as const,
+      signingSecret: 'whsec_test',
+      tenantId: '',
+    };
+    const imessageRequest = (body: unknown) =>
+      new Request('https://e.com/api/agent/messenger/webhooks/imessage', {
+        body: JSON.stringify(body),
+        method: 'POST',
+      });
+
+    it("hands a one-to-one message to the Linq adapter's webhook", async () => {
+      const linqWebhook = vi.fn(async () => new Response('linq OK', { status: 200 }));
+      mockChatBot.webhooks = { ...mockChatBot.webhooks, linq: linqWebhook } as any;
+      mockResolveByPayload.mockResolvedValue(imessageCreds);
+
+      const res = await new MessengerRouter().getWebhookHandler('imessage')(
+        imessageRequest({
+          data: { chat: { id: 'chat-1', is_group: false }, direction: 'inbound' },
+          event_type: 'message.received',
+        }),
+      );
+
+      expect(res.status).toBe(200);
+      expect(linqWebhook).toHaveBeenCalledTimes(1);
+    });
+
+    it('drops group chat messages before any account or agent lookup', async () => {
+      const res = await new MessengerRouter().getWebhookHandler('imessage')(
+        imessageRequest({
+          data: { chat: { id: 'chat-g', is_group: true }, direction: 'inbound' },
+          event_type: 'message.received',
+        }),
+      );
+
+      expect(res.status).toBe(200);
+      expect(mockResolveByPayload).not.toHaveBeenCalled();
+      expect(mockWebhookHandler).not.toHaveBeenCalled();
+    });
   });
 });
 

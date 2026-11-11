@@ -12,8 +12,8 @@ describe('messenger platforms by region', { timeout: 30_000 }, () => {
     vi.resetModules();
   });
 
-  it('runs the shared Slack, Telegram and Discord bots in the global edition', async () => {
-    expect(await loadRegistry('global')).toEqual(['slack', 'telegram', 'discord']);
+  it('runs the shared Slack, Telegram, Discord and iMessage bots in the global edition', async () => {
+    expect(await loadRegistry('global')).toEqual(['slack', 'telegram', 'discord', 'imessage']);
   });
 
   it('runs none of them in the mainland edition', async () => {

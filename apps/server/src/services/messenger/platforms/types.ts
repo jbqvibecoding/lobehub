@@ -121,6 +121,12 @@ export interface MessengerPlatformOAuthAdapter {
  */
 export interface MessengerPlatformDefinition {
   /**
+   * Name of the platform's Chat SDK adapter, when it differs from `id`. The Chat SDK resolves
+   * adapters by thread-id prefix, so an adapter that names its threads after itself (Linq writes
+   * `linq:<chatId>` for iMessage) must be registered, and its webhook found, under that name.
+   */
+  adapterName?: string;
+  /**
    * Gateway transport this SystemBot uses. Fixed per platform — independent
    * of the per-agent bot-channel `connectionMode` because SystemBot's wiring
    * is owned by dc-center (e.g. Slack SystemBot is webhook even though a
@@ -160,5 +166,5 @@ export interface MessengerPlatformDefinition {
  */
 export type SerializedMessengerPlatformDefinition = Omit<
   MessengerPlatformDefinition,
-  'createBinder' | 'oauth' | 'webhookGate'
+  'adapterName' | 'createBinder' | 'oauth' | 'webhookGate'
 >;

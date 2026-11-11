@@ -1,7 +1,7 @@
 'use client';
 
-import { Block, Flexbox, Icon, Text } from '@lobehub/ui';
-import { Button, Select } from '@lobehub/ui/base-ui';
+import { Block, Flexbox, Icon } from '@lobehub/ui';
+import { Button, Select, Text } from '@lobehub/ui/base-ui';
 import { App } from 'antd';
 import { createStaticStyles } from 'antd-style';
 import { AlertTriangleIcon, CheckCircle2Icon, LinkIcon } from 'lucide-react';
@@ -377,4 +377,5 @@ export interface PlatformMeta {
   botUsername?: string;
   id: string;
   name: string;
+  phoneNumber?: string;
 }

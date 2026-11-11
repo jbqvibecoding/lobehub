@@ -5,8 +5,8 @@ import { memo } from 'react';
 import type { MessengerPlatform } from '../../constants';
 import DiscordBody from './Discord';
 import type { ExistingLink, PeekedToken, PlatformMeta } from './shared';
+import SharedBotBody from './SharedBot';
 import SlackBody from './Slack';
-import TelegramBody from './Telegram';
 
 interface BodyProps {
   existingLink?: ExistingLink | null;
@@ -27,8 +27,9 @@ const Body = memo<BodyProps>(({ platform, ...rest }) => {
     case 'discord': {
       return <DiscordBody {...rest} />;
     }
-    case 'telegram': {
-      return <TelegramBody {...rest} />;
+    case 'telegram':
+    case 'imessage': {
+      return <SharedBotBody {...rest} platform={platform} />;
     }
   }
 });

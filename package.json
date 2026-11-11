@@ -211,6 +211,7 @@
     "@khmyznikov/pwa-install": "0.3.9",
     "@larksuiteoapi/node-sdk": "^1.68.0",
     "@lexical/utils": "^0.42.0",
+    "@linqapp/chat-sdk-adapter": "^0.5.1",
     "@lobechat/agent-gateway-client": "workspace:*",
     "@lobechat/agent-mock": "workspace:*",
     "@lobechat/agent-policy": "workspace:*",

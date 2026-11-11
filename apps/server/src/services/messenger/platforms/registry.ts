@@ -38,7 +38,11 @@ export class MessengerPlatformRegistry {
    * `bot/platforms` `PlatformRegistry.listSerializedPlatforms`.
    */
   listSerializedPlatforms(): SerializedMessengerPlatformDefinition[] {
-    return this.listPlatforms().map(({ createBinder, oauth, webhookGate, ...rest }) => rest);
+    return this.listPlatforms().map(({ connectionMode, id, name }) => ({
+      connectionMode,
+      id,
+      name,
+    }));
   }
 
   /**

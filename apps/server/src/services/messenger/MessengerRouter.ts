@@ -321,7 +321,7 @@ export class MessengerRouter {
       }
 
       // ----- Normal message → chat-sdk handler ----------------------------
-      const handler = (bot.chatBot.webhooks as any)?.[platform];
+      const handler = (bot.chatBot.webhooks as any)?.[definition.adapterName ?? platform];
       if (!handler) {
         return new Response(`Messenger ${platform} webhook unavailable`, { status: 500 });
       }

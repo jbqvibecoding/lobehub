@@ -11,6 +11,7 @@ import { getMessageGatewayClient } from '@/server/services/gateway/MessageGatewa
 import {
   getInstallationStore,
   messengerConnectionIdForUser,
+  messengerPlatformOfInstallationKey,
 } from '@/server/services/messenger/installations';
 import { messengerPlatformRegistry } from '@/server/services/messenger/platforms';
 import type { MessengerPlatformBinder } from '@/server/services/messenger/types';
@@ -157,7 +158,11 @@ export class BotCallbackService {
       messengerInstallationKey,
       userId,
     } = body;
-    const platform = platformThreadId.split(':')[0];
+    // A shared-messenger run names its platform in the install key; the thread id's prefix is the
+    // chat adapter's name, which can differ (iMessage threads are `linq:<chatId>`).
+    const platform = messengerInstallationKey
+      ? messengerPlatformOfInstallationKey(messengerInstallationKey)
+      : platformThreadId.split(':')[0];
 
     const { binder, client, connectionId, messenger, charLimit, settings, workspaceId } =
       await this.createMessenger({

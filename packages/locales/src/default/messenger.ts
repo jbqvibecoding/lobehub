@@ -31,6 +31,7 @@ export default {
     "This connection isn't available right now. Please try again later.",
   'messenger.linkModal.openCta': 'Open in {{platform}}',
   'messenger.linkModal.scanHint': 'Or scan with your phone to open {{platform}}.',
+  'messenger.linkModal.textNumber': 'Text {{number}} to get started.',
   'messenger.noPlatformsConfigured': 'No platforms are available yet. Check back soon.',
   'messenger.slack.connectModal.continueButton': 'Continue on Slack',
   'messenger.slack.connectModal.description':
@@ -107,6 +108,8 @@ export default {
   'messenger.discord.userPending.name': 'Not linked yet',
   'messenger.list.discord.description':
     'Chat with your LobeHub agents on Discord by DMing the LobeHub bot from any server.',
+  'messenger.list.imessage.description':
+    'Text your LobeHub agents from Messages on iPhone, iPad or Mac, and choose which agent replies.',
   'messenger.list.slack.description':
     'Chat with your LobeHub agents on Slack by DMing or mentioning @LobeHub in any workspace.',
   'messenger.list.telegram.description':

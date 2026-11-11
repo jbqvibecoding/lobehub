@@ -1,7 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 
-import { getInstallationStore, messengerConnectionId, messengerConnectionIdForUser } from './index';
+import {
+  getInstallationStore,
+  messengerConnectionId,
+  messengerConnectionIdForUser,
+  messengerPlatformOfInstallationKey,
+} from './index';
 
 vi.mock('./slack', () => ({
   SlackInstallationStore: vi.fn().mockImplementation(() => ({ kind: 'slack' })),
@@ -10,6 +15,11 @@ vi.mock('./slack', () => ({
 vi.mock('./telegram', () => ({
   TELEGRAM_INSTALLATION_KEY: 'telegram:singleton',
   TelegramInstallationStore: vi.fn().mockImplementation(() => ({ kind: 'telegram' })),
+}));
+
+vi.mock('./imessage', () => ({
+  IMESSAGE_INSTALLATION_KEY: 'imessage:singleton',
+  ImessageInstallationStore: vi.fn().mockImplementation(() => ({ kind: 'imessage' })),
 }));
 
 vi.mock('./discord', () => ({
@@ -31,6 +41,10 @@ describe('getInstallationStore', () => {
   it('returns the discord store for platform=discord', () => {
     const store = getInstallationStore('discord');
     expect(store).toEqual({ kind: 'discord' });
+  });
+
+  it('returns the iMessage store for platform=imessage', () => {
+    expect(getInstallationStore('imessage')).toEqual({ kind: 'imessage' });
   });
 
   it('memoizes the store across calls (one instance per process)', async () => {
@@ -100,5 +114,13 @@ describe('messengerConnectionIdForUser', () => {
         userId: 'u_abc',
       }),
     ).toBe('messenger:slack:T0123:user-u_abc');
+  });
+});
+
+describe('messengerPlatformOfInstallationKey', () => {
+  // A run's thread id can name the chat adapter rather than the platform (`linq:<chat>`).
+  it('reads the messenger platform from the install key', () => {
+    expect(messengerPlatformOfInstallationKey('imessage:singleton')).toBe('imessage');
+    expect(messengerPlatformOfInstallationKey('slack:T0123ABC')).toBe('slack');
   });
 });

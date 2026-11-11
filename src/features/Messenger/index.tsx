@@ -1,7 +1,7 @@
 'use client';
 
-import { Flexbox, Skeleton, Text } from '@lobehub/ui';
-import { Button } from '@lobehub/ui/base-ui';
+import { Flexbox } from '@lobehub/ui';
+import { Button, SkeletonText, Text } from '@lobehub/ui/base-ui';
 import { App } from 'antd';
 import { createStaticStyles } from 'antd-style';
 import { memo, useEffect, useState } from 'react';
@@ -15,7 +15,7 @@ import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwar
 import { messengerKeys } from '@/libs/swr/keys';
 import { messengerService } from '@/services/messenger';
 
-import { type MessengerPlatform, PlatformAvatar } from './constants';
+import { isMessengerPlatform, type MessengerPlatform, PlatformAvatar } from './constants';
 import { getDiscordInstallErrorReason, getSlackInstallErrorReason } from './i18n';
 import IntegrationDetail from './IntegrationDetail';
 import IntegrationList from './IntegrationList';
@@ -25,11 +25,6 @@ interface BlockedInstall {
   name: string;
   platform: 'slack' | 'discord';
 }
-
-const VALID_PLATFORMS: ReadonlySet<MessengerPlatform> = new Set(['slack', 'telegram', 'discord']);
-
-const isMessengerPlatform = (value: string | undefined): value is MessengerPlatform =>
-  !!value && VALID_PLATFORMS.has(value as MessengerPlatform);
 
 const styles = createStaticStyles(({ css, cssVar }) => ({
   emptyState: css`
@@ -129,6 +124,7 @@ const MessengerSettings = memo(() => {
             appId={selectedMeta.appId}
             botUsername={selectedMeta.botUsername}
             name={selectedMeta.name}
+            phoneNumber={selectedMeta.phoneNumber}
             platform={selected}
             onBack={() => navigate('/settings/messenger')}
           />
@@ -141,7 +137,7 @@ const MessengerSettings = memo(() => {
               errorVariant={'block'}
               isEmpty={platforms.length === 0}
               isLoading={platformsSWR.isLoading}
-              loading={<Skeleton active paragraph={{ rows: 3 }} title={false} />}
+              loading={<SkeletonText rows={3} />}
               empty={
                 <div className={styles.emptyState}>{t('messenger.noPlatformsConfigured')}</div>
               }

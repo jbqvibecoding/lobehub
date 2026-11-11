@@ -127,6 +127,7 @@ vi.mock('@/server/services/systemAgent', () => ({
 
 vi.mock('@/server/services/messenger/installations', () => ({
   getInstallationStore: mockMessengerGetInstallationStore,
+  messengerPlatformOfInstallationKey: (installationKey: string) => installationKey.split(':')[0],
   messengerConnectionIdForUser: ({
     installationKey,
     userId,
@@ -339,6 +340,31 @@ describe('BotCallbackService', () => {
 
       expect(mockMessengerGetInstallationStore).toHaveBeenCalledWith('slack');
       expect(mockMessengerStoreResolveByKey).toHaveBeenCalledWith('slack:T0123');
+    });
+
+    // The thread id names the chat adapter (`linq:`), not the messenger platform (`imessage`).
+    it('should resolve an iMessage run through its install key, not the thread prefix', async () => {
+      mockMessengerStoreResolveByKey.mockResolvedValue({
+        applicationId: 'imessage:singleton',
+        botToken: 'linq-key',
+        installationKey: 'imessage:singleton',
+        metadata: {},
+        platform: 'imessage',
+        tenantId: '',
+      });
+
+      const body = makeBody({
+        applicationId: 'messenger-imessage',
+        messengerInstallationKey: 'imessage:singleton',
+        platformThreadId: 'linq:9c1f0a2e',
+        type: 'completion',
+      });
+
+      await service.handleCallback(body);
+
+      expect(mockMessengerGetInstallationStore).toHaveBeenCalledWith('imessage');
+      expect(mockMessengerStoreResolveByKey).toHaveBeenCalledWith('imessage:singleton');
+      expect(mockFindByPlatformAndAppId).not.toHaveBeenCalled();
     });
 
     it('should throw a clear error when messenger install is not found', async () => {

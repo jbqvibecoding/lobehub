@@ -28,6 +28,9 @@ const log = debug('lobe-server:messenger:config');
  *   credentials (`appId` / `clientId` / `clientSecret` / `signingSecret`);
  *   each workspace bot token is acquired via OAuth on install and stored
  *   in `messenger_installations`.
+ *
+ * - **iMessage**: one product-owned phone line on Linq serves every user, like
+ *   Telegram. The line's number is public and lives in `application_id`.
  */
 export const getMessengerConfig = () => {
   return createEnv({
@@ -43,7 +46,14 @@ export const getMessengerConfig = () => {
 
 export const messengerEnv = getMessengerConfig();
 
-export type MessengerPlatform = 'telegram' | 'slack' | 'discord';
+export type MessengerPlatform = 'telegram' | 'slack' | 'discord' | 'imessage';
+
+export const MESSENGER_PLATFORMS = [
+  'telegram',
+  'slack',
+  'discord',
+  'imessage',
+] as const satisfies readonly MessengerPlatform[];
 
 export interface MessengerTelegramConfig {
   botToken: string;
@@ -69,6 +79,15 @@ export interface MessengerDiscordConfig {
    */
   clientSecret?: string;
   publicKey: string;
+}
+
+export interface MessengerImessageConfig {
+  /** Linq API key for the line. */
+  apiKey: string;
+  /** The line's number in E.164 form, shown to users so they know where to text. */
+  phoneNumber?: string;
+  /** Linq webhook signing secret (Standard Webhooks). */
+  signingSecret: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +179,18 @@ export const getMessengerDiscordConfig = async (): Promise<MessengerDiscordConfi
   });
 };
 
+export const getMessengerImessageConfig = async (): Promise<MessengerImessageConfig | null> => {
+  return fetchAndCache<MessengerImessageConfig>('imessage', (row) => {
+    const c = row.credentials as Partial<Omit<MessengerImessageConfig, 'phoneNumber'>>;
+    if (!c.apiKey || !c.signingSecret) return null;
+    return {
+      apiKey: c.apiKey,
+      phoneNumber: row.applicationId ?? undefined,
+      signingSecret: c.signingSecret,
+    };
+  });
+};
+
 export const isMessengerPlatformEnabled = async (platform: MessengerPlatform): Promise<boolean> => {
   switch (platform) {
     case 'telegram': {
@@ -171,6 +202,9 @@ export const isMessengerPlatformEnabled = async (platform: MessengerPlatform): P
     case 'discord': {
       return !!(await getMessengerDiscordConfig());
     }
+    case 'imessage': {
+      return !!(await getMessengerImessageConfig());
+    }
     default: {
       return false;
     }
@@ -178,9 +212,8 @@ export const isMessengerPlatformEnabled = async (platform: MessengerPlatform): P
 };
 
 export const getEnabledMessengerPlatforms = async (): Promise<MessengerPlatform[]> => {
-  const platforms = ['telegram', 'slack', 'discord'] as const;
   const checks = await Promise.all(
-    platforms.map(async (p) => ((await isMessengerPlatformEnabled(p)) ? p : null)),
+    MESSENGER_PLATFORMS.map(async (p) => ((await isMessengerPlatformEnabled(p)) ? p : null)),
   );
   return checks.filter((p): p is MessengerPlatform => p !== null);
 };

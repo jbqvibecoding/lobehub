@@ -8,8 +8,9 @@ import { type AppRegion, isMainlandRegion } from './region';
 const MAINLAND_BOT_PLATFORMS: readonly string[] = ['feishu', 'qq', 'wechat'];
 
 /**
- * Platforms with one product-owned bot shared by every user (Telegram, Discord) or installed per
- * workspace through OAuth (Slack). None of them is reachable from the mainland edition.
+ * Platforms with one product-owned bot shared by every user (Telegram, Discord, the iMessage line)
+ * or installed per workspace through OAuth (Slack). None of them is reachable from the mainland
+ * edition.
  */
 const MAINLAND_MESSENGER_PLATFORMS: readonly string[] = [];
 

@@ -2,40 +2,62 @@
 
 import { Flexbox } from '@lobehub/ui';
 import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 
-import type { MessengerPlatform } from '../constants';
+import { buildImessageUrl, buildTelegramDeepLink, type MessengerPlatform } from '../constants';
 import DiscordLinkBody from './Discord';
+import SharedBotLinkBody from './SharedBot';
 import SlackLinkBody from './Slack';
-import TelegramLinkBody from './Telegram';
 
 export interface LinkModalContentProps {
   appId?: string;
   botUsername?: string;
   name: string;
+  phoneNumber?: string;
   platform: MessengerPlatform;
 }
 
-const LinkModalContent = memo<LinkModalContentProps>(({ appId, botUsername, name, platform }) => {
-  const renderBody = () => {
-    switch (platform) {
-      case 'slack': {
-        return <SlackLinkBody />;
-      }
-      case 'discord': {
-        return <DiscordLinkBody appId={appId} name={name} />;
-      }
-      case 'telegram': {
-        return <TelegramLinkBody botUsername={botUsername} name={name} />;
-      }
-    }
-  };
+const LinkModalContent = memo<LinkModalContentProps>(
+  ({ appId, botUsername, name, phoneNumber, platform }) => {
+    const { t } = useTranslation('messenger');
 
-  return (
-    <Flexbox align={'center'} gap={20} style={{ paddingBlockEnd: 16, paddingBlockStart: 24 }}>
-      {renderBody()}
-    </Flexbox>
-  );
-});
+    const renderBody = () => {
+      switch (platform) {
+        case 'slack': {
+          return <SlackLinkBody />;
+        }
+        case 'discord': {
+          return <DiscordLinkBody appId={appId} name={name} />;
+        }
+        case 'telegram': {
+          return (
+            <SharedBotLinkBody
+              deepLink={botUsername ? buildTelegramDeepLink(botUsername) : undefined}
+              name={name}
+              platform="telegram"
+            />
+          );
+        }
+        case 'imessage': {
+          return (
+            <SharedBotLinkBody
+              deepLink={phoneNumber ? buildImessageUrl(phoneNumber) : undefined}
+              name={name}
+              note={phoneNumber && t('messenger.linkModal.textNumber', { number: phoneNumber })}
+              platform="imessage"
+            />
+          );
+        }
+      }
+    };
+
+    return (
+      <Flexbox align={'center'} gap={20} style={{ paddingBlockEnd: 16, paddingBlockStart: 24 }}>
+        {renderBody()}
+      </Flexbox>
+    );
+  },
+);
 
 LinkModalContent.displayName = 'MessengerLinkModalContent';
 

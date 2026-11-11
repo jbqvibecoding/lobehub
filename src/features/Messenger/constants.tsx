@@ -1,16 +1,24 @@
-import { Discord, Slack, Telegram } from '@lobehub/ui/icons';
+import { Discord, IMessage, Slack, Telegram } from '@lobehub/ui/icons';
 import type { ReactNode } from 'react';
 
-export type MessengerPlatform = 'telegram' | 'slack' | 'discord';
+export type MessengerPlatform = 'telegram' | 'slack' | 'discord' | 'imessage';
 
 export const SUPPORTED_MESSENGER_PLATFORMS = [
   { id: 'telegram', name: 'Telegram' },
   { id: 'slack', name: 'Slack' },
   { id: 'discord', name: 'Discord' },
+  { id: 'imessage', name: 'iMessage' },
 ] as const satisfies readonly { id: MessengerPlatform; name: string }[];
+
+export const isMessengerPlatform = (value: string | null | undefined): value is MessengerPlatform =>
+  SUPPORTED_MESSENGER_PLATFORMS.some((platform) => platform.id === value);
+
+/** Platforms served by one shared bot that every user links to (no per-workspace install). */
+export type SharedBotPlatform = Extract<MessengerPlatform, 'imessage' | 'telegram'>;
 
 export const PLATFORM_TAB_ICONS: Record<MessengerPlatform, ReactNode> = {
   discord: <Discord.Color size={16} />,
+  imessage: <IMessage.Color size={16} />,
   slack: <Slack.Color size={16} />,
   telegram: <Telegram.Color size={16} />,
 };
@@ -24,6 +32,7 @@ export const PlatformAvatar = ({
 }) => {
   if (platform === 'telegram') return <Telegram.Avatar size={size} />;
   if (platform === 'discord') return <Discord.Avatar size={size} />;
+  if (platform === 'imessage') return <IMessage.Avatar size={size} />;
   return <Slack.Avatar size={size} />;
 };
 
@@ -36,6 +45,7 @@ export const PlatformBrandIcon = ({
 }) => {
   if (platform === 'telegram') return <Telegram.Color size={size} />;
   if (platform === 'discord') return <Discord.Color size={size} />;
+  if (platform === 'imessage') return <IMessage.Color size={size} />;
   return <Slack.Color size={size} />;
 };
 
@@ -73,3 +83,19 @@ export const buildSlackOpenBotUrl = (tenantId: string, appId?: string): string =
  */
 export const buildDiscordOpenBotUrl = (applicationId: string): string =>
   `https://discord.com/users/${applicationId}`;
+
+/**
+ * Starts a message to the shared iMessage line. `sms:` opens Messages on iPhone, iPad and Mac,
+ * which sends it as an iMessage, and the SMS app elsewhere.
+ */
+export const buildImessageUrl = (phoneNumber: string): string =>
+  `sms:${phoneNumber.replaceAll(/[^\d+]/g, '')}`;
+
+/** Where to message the shared bot, or null when the deployment has not configured it. */
+export const sharedBotUrl = (
+  platform: SharedBotPlatform,
+  meta: { botUsername?: string; phoneNumber?: string },
+): string | null => {
+  if (platform === 'imessage') return meta.phoneNumber ? buildImessageUrl(meta.phoneNumber) : null;
+  return meta.botUsername ? buildTelegramBotUrl(meta.botUsername) : null;
+};

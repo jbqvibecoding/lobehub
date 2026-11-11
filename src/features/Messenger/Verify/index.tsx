@@ -12,13 +12,10 @@ import { useSession } from '@/libs/better-auth/auth-client';
 import { messengerKeys } from '@/libs/swr/keys';
 import { messengerService } from '@/services/messenger';
 
-import { type MessengerPlatform } from '../constants';
+import { isMessengerPlatform } from '../constants';
 import { getMessengerErrorMessage } from '../i18n';
 import Body from './Body';
 import { Heading, IconRow, styles } from './Body/shared';
-
-const isSupportedPlatform = (value: string): value is MessengerPlatform =>
-  value === 'telegram' || value === 'slack' || value === 'discord';
 
 const MessengerVerifyPage = memo(() => {
   const { t } = useTranslation('messenger');
@@ -26,7 +23,7 @@ const MessengerVerifyPage = memo(() => {
 
   const randomId = searchParams.get('random_id') ?? '';
   const imType = searchParams.get('im_type') ?? '';
-  const platform = isSupportedPlatform(imType) ? imType : null;
+  const platform = isMessengerPlatform(imType) ? imType : null;
 
   const { data: session, isPending: sessionPending } = useSession();
   const isSignedIn = !!session?.user;

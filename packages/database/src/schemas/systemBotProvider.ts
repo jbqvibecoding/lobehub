@@ -23,6 +23,7 @@ import { timestamps } from './_helpers';
  *   - discord:  { botToken, publicKey, botUsername? }
  *   - telegram: { botToken, botUsername?, webhookSecret? }
  *   - slack:    { clientId, clientSecret, signingSecret }
+ *   - imessage: { apiKey, signingSecret }  (Linq; the line's number is the application id)
  *
  * Public app identifiers (`applicationId` / Slack `appId`) live in the
  * top-level `application_id` column — they're not secrets and the consumer
@@ -33,7 +34,7 @@ export const systemBotProviders = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
 
-    /** Platform identifier: 'discord' | 'telegram' | 'slack'. */
+    /** Platform identifier: 'discord' | 'telegram' | 'slack' | 'imessage'. */
     platform: varchar('platform', { length: 50 }).notNull(),
 
     /** Soft on/off — disabled rows are ignored by the messenger router. */
