@@ -2,6 +2,7 @@ export {
   defaultSandboxProviderForRegion,
   isBotPlatformAvailable,
   isMessengerPlatformAvailable,
+  isPaymentProviderAvailable,
 } from './availability';
 export { assertRegionDeployment, regionDeploymentProblems } from './preflight';
 export {

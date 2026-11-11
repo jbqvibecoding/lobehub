@@ -16,6 +16,7 @@
   "dependencies": {
     "@lobechat/agent-policy": "workspace:*",
     "@lobechat/agent-templates": "workspace:*",
+    "@lobechat/billing": "workspace:*",
     "@lobechat/business-const": "workspace:*",
     "@lobechat/business-model-bank": "workspace:*",
     "@lobechat/const": "workspace:*",

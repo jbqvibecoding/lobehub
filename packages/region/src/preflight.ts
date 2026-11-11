@@ -24,6 +24,12 @@ export const regionDeploymentProblems = (env: DeploymentEnv): string[] => {
     );
   }
 
+  if (env.STRIPE_SECRET_KEY?.trim()) {
+    problems.push(
+      'STRIPE_SECRET_KEY is set, but Stripe bills the Global edition only. The mainland edition is paid through WeChat Pay and Alipay; remove the Stripe keys.',
+    );
+  }
+
   if (env.SANDBOX_PROVIDER?.trim() === 'market') {
     problems.push(
       'SANDBOX_PROVIDER=market runs code and files on LobeHub Market outside mainland China. Use openbot or onlyboxes.',

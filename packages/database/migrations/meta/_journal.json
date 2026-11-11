@@ -840,6 +840,13 @@
       "when": 1793938443822,
       "tag": "0119_add_agent_action_audits",
       "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1794328586782,
+      "tag": "0120_add_user_subscriptions_and_credit_usages",
+      "breakpoints": true
     }
   ],
   "version": "6"

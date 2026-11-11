@@ -34,6 +34,15 @@ describe('regionDeploymentProblems', () => {
     expect(problems[1]).toContain('SANDBOX_PROVIDER=market');
   });
 
+  it('keeps Stripe to the Global edition', () => {
+    const stripe = { NODE_ENV: 'production', STRIPE_SECRET_KEY: 'sk_live_x' };
+
+    expect(regionDeploymentProblems({ ...stripe, APP_REGION: 'global' })).toEqual([]);
+    expect(regionDeploymentProblems({ ...stripe, APP_REGION: 'cn' })).toEqual([
+      expect.stringContaining('Stripe bills the Global edition only'),
+    ]);
+  });
+
   it('accepts a mainland queue that points at a QStash-compatible endpoint in the region', () => {
     expect(
       regionDeploymentProblems({

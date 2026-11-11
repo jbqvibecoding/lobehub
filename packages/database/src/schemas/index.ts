@@ -11,6 +11,7 @@ export * from './aiInfra';
 export * from './apiKey';
 export * from './asyncTask';
 export * from './betterAuth';
+export * from './billing';
 export * from './chatGroup';
 export * from './connector';
 export * from './device';

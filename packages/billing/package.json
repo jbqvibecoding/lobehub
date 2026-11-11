@@ -1,0 +1,22 @@
+{
+  "name": "@lobechat/billing",
+  "version": "1.0.0",
+  "private": true,
+  "description": "What a plan includes and when a subscription grants it: plan catalog, entitlement rules and monthly credit windows",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest",
+    "test:coverage": "vitest --coverage --silent='passed-only'"
+  },
+  "dependencies": {
+    "@lobechat/types": "workspace:*"
+  }
+}

@@ -645,6 +645,42 @@ table verifications {
   }
 }
 
+table user_credit_usages {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id text [not null]
+  period_start "timestamp with time zone" [not null]
+  period_end "timestamp with time zone" [not null]
+  used_credits bigint [not null, default: 0]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (user_id, period_start) [name: 'user_credit_usages_user_id_period_start_unique', unique]
+  }
+}
+
+table user_subscriptions {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id text [not null]
+  provider text [not null]
+  provider_customer_id text [not null]
+  provider_subscription_id text
+  plan text [not null, default: 'free']
+  billing_interval text
+  status text
+  current_period_start "timestamp with time zone"
+  current_period_end "timestamp with time zone"
+  cancel_at_period_end boolean [not null, default: false]
+  synced_at "timestamp with time zone"
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (user_id, provider) [name: 'user_subscriptions_user_id_provider_unique', unique]
+    (provider, provider_customer_id) [name: 'user_subscriptions_provider_customer_id_unique', unique]
+  }
+}
+
 table chat_groups {
   id text [pk, not null]
   title text

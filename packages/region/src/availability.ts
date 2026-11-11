@@ -25,3 +25,16 @@ export const isMessengerPlatformAvailable = (region: AppRegion, platformId: stri
  */
 export const defaultSandboxProviderForRegion = (region: AppRegion): 'market' | 'openbot' =>
   isMainlandRegion(region) ? 'openbot' : 'market';
+
+/**
+ * Stripe bills the Global edition; the mainland edition is paid through WeChat Pay and Alipay,
+ * which settle inside mainland China. Neither edition offers the other's. Apple's in-app purchase
+ * belongs to the App Store and exists in both.
+ */
+const GLOBAL_PAYMENT_PROVIDERS: readonly string[] = ['apple', 'stripe'];
+const MAINLAND_PAYMENT_PROVIDERS: readonly string[] = ['alipay', 'apple', 'wechat'];
+
+export const isPaymentProviderAvailable = (region: AppRegion, provider: string): boolean =>
+  (isMainlandRegion(region) ? MAINLAND_PAYMENT_PROVIDERS : GLOBAL_PAYMENT_PROVIDERS).includes(
+    provider,
+  );
