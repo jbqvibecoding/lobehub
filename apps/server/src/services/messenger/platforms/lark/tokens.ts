@@ -5,13 +5,17 @@ import { getAgentRuntimeRedisClient } from '@/server/modules/AgentRuntime/redis'
 
 const log = debug('lobe-server:messenger:lark:tokens');
 
-const LARK_AUTH_API = 'https://open.larksuite.com/open-apis/auth/v3';
-
-const KEYS = {
-  appTicket: 'messenger:lark:app-ticket',
-  appToken: 'messenger:lark:app-token',
-  tenantToken: (tenantKey: string) => `messenger:lark:tenant-token:${tenantKey}`,
+const AUTH_API: Record<MessengerLarkConfig['platform'], string> = {
+  feishu: 'https://open.feishu.cn/open-apis/auth/v3',
+  lark: 'https://open.larksuite.com/open-apis/auth/v3',
 };
+
+/** Lark and Feishu are separate apps with separate tickets and tokens. */
+const keys = (platform: MessengerLarkConfig['platform']) => ({
+  appTicket: `messenger:${platform}:app-ticket`,
+  appToken: `messenger:${platform}:app-token`,
+  tenantToken: (tenantKey: string) => `messenger:${platform}:tenant-token:${tenantKey}`,
+});
 
 /** Lark pushes a fresh ticket every hour; a day's margin covers missed deliveries. */
 const APP_TICKET_TTL_SECONDS = 24 * 60 * 60;
@@ -19,7 +23,7 @@ const APP_TICKET_TTL_SECONDS = 24 * 60 * 60;
 /** Tokens are used until five minutes before Lark expires them. */
 const ttlFor = (expireSeconds?: number) => Math.max(60, (expireSeconds ?? 7200) - 300);
 
-type LarkConfig = Pick<MessengerLarkConfig, 'appId' | 'appSecret'>;
+type LarkConfig = Pick<MessengerLarkConfig, 'appId' | 'appSecret' | 'platform'>;
 
 /** The store app has no app ticket yet; Lark has been asked to send one. */
 export class LarkAppTicketMissingError extends Error {
@@ -51,8 +55,12 @@ const cache = {
   },
 };
 
-const postAuth = async (path: string, payload: Record<string, unknown>) => {
-  const response = await fetch(`${LARK_AUTH_API}${path}`, {
+const postAuth = async (
+  platform: MessengerLarkConfig['platform'],
+  path: string,
+  payload: Record<string, unknown>,
+) => {
+  const response = await fetch(`${AUTH_API[platform]}${path}`, {
     body: JSON.stringify(payload),
     headers: { 'Content-Type': 'application/json; charset=utf-8' },
     method: 'POST',
@@ -66,23 +74,24 @@ const postAuth = async (path: string, payload: Record<string, unknown>) => {
   return data;
 };
 
-export const saveLarkAppTicket = (ticket: string) =>
-  cache.set(KEYS.appTicket, ticket, APP_TICKET_TTL_SECONDS);
+export const saveLarkAppTicket = (platform: MessengerLarkConfig['platform'], ticket: string) =>
+  cache.set(keys(platform).appTicket, ticket, APP_TICKET_TTL_SECONDS);
 
 export const getLarkAppAccessToken = async (config: LarkConfig): Promise<string> => {
+  const KEYS = keys(config.platform);
   const cached = await cache.get(KEYS.appToken);
   if (cached) return cached;
 
   const ticket = await cache.get(KEYS.appTicket);
   if (!ticket) {
-    await postAuth('/app_ticket/resend', {
+    await postAuth(config.platform, '/app_ticket/resend', {
       app_id: config.appId,
       app_secret: config.appSecret,
     }).catch((error) => log('app ticket resend failed: %O', error));
     throw new LarkAppTicketMissingError();
   }
 
-  const data = await postAuth('/app_access_token', {
+  const data = await postAuth(config.platform, '/app_access_token', {
     app_id: config.appId,
     app_secret: config.appSecret,
     app_ticket: ticket,
@@ -96,13 +105,14 @@ export const getLarkTenantAccessToken = async (
   config: LarkConfig,
   tenantKey: string,
 ): Promise<string> => {
+  const KEYS = keys(config.platform);
   const cached = await cache.get(KEYS.tenantToken(tenantKey));
   if (cached) return cached;
 
   const appToken = await getLarkAppAccessToken(config);
   let data: any;
   try {
-    data = await postAuth('/tenant_access_token', {
+    data = await postAuth(config.platform, '/tenant_access_token', {
       app_access_token: appToken,
       tenant_key: tenantKey,
     });

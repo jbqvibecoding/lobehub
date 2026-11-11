@@ -4,7 +4,7 @@ import { regionEnv } from '@/envs/region';
 
 import { discord } from './discord';
 import { imessage } from './imessage';
-import { lark } from './lark';
+import { feishu, lark } from './lark';
 import { MessengerPlatformRegistry } from './registry';
 import { slack } from './slack';
 import { telegram } from './telegram';
@@ -28,8 +28,8 @@ export type {
  */
 export const messengerPlatformRegistry = new MessengerPlatformRegistry();
 
-// None of the product-owned messenger bots is reachable from the mainland edition.
-for (const definition of [slack, telegram, discord, imessage, lark]) {
+// The mainland edition offers only the bots reachable from mainland China (see @lobechat/region).
+for (const definition of [slack, telegram, discord, imessage, lark, feishu]) {
   if (isMessengerPlatformAvailable(regionEnv.APP_REGION, definition.id)) {
     messengerPlatformRegistry.register(definition);
   }

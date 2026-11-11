@@ -1,2 +1,2 @@
 export { MessengerLarkBinder } from './binder';
-export { lark } from './definition';
+export { feishu, lark } from './definition';

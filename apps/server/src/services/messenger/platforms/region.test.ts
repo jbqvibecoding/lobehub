@@ -12,17 +12,18 @@ describe('messenger platforms by region', { timeout: 30_000 }, () => {
     vi.resetModules();
   });
 
-  it('runs the shared Slack, Telegram, Discord, iMessage and Lark bots in the global edition', async () => {
+  it('runs every shared bot in the global edition', async () => {
     expect(await loadRegistry('global')).toEqual([
       'slack',
       'telegram',
       'discord',
       'imessage',
       'lark',
+      'feishu',
     ]);
   });
 
-  it('runs none of them in the mainland edition', async () => {
-    expect(await loadRegistry('cn')).toEqual([]);
+  it('runs only Feishu in the mainland edition', async () => {
+    expect(await loadRegistry('cn')).toEqual(['feishu']);
   });
 });

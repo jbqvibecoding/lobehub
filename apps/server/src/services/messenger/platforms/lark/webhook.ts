@@ -1,6 +1,6 @@
 import debug from 'debug';
 
-import { getMessengerLarkConfig, type MessengerLarkConfig } from '@/config/messenger';
+import { getLarkFamilyConfig, type MessengerLarkConfig } from '@/config/messenger';
 
 import {
   larkInstallationKey,
@@ -31,10 +31,12 @@ const recordInstall = async (
  * installing the app, stopping or restarting it, and uninstalling it. Message events go on to the
  * install lookup and the Chat SDK adapter.
  */
-export const larkWebhookGate: MessengerPlatformWebhookGate = {
+export const larkWebhookGate = (
+  platform: MessengerLarkConfig['platform'],
+): MessengerPlatformWebhookGate => ({
   preprocess: async (req, rawBody, ctx) => {
-    const config = await getMessengerLarkConfig();
-    if (!config) return new Response('Lark is not configured', { status: 503 });
+    const config = await getLarkFamilyConfig(platform);
+    if (!config) return new Response(`${platform} is not configured`, { status: 503 });
 
     const read = readLarkEvent(req.headers, rawBody, config);
     if (!read.ok) {
@@ -50,7 +52,7 @@ export const larkWebhookGate: MessengerPlatformWebhookGate = {
 
     switch (event?.type) {
       case 'app_ticket': {
-        await saveLarkAppTicket(event.app_ticket);
+        await saveLarkAppTicket(platform, event.app_ticket);
         return ok();
       }
       case 'app_open': {
@@ -66,7 +68,7 @@ export const larkWebhookGate: MessengerPlatformWebhookGate = {
         if (!tenantKey) return ok();
         if (String(event.status).startsWith('stop')) {
           await revokeLarkInstall(config, tenantKey);
-          ctx.invalidateBot(larkInstallationKey(tenantKey));
+          ctx.invalidateBot(larkInstallationKey(platform, tenantKey));
         } else {
           await recordInstall(config, { tenantKey });
         }
@@ -75,7 +77,7 @@ export const larkWebhookGate: MessengerPlatformWebhookGate = {
       case 'app_uninstalled': {
         if (tenantKey) {
           await revokeLarkInstall(config, tenantKey);
-          ctx.invalidateBot(larkInstallationKey(tenantKey));
+          ctx.invalidateBot(larkInstallationKey(platform, tenantKey));
         }
         return ok();
       }
@@ -83,4 +85,4 @@ export const larkWebhookGate: MessengerPlatformWebhookGate = {
 
     return null;
   },
-};
+});

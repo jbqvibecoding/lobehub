@@ -1,14 +1,14 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getMessengerLarkConfig } from '@/config/messenger';
+import { getLarkFamilyConfig } from '@/config/messenger';
 
 import { issueLinkToken } from '../../linkTokenStore';
 import { MessengerLarkBinder } from './binder';
 import { larkTenantApi } from './tenant';
 
 vi.mock('@/envs/app', () => ({ appEnv: { APP_URL: 'https://app.example.com' } }));
-vi.mock('@/config/messenger', () => ({ getMessengerLarkConfig: vi.fn() }));
+vi.mock('@/config/messenger', () => ({ getLarkFamilyConfig: vi.fn() }));
 vi.mock('../../linkTokenStore', () => ({ issueLinkToken: vi.fn() }));
 vi.mock('./tenant', () => ({ larkTenantApi: vi.fn() }));
 vi.mock('../../installations', () => ({ getInstallationStore: vi.fn() }));
@@ -16,7 +16,12 @@ vi.mock('@/server/services/bot/platforms/feishu/client', () => ({
   createLarkStoreAppClient: vi.fn(() => ({ id: 'lark-client' })),
 }));
 
-const config = { appId: 'cli_app', appSecret: 's', verificationToken: 'verify-token' };
+const config = {
+  appId: 'cli_app',
+  appSecret: 's',
+  platform: 'lark' as const,
+  verificationToken: 'verify-token',
+};
 const creds = {
   applicationId: 'cli_app',
   botToken: '',
@@ -29,7 +34,7 @@ const creds = {
 const api = { sendMessage: vi.fn(), sendMessageToUser: vi.fn() };
 
 beforeEach(() => {
-  vi.mocked(getMessengerLarkConfig).mockResolvedValue(config);
+  vi.mocked(getLarkFamilyConfig).mockResolvedValue(config);
   vi.mocked(larkTenantApi).mockReturnValue(api as any);
   vi.mocked(issueLinkToken).mockResolvedValue('rand-1');
 });
@@ -40,7 +45,7 @@ afterEach(() => {
 
 describe('MessengerLarkBinder', () => {
   it('sends the account link to the person privately, scoped to their tenant', async () => {
-    await new MessengerLarkBinder(creds).handleUnlinkedMessage({
+    await new MessengerLarkBinder('lark', creds).handleUnlinkedMessage({
       authorUserId: 'ou_alice',
       authorUserName: 'Alice',
       channelMentionThreadId: 'lark:group:oc_team',
@@ -64,7 +69,7 @@ describe('MessengerLarkBinder', () => {
   });
 
   it('answers a group command privately instead of in the group', async () => {
-    await new MessengerLarkBinder(creds).replyEphemeral({
+    await new MessengerLarkBinder('lark', creds).replyEphemeral({
       channelId: 'oc_team',
       text: 'No active agent selected.',
       userId: 'ou_alice',
@@ -75,8 +80,8 @@ describe('MessengerLarkBinder', () => {
   });
 
   it('has no client without a configured app or a tenant install', async () => {
-    expect(await new MessengerLarkBinder().createClient()).toBeNull();
-    vi.mocked(getMessengerLarkConfig).mockResolvedValueOnce(null);
-    expect(await new MessengerLarkBinder(creds).createClient()).toBeNull();
+    expect(await new MessengerLarkBinder('lark').createClient()).toBeNull();
+    vi.mocked(getLarkFamilyConfig).mockResolvedValueOnce(null);
+    expect(await new MessengerLarkBinder('lark', creds).createClient()).toBeNull();
   });
 });

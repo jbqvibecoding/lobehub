@@ -22,7 +22,8 @@ interface BodyProps {
 const Body = memo<BodyProps>(({ platform, ...rest }) => {
   switch (platform) {
     case 'slack':
-    case 'lark': {
+    case 'lark':
+    case 'feishu': {
       return <WorkspaceBody {...rest} platform={platform} />;
     }
     case 'discord': {

@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import AsyncError from '@/components/AsyncError';
 import { usePermission } from '@/hooks/usePermission';
 
+import type { LarkFamilyPlatform } from '../constants';
 import { createMessengerLinkModal } from '../LinkModal';
 import {
   DetailLayout,
@@ -24,21 +25,22 @@ interface LarkDetailProps {
   installUrl?: string;
   name: string;
   onBack: () => void;
+  platform: LarkFamilyPlatform;
 }
 
-// Lark workspaces install the app from the Lark App Directory, not from here, so there are no
+// Lark and Feishu workspaces install the app from the Lark App Directory, not from here, so there are no
 // install rows to manage: a person links their account once per workspace by messaging the app.
-const LarkDetail = memo<LarkDetailProps>(({ appId, installUrl, name, onBack }) => {
+const LarkDetail = memo<LarkDetailProps>(({ appId, installUrl, name, onBack, platform }) => {
   const { t } = useTranslation('messenger');
   const { allowed: canCreate } = usePermission('create_content');
   const { allowed: canEdit } = usePermission('edit_own_content');
 
-  const data = useMessengerData('lark');
+  const data = useMessengerData(platform);
   const { handleSetActive, handleUnlink } = useLinkActions({
     installationsMutate: data.installationsMutate,
     linksMutate: data.linksMutate,
     name,
-    platform: 'lark',
+    platform,
   });
 
   if (data.error && data.isInitialLoading)
@@ -53,7 +55,7 @@ const LarkDetail = memo<LarkDetailProps>(({ appId, installUrl, name, onBack }) =
       disabled={!canCreate || !canEdit}
       icon={<Icon icon={LinkIcon} />}
       type={hasLinks ? 'default' : 'primary'}
-      onClick={() => createMessengerLinkModal({ appId, installUrl, name, platform: 'lark' })}
+      onClick={() => createMessengerLinkModal({ appId, installUrl, name, platform })}
     >
       {hasLinks ? t('messenger.detail.addWorkspace') : t('messenger.linkCta')}
     </Button>
@@ -64,7 +66,7 @@ const LarkDetail = memo<LarkDetailProps>(({ appId, installUrl, name, onBack }) =
       hasConnections={hasLinks}
       headerAction={headerAction}
       name={name}
-      platform="lark"
+      platform={platform}
       onBack={onBack}
     >
       {links.map((link) => (

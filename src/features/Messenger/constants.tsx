@@ -1,7 +1,7 @@
 import { Discord, IMessage, Lark, Slack, Telegram } from '@lobehub/ui/icons';
 import type { ReactNode } from 'react';
 
-export type MessengerPlatform = 'telegram' | 'slack' | 'discord' | 'imessage' | 'lark';
+export type MessengerPlatform = 'telegram' | 'slack' | 'discord' | 'imessage' | 'lark' | 'feishu';
 
 export const SUPPORTED_MESSENGER_PLATFORMS = [
   { id: 'telegram', name: 'Telegram' },
@@ -9,6 +9,7 @@ export const SUPPORTED_MESSENGER_PLATFORMS = [
   { id: 'discord', name: 'Discord' },
   { id: 'imessage', name: 'iMessage' },
   { id: 'lark', name: 'Lark' },
+  { id: 'feishu', name: 'Feishu' },
 ] as const satisfies readonly { id: MessengerPlatform; name: string }[];
 
 export const isMessengerPlatform = (value: string | null | undefined): value is MessengerPlatform =>
@@ -18,11 +19,15 @@ export const isMessengerPlatform = (value: string | null | undefined): value is 
 export type SharedBotPlatform = Extract<MessengerPlatform, 'imessage' | 'telegram'>;
 
 /** Platforms installed per workspace, where each person links once per workspace. */
-export type WorkspaceBotPlatform = Extract<MessengerPlatform, 'lark' | 'slack'>;
+export type WorkspaceBotPlatform = Extract<MessengerPlatform, 'feishu' | 'lark' | 'slack'>;
+
+/** The Lark store app and its China domain, Feishu. */
+export type LarkFamilyPlatform = Extract<MessengerPlatform, 'feishu' | 'lark'>;
 
 export const PLATFORM_TAB_ICONS: Record<MessengerPlatform, ReactNode> = {
   discord: <Discord.Color size={16} />,
   imessage: <IMessage.Color size={16} />,
+  feishu: <Lark.Color size={16} />,
   lark: <Lark.Color size={16} />,
   slack: <Slack.Color size={16} />,
   telegram: <Telegram.Color size={16} />,
@@ -38,7 +43,7 @@ export const PlatformAvatar = ({
   if (platform === 'telegram') return <Telegram.Avatar size={size} />;
   if (platform === 'discord') return <Discord.Avatar size={size} />;
   if (platform === 'imessage') return <IMessage.Avatar size={size} />;
-  if (platform === 'lark') return <Lark.Avatar size={size} />;
+  if (platform === 'lark' || platform === 'feishu') return <Lark.Avatar size={size} />;
   return <Slack.Avatar size={size} />;
 };
 
@@ -52,7 +57,7 @@ export const PlatformBrandIcon = ({
   if (platform === 'telegram') return <Telegram.Color size={size} />;
   if (platform === 'discord') return <Discord.Color size={size} />;
   if (platform === 'imessage') return <IMessage.Color size={size} />;
-  if (platform === 'lark') return <Lark.Color size={size} />;
+  if (platform === 'lark' || platform === 'feishu') return <Lark.Color size={size} />;
   return <Slack.Color size={size} />;
 };
 
@@ -107,6 +112,11 @@ export const sharedBotUrl = (
   return meta.botUsername ? buildTelegramBotUrl(meta.botUsername) : null;
 };
 
-/** Opens a chat with the Lark app's bot, in the Lark app or on the web. */
-export const buildLarkOpenBotUrl = (appId: string): string =>
-  `https://applink.larksuite.com/client/bot/open?appId=${encodeURIComponent(appId)}`;
+const APPLINK_HOSTS: Record<LarkFamilyPlatform, string> = {
+  feishu: 'applink.feishu.cn',
+  lark: 'applink.larksuite.com',
+};
+
+/** Opens a chat with the app's bot, in the Lark or Feishu app or on the web. */
+export const buildLarkOpenBotUrl = (appId: string, platform: LarkFamilyPlatform = 'lark'): string =>
+  `https://${APPLINK_HOSTS[platform]}/client/bot/open?appId=${encodeURIComponent(appId)}`;

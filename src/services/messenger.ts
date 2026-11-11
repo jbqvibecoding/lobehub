@@ -1,6 +1,6 @@
 import { lambdaClient } from '@/libs/trpc/client';
 
-type MessengerPlatform = 'telegram' | 'slack' | 'discord' | 'imessage' | 'lark';
+type MessengerPlatform = 'telegram' | 'slack' | 'discord' | 'imessage' | 'lark' | 'feishu';
 
 class MessengerService {
   availablePlatforms = async () => {

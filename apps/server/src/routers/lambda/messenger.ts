@@ -6,6 +6,7 @@ import { withScopedPermission } from '@/business/server/trpc-middlewares/rbacPer
 import {
   getEnabledMessengerPlatforms,
   getMessengerDiscordConfig,
+  getMessengerFeishuConfig,
   getMessengerImessageConfig,
   getMessengerLarkConfig,
   getMessengerSlackConfig,
@@ -209,14 +210,17 @@ export const messengerRouter = router({
       .listSerializedPlatforms()
       .filter((def) => enabledSet.has(def.id));
 
-    const [discordConfig, slackConfig, telegramConfig, imessageConfig, larkConfig] =
+    const [discordConfig, slackConfig, telegramConfig, imessageConfig, larkConfig, feishuConfig] =
       await Promise.all([
         enabledSet.has('discord') ? getMessengerDiscordConfig() : Promise.resolve(null),
         enabledSet.has('slack') ? getMessengerSlackConfig() : Promise.resolve(null),
         enabledSet.has('telegram') ? getMessengerTelegramConfig() : Promise.resolve(null),
         enabledSet.has('imessage') ? getMessengerImessageConfig() : Promise.resolve(null),
         enabledSet.has('lark') ? getMessengerLarkConfig() : Promise.resolve(null),
+        enabledSet.has('feishu') ? getMessengerFeishuConfig() : Promise.resolve(null),
       ]);
+    // Lark and Feishu: the same store app on two domains
+    const larkFamily = { feishu: feishuConfig, lark: larkConfig } as const;
 
     return definitions.map((def) => ({
       ...def,
@@ -225,8 +229,8 @@ export const messengerRouter = router({
           ? slackConfig?.appId
           : def.id === 'discord'
             ? discordConfig?.applicationId
-            : def.id === 'lark'
-              ? larkConfig?.appId
+            : def.id === 'lark' || def.id === 'feishu'
+              ? larkFamily[def.id]?.appId
               : undefined,
       // Telegram-only: deep-link target (`https://t.me/<botUsername>`) — no
       // direct equivalent on Slack/Discord, both of which use App/Application
@@ -236,7 +240,8 @@ export const messengerRouter = router({
       // iMessage-only: the shared line's number, where users text the bot.
       phoneNumber: def.id === 'imessage' ? imessageConfig?.phoneNumber : undefined,
       // Lark-only: the App Directory listing where a tenant admin installs the app.
-      installUrl: def.id === 'lark' ? larkConfig?.installUrl : undefined,
+      installUrl:
+        def.id === 'lark' || def.id === 'feishu' ? larkFamily[def.id]?.installUrl : undefined,
       // Legacy field — older callers index by `.platform` rather than `.id`.
       // Keep until those callers migrate; safe alias of the registry id.
       platform: def.id,
@@ -666,8 +671,9 @@ const notifyLinkSuccess = async (
         await new MessengerImessageBinder().notifyLinkSuccess(params);
         break;
       }
-      case 'lark': {
-        await new MessengerLarkBinder().notifyLinkSuccess(params);
+      case 'lark':
+      case 'feishu': {
+        await new MessengerLarkBinder(platform).notifyLinkSuccess(params);
         break;
       }
     }

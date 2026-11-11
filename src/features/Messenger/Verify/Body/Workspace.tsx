@@ -34,7 +34,9 @@ const openBotUrl = (
   tenantId: string | undefined,
   appId: string | undefined,
 ): string | null => {
-  if (platform === 'lark') return appId ? buildLarkOpenBotUrl(appId) : null;
+  if (platform === 'lark' || platform === 'feishu') {
+    return appId ? buildLarkOpenBotUrl(appId, platform) : null;
+  }
   return tenantId ? buildSlackOpenBotUrl(tenantId, appId) : null;
 };
 
@@ -53,7 +55,8 @@ const WorkspaceBody = memo<WorkspaceBodyProps>(
     const { t } = useTranslation('messenger');
     const [done, setDone] = useState(false);
 
-    const platformLabel = platformMeta?.name ?? (platform === 'lark' ? 'Lark' : 'Slack');
+    const platformLabel =
+      platformMeta?.name ?? { feishu: 'Feishu', lark: 'Lark', slack: 'Slack' }[platform];
     const rebindBlocked = isSingleAccountRebindBlocked(existingLink, tokenData);
     // Slack uses tenant from the existing link (post-confirm/refresh) or the
     // pending token (pre-confirm). Without a tenant, the workspace deep-link

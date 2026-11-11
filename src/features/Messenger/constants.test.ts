@@ -23,6 +23,12 @@ describe('buildLarkOpenBotUrl', () => {
       'https://applink.larksuite.com/client/bot/open?appId=cli_a1b2',
     );
   });
+
+  it("opens the Feishu app's bot on Feishu's own domain", () => {
+    expect(buildLarkOpenBotUrl('cli_c3d4', 'feishu')).toBe(
+      'https://applink.feishu.cn/client/bot/open?appId=cli_c3d4',
+    );
+  });
 });
 
 describe('isMessengerPlatform', () => {

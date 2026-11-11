@@ -55,6 +55,7 @@
   "messenger.linkModal.scanHint": "或用手机扫码打开 {{platform}}。",
   "messenger.linkModal.textNumber": "给 {{number}} 发一条信息即可开始。",
   "messenger.list.discord.description": "在任意 Discord 服务器中通过私信 Biber 机器人与你的 Agent 对话。",
+  "messenger.list.feishu.description": "在你所在企业的飞书中与 Biber Agent 对话，随时切换接收消息的 Agent。",
   "messenger.list.imessage.description": "在 iPhone、iPad 或 Mac 的「信息」里给你的 Biber Agent 发消息，随时切换接收消息的 Agent。",
   "messenger.list.lark.description": "在你所在企业的 Lark 中与 Biber Agent 对话，随时切换接收消息的 Agent。",
   "messenger.list.slack.description": "在任意 Slack 工作区中通过私信或 @Biber 与你的 Agent 对话。",

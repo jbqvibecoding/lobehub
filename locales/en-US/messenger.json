@@ -55,6 +55,7 @@
   "messenger.linkModal.scanHint": "Or scan with your phone to open {{platform}}.",
   "messenger.linkModal.textNumber": "Text {{number}} to get started.",
   "messenger.list.discord.description": "Chat with your Biber agents on Discord by DMing the Biber bot from any server.",
+  "messenger.list.feishu.description": "Chat with your Biber agents in your Feishu workspace, and choose which agent replies.",
   "messenger.list.imessage.description": "Text your Biber agents from Messages on iPhone, iPad or Mac, and choose which agent replies.",
   "messenger.list.lark.description": "Chat with your Biber agents in your Lark workspace, and choose which agent replies.",
   "messenger.list.slack.description": "Chat with your Biber agents on Slack by DMing or mentioning @Biber in any workspace.",

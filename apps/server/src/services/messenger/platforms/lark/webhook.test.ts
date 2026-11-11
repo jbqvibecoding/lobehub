@@ -1,27 +1,32 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getMessengerLarkConfig } from '@/config/messenger';
+import { getLarkFamilyConfig } from '@/config/messenger';
 
 import { recordLarkInstall, revokeLarkInstall } from '../../installations/lark';
 import { getLarkTenantName } from './tenant';
 import { saveLarkAppTicket } from './tokens';
 import { larkWebhookGate } from './webhook';
 
-vi.mock('@/config/messenger', () => ({ getMessengerLarkConfig: vi.fn() }));
+vi.mock('@/config/messenger', () => ({ getLarkFamilyConfig: vi.fn() }));
 vi.mock('../../installations/lark', () => ({
-  larkInstallationKey: (tenantKey: string) => `lark:${tenantKey}`,
+  larkInstallationKey: (platform: string, tenantKey: string) => `${platform}:${tenantKey}`,
   recordLarkInstall: vi.fn(),
   revokeLarkInstall: vi.fn(),
 }));
 vi.mock('./tokens', () => ({ saveLarkAppTicket: vi.fn() }));
 vi.mock('./tenant', () => ({ getLarkTenantName: vi.fn() }));
 
-const config = { appId: 'cli_app', appSecret: 's', verificationToken: 'verify-token' };
+const config = {
+  appId: 'cli_app',
+  appSecret: 's',
+  platform: 'lark' as const,
+  verificationToken: 'verify-token',
+};
 const invalidateBot = vi.fn();
 
 const deliver = (body: Record<string, unknown>) =>
-  larkWebhookGate.preprocess(
+  larkWebhookGate('lark').preprocess(
     new Request('https://app.example.com/api/agent/messenger/webhooks/lark', { method: 'POST' }),
     JSON.stringify({ token: 'verify-token', ...body }),
     { invalidateBot },
@@ -31,7 +36,7 @@ const lifecycle = (event: Record<string, unknown>) =>
   deliver({ event: { app_id: 'cli_app', ...event }, type: 'event_callback' });
 
 beforeEach(() => {
-  vi.mocked(getMessengerLarkConfig).mockResolvedValue(config);
+  vi.mocked(getLarkFamilyConfig).mockResolvedValue(config);
   vi.mocked(getLarkTenantName).mockResolvedValue('Acme');
 });
 
@@ -56,7 +61,7 @@ describe('larkWebhookGate', () => {
     const res = await lifecycle({ app_ticket: 'ticket-9', type: 'app_ticket' });
 
     expect(res?.status).toBe(200);
-    expect(saveLarkAppTicket).toHaveBeenCalledWith('ticket-9');
+    expect(saveLarkAppTicket).toHaveBeenCalledWith('lark', 'ticket-9');
   });
 
   it('records a tenant installing the app, with its name and installer', async () => {

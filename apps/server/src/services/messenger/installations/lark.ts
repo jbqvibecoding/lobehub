@@ -1,6 +1,6 @@
 import debug from 'debug';
 
-import { getMessengerLarkConfig, type MessengerLarkConfig } from '@/config/messenger';
+import { getLarkFamilyConfig, type MessengerLarkConfig } from '@/config/messenger';
 import { getServerDB } from '@/database/core/db-adaptor';
 import {
   type DecryptedMessengerInstallation,
@@ -12,28 +12,37 @@ import type { InstallationCredentials, MessengerInstallationStore } from './type
 
 const log = debug('lobe-server:messenger:install-store:lark');
 
-const PREFIX = 'lark:';
+type LarkPlatform = MessengerLarkConfig['platform'];
 
-export const larkInstallationKey = (tenantKey: string) => `${PREFIX}${tenantKey}`;
+export const larkInstallationKey = (platform: LarkPlatform, tenantKey: string) =>
+  `${platform}:${tenantKey}`;
 
-const tenantOf = (installationKey: string) =>
-  installationKey.startsWith(PREFIX) ? installationKey.slice(PREFIX.length) : null;
+const tenantOf = (platform: LarkPlatform, installationKey: string) =>
+  installationKey.startsWith(`${platform}:`) ? installationKey.slice(platform.length + 1) : null;
 
 /**
  * A Lark install has no token of its own: tenant tokens are minted from the app ticket when needed
  * (see `platforms/lark/tokens`), so `botToken` stays empty and nothing secret is stored per tenant.
  */
-const toCredentials = (row: DecryptedMessengerInstallation): InstallationCredentials => ({
+const toCredentials = (
+  platform: LarkPlatform,
+  row: DecryptedMessengerInstallation,
+): InstallationCredentials => ({
   applicationId: row.applicationId,
   botToken: '',
-  installationKey: larkInstallationKey(row.tenantId),
+  installationKey: larkInstallationKey(platform, row.tenantId),
   metadata: row.metadata ?? {},
-  platform: 'lark',
+  platform,
   tenantId: row.tenantId,
 });
 
 const findInstall = async (config: MessengerLarkConfig, tenantKey: string) =>
-  MessengerInstallationModel.findByTenant(await getServerDB(), 'lark', tenantKey, config.appId);
+  MessengerInstallationModel.findByTenant(
+    await getServerDB(),
+    config.platform,
+    tenantKey,
+    config.appId,
+  );
 
 /** Records (or re-activates) a tenant's install of the store app. */
 export const recordLarkInstall = async (
@@ -45,11 +54,11 @@ export const recordLarkInstall = async (
     credentials: {},
     installedByPlatformUserId: install.installedByOpenId ?? null,
     metadata: install.tenantName ? { tenantName: install.tenantName } : {},
-    platform: 'lark',
+    platform: config.platform,
     tenantId: install.tenantKey,
   });
-  log('recorded install for tenant=%s', install.tenantKey);
-  return toCredentials({ ...row, credentials: {} });
+  log('recorded %s install for tenant=%s', config.platform, install.tenantKey);
+  return toCredentials(config.platform, { ...row, credentials: {} });
 };
 
 export const revokeLarkInstall = async (config: MessengerLarkConfig, tenantKey: string) => {
@@ -59,14 +68,17 @@ export const revokeLarkInstall = async (config: MessengerLarkConfig, tenantKey: 
   log('revoked install for tenant=%s', tenantKey);
 };
 
+/** Installs of the Lark or the Feishu store app; the two are separate apps. */
 export class LarkInstallationStore implements MessengerInstallationStore {
+  constructor(private readonly platform: LarkPlatform = 'lark') {}
+
   /**
    * Lark delivers events only from tenants that have the app installed, and the webhook gate has
    * already authenticated this one, so a tenant whose install event was missed (for instance,
    * installed before this endpoint existed) is recorded on its first message.
    */
   async resolveByPayload(req: Request, rawBody: string): Promise<InstallationCredentials | null> {
-    const config = await getMessengerLarkConfig();
+    const config = await getLarkFamilyConfig(this.platform);
     if (!config) return null;
 
     const read = readLarkEvent(req.headers, rawBody, config);
@@ -75,22 +87,22 @@ export class LarkInstallationStore implements MessengerInstallationStore {
     if (!tenantKey) return null;
 
     const row = await findInstall(config, tenantKey);
-    if (row) return toCredentials(row);
+    if (row) return toCredentials(this.platform, row);
     return recordLarkInstall(config, { tenantKey });
   }
 
   async resolveByKey(installationKey: string): Promise<InstallationCredentials | null> {
-    const tenantKey = tenantOf(installationKey);
-    const config = await getMessengerLarkConfig();
+    const tenantKey = tenantOf(this.platform, installationKey);
+    const config = await getLarkFamilyConfig(this.platform);
     if (!tenantKey || !config) return null;
 
     const row = await findInstall(config, tenantKey);
-    return row ? toCredentials(row) : null;
+    return row ? toCredentials(this.platform, row) : null;
   }
 
   async markRevoked(installationKey: string): Promise<void> {
-    const tenantKey = tenantOf(installationKey);
-    const config = await getMessengerLarkConfig();
+    const tenantKey = tenantOf(this.platform, installationKey);
+    const config = await getLarkFamilyConfig(this.platform);
     if (!tenantKey || !config) return;
     await revokeLarkInstall(config, tenantKey);
   }

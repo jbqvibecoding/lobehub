@@ -20,7 +20,7 @@ import pc from 'picocolors';
 import { getTrpcClient } from '../api/client';
 import { confirm, outputJson, printTable } from '../utils/format';
 
-const PLATFORMS = ['telegram', 'slack', 'discord', 'imessage', 'lark'] as const;
+const PLATFORMS = ['telegram', 'slack', 'discord', 'imessage', 'lark', 'feishu'] as const;
 type MessengerPlatform = (typeof PLATFORMS)[number];
 
 const validatePlatform = (value: string): MessengerPlatform => {

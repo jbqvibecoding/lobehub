@@ -34,8 +34,9 @@ const IntegrationDetail = memo<IntegrationDetailProps>(
       case 'imessage': {
         return <SharedBotDetail {...rest} phoneNumber={phoneNumber} platform={platform} />;
       }
-      case 'lark': {
-        return <LarkDetail {...rest} installUrl={installUrl} />;
+      case 'lark':
+      case 'feishu': {
+        return <LarkDetail {...rest} installUrl={installUrl} platform={platform} />;
       }
     }
   },

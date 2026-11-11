@@ -112,6 +112,8 @@ export default {
     'Chat with your Biber agents on Discord by DMing the Biber bot from any server.',
   'messenger.list.imessage.description':
     'Text your Biber agents from Messages on iPhone, iPad or Mac, and choose which agent replies.',
+  'messenger.list.feishu.description':
+    'Chat with your Biber agents in your Feishu workspace, and choose which agent replies.',
   'messenger.list.lark.description':
     'Chat with your Biber agents in your Lark workspace, and choose which agent replies.',
   'messenger.list.slack.description':

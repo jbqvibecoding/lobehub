@@ -29,8 +29,9 @@ const create = (platform: MessengerPlatform): MessengerInstallationStore | null 
     case 'imessage': {
       return new ImessageInstallationStore();
     }
-    case 'lark': {
-      return new LarkInstallationStore();
+    case 'lark':
+    case 'feishu': {
+      return new LarkInstallationStore(platform);
     }
     default: {
       return null;

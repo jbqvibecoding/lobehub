@@ -3,15 +3,21 @@ import { type LobeChatDatabase } from '@lobechat/database';
 import { getTestDB } from '@lobechat/database/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getMessengerLarkConfig } from '@/config/messenger';
+import { getLarkFamilyConfig } from '@/config/messenger';
 
 import { LarkInstallationStore, recordLarkInstall } from './lark';
 
 let testDB: LobeChatDatabase;
 vi.mock('@/database/core/db-adaptor', () => ({ getServerDB: vi.fn(async () => testDB) }));
-vi.mock('@/config/messenger', () => ({ getMessengerLarkConfig: vi.fn() }));
+vi.mock('@/config/messenger', () => ({ getLarkFamilyConfig: vi.fn() }));
 
-const config = { appId: 'cli_app', appSecret: 's', verificationToken: 'verify-token' };
+const config = {
+  appId: 'cli_app',
+  appSecret: 's',
+  platform: 'lark' as const,
+  verificationToken: 'verify-token',
+};
+const feishuConfig = { ...config, appId: 'cli_feishu', platform: 'feishu' as const };
 
 const messageFrom = (tenantKey: string, token = 'verify-token') =>
   new Request('https://app.example.com/api/agent/messenger/webhooks/lark', {
@@ -28,7 +34,9 @@ const resolve = async (store: LarkInstallationStore, req: Request) =>
 describe('LarkInstallationStore', () => {
   beforeEach(async () => {
     testDB = await getTestDB();
-    vi.mocked(getMessengerLarkConfig).mockResolvedValue(config);
+    vi.mocked(getLarkFamilyConfig).mockImplementation(async (platform) =>
+      platform === 'feishu' ? feishuConfig : config,
+    );
   });
 
   it("resolves a recorded tenant's install for its messages", async () => {
@@ -69,5 +77,15 @@ describe('LarkInstallationStore', () => {
 
     await recordLarkInstall(config, { tenantKey: 'tenant-a' });
     expect(await store.resolveByKey('lark:tenant-a')).toMatchObject({ tenantId: 'tenant-a' });
+  });
+
+  it('keeps Lark and Feishu installs of the same tenant apart', async () => {
+    await recordLarkInstall(config, { tenantKey: 'tenant-same' });
+
+    expect(await new LarkInstallationStore('feishu').resolveByKey('feishu:tenant-same')).toBeNull();
+    await recordLarkInstall(feishuConfig, { tenantKey: 'tenant-same' });
+    expect(
+      await new LarkInstallationStore('feishu').resolveByKey('feishu:tenant-same'),
+    ).toMatchObject({ installationKey: 'feishu:tenant-same', platform: 'feishu' });
   });
 });

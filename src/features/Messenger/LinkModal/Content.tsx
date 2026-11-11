@@ -45,13 +45,14 @@ const LinkModalContent = memo<LinkModalContentProps>(
             />
           );
         }
-        case 'lark': {
+        case 'lark':
+        case 'feishu': {
           return (
             <SharedBotLinkBody
-              deepLink={appId ? buildLarkOpenBotUrl(appId) : undefined}
+              deepLink={appId ? buildLarkOpenBotUrl(appId, platform) : undefined}
               name={name}
               note={t('messenger.linkModal.larkInstallNote', { platform: name })}
-              platform="lark"
+              platform={platform}
               secondaryAction={
                 installUrl
                   ? {

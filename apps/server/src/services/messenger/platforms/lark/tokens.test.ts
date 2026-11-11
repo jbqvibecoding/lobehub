@@ -5,7 +5,7 @@ vi.mock('@/server/modules/AgentRuntime/redis', () => ({
   getAgentRuntimeRedisClient: () => null,
 }));
 
-const config = { appId: 'cli_app', appSecret: 'app-secret' };
+const config = { appId: 'cli_app', appSecret: 'app-secret', platform: 'lark' as const };
 
 const reply = (body: Record<string, unknown>) => new Response(JSON.stringify({ code: 0, ...body }));
 
@@ -35,7 +35,7 @@ describe('Lark store app tokens', () => {
       .mockResolvedValueOnce(reply({ app_access_token: 'a-1', expire: 7200 }))
       .mockResolvedValueOnce(reply({ expire: 7200, tenant_access_token: 't-a' }))
       .mockResolvedValueOnce(reply({ expire: 7200, tenant_access_token: 't-b' }));
-    await tokens.saveLarkAppTicket('ticket-1');
+    await tokens.saveLarkAppTicket('lark', 'ticket-1');
 
     expect(await tokens.getLarkTenantAccessToken(config, 'tenant-a')).toBe('t-a');
     expect(await tokens.getLarkTenantAccessToken(config, 'tenant-a')).toBe('t-a');
@@ -74,10 +74,23 @@ describe('Lark store app tokens', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ code: 99991663, msg: 'invalid' })))
       .mockResolvedValueOnce(reply({ app_access_token: 'a-fresh', expire: 7200 }))
       .mockResolvedValueOnce(reply({ expire: 7200, tenant_access_token: 't-a' }));
-    await tokens.saveLarkAppTicket('ticket-1');
+    await tokens.saveLarkAppTicket('lark', 'ticket-1');
 
     await expect(tokens.getLarkTenantAccessToken(config, 'tenant-a')).rejects.toThrow(/99991663/);
     expect(await tokens.getLarkTenantAccessToken(config, 'tenant-a')).toBe('t-a');
     expect(JSON.parse(fetchMock.mock.calls[3][1].body).app_access_token).toBe('a-fresh');
+  });
+
+  it("uses Feishu's own domain and ticket for the Feishu app", async () => {
+    const tokens = await loadTokens();
+    fetchMock.mockResolvedValueOnce(reply({ app_access_token: 'f-1', expire: 7200 }));
+    await tokens.saveLarkAppTicket('lark', 'lark-ticket');
+    await tokens.saveLarkAppTicket('feishu', 'feishu-ticket');
+
+    await tokens.getLarkAppAccessToken({ ...config, appId: 'cli_feishu', platform: 'feishu' });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(new URL(url as string).host).toBe('open.feishu.cn');
+    expect(JSON.parse(init.body).app_ticket).toBe('feishu-ticket');
   });
 });

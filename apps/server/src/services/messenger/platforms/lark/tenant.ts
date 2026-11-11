@@ -8,7 +8,7 @@ import { getLarkTenantAccessToken } from './tokens';
 const log = debug('lobe-server:messenger:lark:tenant');
 
 export const larkTenantApi = (config: MessengerLarkConfig, tenantKey: string) =>
-  new LarkApiClient(config.appId, config.appSecret, 'lark', () =>
+  new LarkApiClient(config.appId, config.appSecret, config.platform, () =>
     getLarkTenantAccessToken(config, tenantKey),
   );
 

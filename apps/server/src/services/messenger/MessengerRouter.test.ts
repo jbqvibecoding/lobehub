@@ -215,7 +215,7 @@ vi.mock('./platforms/lark/binder', () => ({
   })),
 }));
 vi.mock('./platforms/lark/webhook', () => ({
-  larkWebhookGate: { preprocess: vi.fn(async () => null) },
+  larkWebhookGate: () => ({ preprocess: vi.fn(async () => null) }),
 }));
 
 const buildSlackRequest = (body: string, headers: Record<string, string> = {}): Request =>

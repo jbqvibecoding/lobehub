@@ -1,7 +1,7 @@
 import { BRANDING_NAME } from '@lobechat/business-const';
 import debug from 'debug';
 
-import { getMessengerLarkConfig } from '@/config/messenger';
+import { getLarkFamilyConfig, type MessengerLarkConfig } from '@/config/messenger';
 import { appEnv } from '@/envs/app';
 import type { PlatformClient } from '@/server/services/bot/platforms';
 import { createLarkStoreAppClient } from '@/server/services/bot/platforms/feishu/client';
@@ -15,29 +15,37 @@ import { getLarkTenantAccessToken } from './tokens';
 
 const log = debug('lobe-server:messenger:lark');
 
+type LarkPlatform = MessengerLarkConfig['platform'];
+
+const PLATFORM_NAMES: Record<LarkPlatform, string> = { feishu: 'Feishu', lark: 'Lark' };
+
 export const buildLarkVerifyUrl = (params: {
   appUrl: string;
+  platform: LarkPlatform;
   platformUserId: string;
   randomId: string;
 }): string => {
   const url = new URL('/verify-im', params.appUrl);
-  url.searchParams.set('im_type', 'lark');
+  url.searchParams.set('im_type', params.platform);
   url.searchParams.set('im_user_id', params.platformUserId);
   url.searchParams.set('random_id', params.randomId);
-  url.searchParams.set('utm_source', 'messenger_lark');
+  url.searchParams.set('utm_source', `messenger_${params.platform}`);
   return url.toString();
 };
 
 /**
- * One tenant's install of the Lark store app. Every call carries that tenant's token, and anything
+ * One tenant's install of the Lark or Feishu store app. Every call carries that tenant's token, and anything
  * private to one person (the account link, command replies in a group) goes to them alone by
  * their `open_id` rather than into the chat.
  */
 export class MessengerLarkBinder implements MessengerPlatformBinder {
-  constructor(private readonly creds?: InstallationCredentials) {}
+  constructor(
+    private readonly platform: LarkPlatform,
+    private readonly creds?: InstallationCredentials,
+  ) {}
 
   async createClient(): Promise<PlatformClient | null> {
-    const config = await getMessengerLarkConfig();
+    const config = await getLarkFamilyConfig(this.platform);
     if (!config || !this.creds) return null;
     const tenantKey = this.creds.tenantId;
     return createLarkStoreAppClient(
@@ -48,7 +56,7 @@ export class MessengerLarkBinder implements MessengerPlatformBinder {
           encryptKey: config.encryptKey ?? '',
           verificationToken: config.verificationToken,
         },
-        platform: 'lark',
+        platform: this.platform,
         settings: {},
       },
       () => getLarkTenantAccessToken(config, tenantKey),
@@ -65,7 +73,7 @@ export class MessengerLarkBinder implements MessengerPlatformBinder {
     let randomId: string;
     try {
       randomId = await issueLinkToken({
-        platform: 'lark',
+        platform: this.platform,
         platformUserId: ctx.authorUserId,
         platformUsername: ctx.authorUserName,
         tenantId: this.creds.tenantId,
@@ -82,12 +90,13 @@ export class MessengerLarkBinder implements MessengerPlatformBinder {
 
     const verifyUrl = buildLarkVerifyUrl({
       appUrl,
+      platform: this.platform,
       platformUserId: ctx.authorUserId,
       randomId,
     });
     await this.sendPrivately(
       ctx.authorUserId,
-      `Welcome to ${BRANDING_NAME}!\n\nTo continue, link your Lark account to ${BRANDING_NAME}. The link expires in 30 minutes:\n\n${verifyUrl}\n\nAfter linking, send /agents anytime to see your agents and switch between them.`,
+      `Welcome to ${BRANDING_NAME}!\n\nTo continue, link your ${PLATFORM_NAMES[this.platform]} account to ${BRANDING_NAME}. The link expires in 30 minutes:\n\n${verifyUrl}\n\nAfter linking, send /agents anytime to see your agents and switch between them.`,
     );
   }
 
@@ -99,7 +108,9 @@ export class MessengerLarkBinder implements MessengerPlatformBinder {
     let creds = this.creds;
     if (!creds && params.tenantId) {
       creds =
-        (await getInstallationStore('lark')?.resolveByKey(`lark:${params.tenantId}`)) ?? undefined;
+        (await getInstallationStore(this.platform)?.resolveByKey(
+          `${this.platform}:${params.tenantId}`,
+        )) ?? undefined;
     }
     if (!creds) {
       log('notifyLinkSuccess: no install for tenant=%s', params.tenantId);
@@ -109,7 +120,7 @@ export class MessengerLarkBinder implements MessengerPlatformBinder {
     const tail = params.activeAgentName
       ? `\n\nActive agent: ${params.activeAgentName}\n\nSend your first message now, or /agents anytime to switch.`
       : '\n\nSend /agents to see your agents and pick one.';
-    await new MessengerLarkBinder(creds).sendPrivately(
+    await new MessengerLarkBinder(this.platform, creds).sendPrivately(
       params.platformUserId,
       `Linked. Your ${BRANDING_NAME} account is now connected.${tail}`,
     );
@@ -121,7 +132,7 @@ export class MessengerLarkBinder implements MessengerPlatformBinder {
   }
 
   async sendDmText(chatId: string, text: string): Promise<void> {
-    const config = await getMessengerLarkConfig();
+    const config = await getLarkFamilyConfig(this.platform);
     if (!config || !this.creds) return;
     try {
       await larkTenantApi(config, this.creds.tenantId).sendMessage(chatId, text);
@@ -131,7 +142,7 @@ export class MessengerLarkBinder implements MessengerPlatformBinder {
   }
 
   private async sendPrivately(openId: string, text: string): Promise<void> {
-    const config = await getMessengerLarkConfig();
+    const config = await getLarkFamilyConfig(this.platform);
     if (!config || !this.creds) return;
     try {
       await larkTenantApi(config, this.creds.tenantId).sendMessageToUser(openId, text);

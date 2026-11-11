@@ -51,7 +51,7 @@ export const getMessengerConfig = () => {
 
 export const messengerEnv = getMessengerConfig();
 
-export type MessengerPlatform = 'telegram' | 'slack' | 'discord' | 'imessage' | 'lark';
+export type MessengerPlatform = 'telegram' | 'slack' | 'discord' | 'imessage' | 'lark' | 'feishu';
 
 export const MESSENGER_PLATFORMS = [
   'telegram',
@@ -59,6 +59,7 @@ export const MESSENGER_PLATFORMS = [
   'discord',
   'imessage',
   'lark',
+  'feishu',
 ] as const satisfies readonly MessengerPlatform[];
 
 export interface MessengerTelegramConfig {
@@ -96,6 +97,7 @@ export interface MessengerImessageConfig {
   signingSecret: string;
 }
 
+/** A Lark or Feishu store app: the same platform on two domains (Lark abroad, Feishu in China). */
 export interface MessengerLarkConfig {
   appId: string;
   appSecret: string;
@@ -103,6 +105,7 @@ export interface MessengerLarkConfig {
   encryptKey?: string;
   /** The app's App Directory listing, where tenant admins install it. */
   installUrl?: string;
+  platform: 'feishu' | 'lark';
   verificationToken: string;
 }
 
@@ -207,9 +210,13 @@ export const getMessengerImessageConfig = async (): Promise<MessengerImessageCon
   });
 };
 
-export const getMessengerLarkConfig = async (): Promise<MessengerLarkConfig | null> => {
-  return fetchAndCache<MessengerLarkConfig>('lark', (row) => {
-    const c = row.credentials as Partial<Omit<MessengerLarkConfig, 'appId' | 'installUrl'>>;
+export const getLarkFamilyConfig = async (
+  platform: MessengerLarkConfig['platform'],
+): Promise<MessengerLarkConfig | null> => {
+  return fetchAndCache<MessengerLarkConfig>(platform, (row) => {
+    const c = row.credentials as Partial<
+      Omit<MessengerLarkConfig, 'appId' | 'installUrl' | 'platform'>
+    >;
     if (!row.applicationId || !c.appSecret || !c.verificationToken) return null;
     const installUrl = row.settings?.installUrl;
     return {
@@ -217,10 +224,15 @@ export const getMessengerLarkConfig = async (): Promise<MessengerLarkConfig | nu
       appSecret: c.appSecret,
       encryptKey: c.encryptKey || undefined,
       installUrl: typeof installUrl === 'string' && installUrl ? installUrl : undefined,
+      platform,
       verificationToken: c.verificationToken,
     };
   });
 };
+
+export const getMessengerLarkConfig = () => getLarkFamilyConfig('lark');
+
+export const getMessengerFeishuConfig = () => getLarkFamilyConfig('feishu');
 
 export const isMessengerPlatformEnabled = async (platform: MessengerPlatform): Promise<boolean> => {
   switch (platform) {
@@ -236,8 +248,9 @@ export const isMessengerPlatformEnabled = async (platform: MessengerPlatform): P
     case 'imessage': {
       return !!(await getMessengerImessageConfig());
     }
-    case 'lark': {
-      return !!(await getMessengerLarkConfig());
+    case 'lark':
+    case 'feishu': {
+      return !!(await getLarkFamilyConfig(platform));
     }
     default: {
       return false;
