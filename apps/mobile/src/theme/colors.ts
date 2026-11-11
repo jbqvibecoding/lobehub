@@ -1,7 +1,8 @@
 import { useColorScheme } from 'react-native';
 
+// The accent is Biber's amber (scripts/brand/generate-icons.mjs), dark enough to read on white.
 const light = {
-  accent: '#2f6fed',
+  accent: '#b45309',
   background: '#f2f2f7',
   border: '#d1d1d6',
   card: '#ffffff',
@@ -13,7 +14,7 @@ const light = {
 };
 
 const dark: typeof light = {
-  accent: '#5b8cff',
+  accent: '#f59e0b',
   background: '#000000',
   border: '#38383a',
   card: '#1c1c1e',

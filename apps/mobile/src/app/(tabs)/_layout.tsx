@@ -25,6 +25,10 @@ export default function TabsLayout() {
         <NativeTabs.Trigger.Icon md="history" sf="clock.arrow.circlepath" />
         <NativeTabs.Trigger.Label>{t('activityTitle')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="(account)">
+        <NativeTabs.Trigger.Icon md="account_circle" sf="person.crop.circle" />
+        <NativeTabs.Trigger.Label>{t('accountTitle')}</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }

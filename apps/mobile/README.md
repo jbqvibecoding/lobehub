@@ -12,6 +12,8 @@ it. The agent runs on the server and on agent computers, never on the phone.
 - **Activity**: what agents did for the user, newest first: what they asked, what was approved
   or rejected and where, what was blocked, and whether each action succeeded. It shows who a
   call went to, never message content or credentials, which the server does not keep.
+- **Account**: the current plan, when it renews or ends, who bills it, and how much of this
+  month's credits is used. Sign out is here too.
 - **Push**: the server notifies the phone when something needs the user. Tapping the notification
   opens the approvals list.
 - **Sign-in**: better-auth with the Expo client; the session cookie stays in the device keychain.
