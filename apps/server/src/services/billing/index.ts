@@ -1,22 +1,24 @@
 import {
   type BillingInterval,
+  creditPeriodAt,
   effectivePlan,
   isEntitledStatus,
+  monthlyCreditsFor,
   needsResync,
   planRank,
   stripeLookupKeyFor,
 } from '@lobechat/billing';
-import { isPaymentProviderAvailable } from '@lobechat/region';
 import type { Plans } from '@lobechat/types';
 import debug from 'debug';
 
 import { UserModel } from '@/database/models/user';
+import { UserCreditUsageModel } from '@/database/models/userCreditUsage';
 import { UserSubscriptionModel } from '@/database/models/userSubscription';
+import type { UserSubscriptionItem } from '@/database/schemas';
 import type { LobeChatDatabase } from '@/database/type';
 import { appEnv } from '@/envs/app';
-import { regionEnv } from '@/envs/region';
 
-import { getStripe, isStripeConfigured } from './stripe';
+import { getStripe, isStripeConfigured, isStripeOffered } from './stripe';
 import { syncStripeCustomer } from './stripeSync';
 
 const log = debug('lobe-server:billing');
@@ -48,10 +50,6 @@ const resyncAttempts = new Map<string, number>();
 const plansPageUrl = (checkout?: 'canceled' | 'success') =>
   `${appEnv.APP_URL}/settings/plans${checkout ? `?checkout=${checkout}` : ''}`;
 
-/** Stripe sells here when this deployment has its keys and its edition is billed through Stripe. */
-export const isStripeOffered = () =>
-  isStripeConfigured() && isPaymentProviderAvailable(regionEnv.APP_REGION, 'stripe');
-
 export class BillingService {
   private readonly db: LobeChatDatabase;
   private readonly userId: string;
@@ -70,11 +68,17 @@ export class BillingService {
 
   async getStatus() {
     const rows = await this.currentSubscriptions();
-    const granting = rows
-      .filter((row) => isEntitledStatus(row.status))
-      .sort((a, b) => planRank(b.plan) - planRank(a.plan))[0];
+    const granting = grantingSubscription(rows);
+    const credits = await this.allowanceFrom(rows);
 
     return {
+      /** This month's included credits and what is left of them */
+      credits: {
+        monthly: credits.monthlyCredits,
+        periodEnd: credits.period.end,
+        remaining: credits.remainingCredits,
+        used: credits.usedCredits,
+      },
       plan: effectivePlan(rows),
       stripe: {
         /** Whether a plan can be bought with Stripe on this deployment */
@@ -92,6 +96,22 @@ export class BillingService {
         status: granting.status,
       },
     };
+  }
+
+  /**
+   * What the user may still spend on platform-paid model calls this month. The month runs from
+   * the paying subscription's period start, or from account creation on the free plan.
+   */
+  async getAllowance(now = new Date()) {
+    return this.allowanceFrom(await this.currentSubscriptions(now), now);
+  }
+
+  /** Counts credits spent on a platform-paid call against the current month. */
+  async chargeCredits(credits: number, now = new Date()) {
+    if (credits <= 0) return;
+
+    const { period } = await this.allowanceFrom(await this.currentSubscriptions(now), now, false);
+    await new UserCreditUsageModel(this.db, this.userId).add(period, credits);
   }
 
   /** Stripe Checkout for a new subscription; the user pays there and returns to the plans page. */
@@ -160,6 +180,29 @@ export class BillingService {
     return this.getStatus();
   }
 
+  private async allowanceFrom(rows: UserSubscriptionItem[], now = new Date(), withUsage = true) {
+    const plan = effectivePlan(rows);
+    const anchor = grantingSubscription(rows)?.currentPeriodStart ?? (await this.signedUpAt());
+    const period = creditPeriodAt(anchor, now);
+    const monthlyCredits = monthlyCreditsFor(plan);
+    const usedCredits = withUsage
+      ? await new UserCreditUsageModel(this.db, this.userId).getUsed(period.start)
+      : 0;
+
+    return {
+      monthlyCredits,
+      period,
+      plan,
+      remainingCredits: Math.max(0, monthlyCredits - usedCredits),
+      usedCredits,
+    };
+  }
+
+  private async signedUpAt() {
+    const user = await UserModel.findById(this.db, this.userId);
+    return user?.createdAt ?? new Date(0);
+  }
+
   private requireStripe() {
     if (!isStripeOffered()) {
       throw new BillingError('UNAVAILABLE', 'Stripe is not available on this deployment');
@@ -208,3 +251,9 @@ export class BillingService {
     }
   }
 }
+
+/** The subscription the plan comes from: the highest plan among those that grant one. */
+const grantingSubscription = (rows: UserSubscriptionItem[]) =>
+  rows
+    .filter((row) => isEntitledStatus(row.status))
+    .sort((a, b) => planRank(b.plan) - planRank(a.plan))[0];

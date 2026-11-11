@@ -331,7 +331,9 @@ export class ChatService extends BaseService {
       // Create AgentRuntime instance. Pass workspaceId so workspace-key calls
       // bill the workspace budget (not the key creator's personal budget) and
       // trace under the workspace, matching initModelRuntimeFromDB.
-      const businessHooks = getBusinessModelRuntimeHooks(this.userId!, provider, this.workspaceId);
+      const businessHooks = getBusinessModelRuntimeHooks(this.userId!, provider, this.workspaceId, {
+        platformPaid: !apiKey,
+      });
       const tracingHooks = createLLMGenerationTracingHook(this.userId!, provider, this.workspaceId);
       const hooks = mergeModelRuntimeHooks(businessHooks, tracingHooks);
       const modelRuntime = await initModelRuntimeWithUserPayload(

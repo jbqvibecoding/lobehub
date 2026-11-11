@@ -1,6 +1,8 @@
 /* eslint-disable unused-imports/no-unused-vars */
-import type { ReferralStatusString } from '@lobechat/types';
-import { Plans } from '@lobechat/types';
+import type { Plans, ReferralStatusString } from '@lobechat/types';
+
+import { getServerDB } from '@/database/core/db-adaptor';
+import { BillingService } from '@/server/services/billing';
 
 export interface OnUserActivityForBusinessParams {
   currentTime: Date;
@@ -13,8 +15,9 @@ export async function getReferralStatus(userId: string): Promise<ReferralStatusS
   return undefined;
 }
 
+/** The plan the user's subscriptions currently grant; Free without one. */
 export async function getSubscriptionPlan(userId: string): Promise<Plans> {
-  return Plans.Free;
+  return new BillingService(await getServerDB(), userId).getPlan();
 }
 
 export async function initNewUserForBusiness(

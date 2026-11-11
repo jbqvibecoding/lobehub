@@ -82,6 +82,8 @@ interface PlanLimitCardProps {
   errorBody?: unknown;
   errorType?: string;
   onRetry: () => void;
+  /** Opens this deployment's own plans page; without it the button links to the hosted one */
+  onUpgrade?: () => void;
 }
 
 /**
@@ -90,7 +92,7 @@ interface PlanLimitCardProps {
  * the error body and links to the web plans page instead of fetching live
  * subscription state.
  */
-const PlanLimitCard = memo<PlanLimitCardProps>(({ errorBody, errorType, onRetry }) => {
+const PlanLimitCard = memo<PlanLimitCardProps>(({ errorBody, errorType, onRetry, onUpgrade }) => {
   const { t } = useTranslation('subscription');
 
   const context = getBudgetContextFromErrorBody(errorBody);
@@ -149,17 +151,23 @@ const PlanLimitCard = memo<PlanLimitCardProps>(({ errorBody, errorType, onRetry 
         )}
 
         <Flexbox gap={8} width={'100%'}>
-          {BRANDING_URL.subscription && (
-            <a
-              href={BRANDING_URL.subscription}
-              rel={'noopener noreferrer'}
-              style={{ width: '100%' }}
-              target={'_blank'}
-            >
-              <Button block size={'large'} type={'primary'}>
-                {upgradeLabel}
-              </Button>
-            </a>
+          {onUpgrade ? (
+            <Button block size={'large'} type={'primary'} onClick={onUpgrade}>
+              {upgradeLabel}
+            </Button>
+          ) : (
+            BRANDING_URL.subscription && (
+              <a
+                href={BRANDING_URL.subscription}
+                rel={'noopener noreferrer'}
+                style={{ width: '100%' }}
+                target={'_blank'}
+              >
+                <Button block size={'large'} type={'primary'}>
+                  {upgradeLabel}
+                </Button>
+              </a>
+            )
           )}
           <Button block size={'large'} onClick={onRetry}>
             {t('limitation.insufficientBudget.retry')}

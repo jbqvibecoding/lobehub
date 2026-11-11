@@ -14,6 +14,7 @@ import {
 } from '@/server/routers/lambda/__tests__/integration/setup';
 
 import { BillingService } from '../index';
+import type * as StripeModule from '../stripe';
 import { handleStripeWebhook } from '../stripeSync';
 
 const WEBHOOK_SECRET = 'whsec_test_secret';
@@ -41,9 +42,9 @@ const { env, stripe } = vi.hoisted(() => ({
 vi.mock('@/envs/billing', () => ({ billingEnv: env.billing }));
 vi.mock('@/envs/region', () => ({ regionEnv: env.region }));
 vi.mock('@/envs/app', () => ({ appEnv: { APP_URL: 'https://app.biber.test' } }));
-vi.mock('../stripe', () => ({
+vi.mock('../stripe', async (importOriginal) => ({
+  ...(await importOriginal<typeof StripeModule>()),
   getStripe: () => stripe,
-  isStripeConfigured: () => !!env.billing.STRIPE_SECRET_KEY,
 }));
 
 const DAY = 24 * 60 * 60;

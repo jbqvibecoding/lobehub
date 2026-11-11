@@ -4,13 +4,14 @@ import { AgentRuntimeErrorType, getErrorCodeSpec } from '@lobechat/model-runtime
 import { type ChatMessageError, type ErrorType, type IToolErrorType } from '@lobechat/types';
 import { ChatErrorType } from '@lobechat/types';
 import { type AlertProps } from '@lobehub/ui';
-import { Block, Highlighter, Skeleton } from '@lobehub/ui';
+import { Block, Highlighter } from '@lobehub/ui';
 import { memo, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import useBusinessErrorAlertConfig from '@/business/client/hooks/useBusinessErrorAlertConfig';
 import useBusinessErrorContent from '@/business/client/hooks/useBusinessErrorContent';
 import useRenderBusinessChatErrorMessageExtra from '@/business/client/hooks/useRenderBusinessChatErrorMessageExtra';
+import { SkeletonInput } from '@/components/Skeleton/SkeletonInput';
 import ErrorContent from '@/features/Conversation/ChatItem/components/ErrorContent';
 import { dataSelectors, useConversationStore } from '@/features/Conversation/store';
 import HeterogeneousAgentStatusGuide from '@/features/Electron/HeterogeneousAgent/StatusGuide';
@@ -68,7 +69,7 @@ const loading = () => (
       width: '100%',
     }}
   >
-    <Skeleton.Button active block />
+    <SkeletonInput />
   </Block>
 );
 
@@ -249,6 +250,7 @@ const ErrorMessageExtra = memo<ErrorExtraProps>(
     const error = data.error;
     const navigate = useWorkspaceAwareNavigate();
     const businessChatErrorMessageExtra = useRenderBusinessChatErrorMessageExtra(error, data.id);
+    const enableBilling = useServerConfigStore(serverConfigSelectors.enableBilling);
     const enableBusinessFeatures = useServerConfigStore(
       serverConfigSelectors.enableBusinessFeatures,
     );
@@ -358,12 +360,13 @@ const ErrorMessageExtra = memo<ErrorExtraProps>(
       case ChatErrorType.FreePlanLimit:
       case ChatErrorType.SubscriptionPlanLimit:
       case ChatErrorType.InsufficientBudgetForModel: {
-        if (enableBusinessFeatures)
+        if (enableBusinessFeatures || enableBilling)
           return (
             <PlanLimitCard
               errorBody={error?.body}
               errorType={error?.type}
               onRetry={handleRetryAgentMessage}
+              onUpgrade={enableBilling ? () => navigate('/settings/plans') : undefined}
             />
           );
         break;

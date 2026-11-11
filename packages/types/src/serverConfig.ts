@@ -61,6 +61,11 @@ export interface GlobalServerConfig {
   aiProvider: ServerLanguageModel;
   defaultAgent?: PartialDeep<UserDefaultAgent>;
   disableEmailPassword?: boolean;
+  /**
+   * Whether plans can be bought on this deployment (a payment provider is configured for its
+   * edition). Shows the Plans settings page without the rest of the cloud-only business features.
+   */
+  enableBilling?: boolean;
   enableBusinessFeatures?: boolean;
   enableComposio?: boolean;
   /**

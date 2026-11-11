@@ -3,7 +3,6 @@ import { HeterogeneousAgentSessionErrorCode } from '@lobechat/electron-client-ip
 import type * as modelRuntimeModule from '@lobechat/model-runtime';
 import { AgentRuntimeErrorType } from '@lobechat/model-runtime';
 import type * as lobechatTypesModule from '@lobechat/types';
-import type * as lobehubUiModule from '@lobehub/ui';
 import { render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,7 +11,10 @@ import ErrorMessageExtra from './index';
 
 const navigateMock = vi.fn();
 
-const serverConfigMock = vi.hoisted(() => ({ enableBusinessFeatures: false }));
+const serverConfigMock = vi.hoisted(() => ({
+  enableBilling: false,
+  enableBusinessFeatures: false,
+}));
 
 vi.mock('@lobechat/business-const', async (importOriginal) => {
   const actual = (await importOriginal()) as typeof businessConstModule;
@@ -47,7 +49,7 @@ vi.mock('@lobechat/types', async (importOriginal) => {
 });
 
 vi.mock('@lobehub/ui', async (importOriginal) => {
-  const actual = (await importOriginal()) as typeof lobehubUiModule;
+  const actual = await importOriginal<Record<string, unknown>>();
 
   return {
     ...actual,
@@ -107,6 +109,7 @@ vi.mock('@/libs/next/dynamic', () => ({
 
 vi.mock('@/store/serverConfig', () => ({
   serverConfigSelectors: {
+    enableBilling: () => serverConfigMock.enableBilling,
     enableBusinessFeatures: () => serverConfigMock.enableBusinessFeatures,
   },
   useServerConfigStore: (selector: (s: unknown) => unknown) => selector({}),
@@ -132,7 +135,25 @@ vi.mock('@/features/Conversation/store', () => ({
 
 describe('ErrorMessageExtra', () => {
   beforeEach(() => {
+    serverConfigMock.enableBilling = false;
     serverConfigMock.enableBusinessFeatures = false;
+  });
+
+  it('offers an upgrade when the plan credits run out on a deployment that sells plans', () => {
+    const planLimit = {
+      error: { body: { budget: { planAtError: 'free' } }, type: 'FreePlanLimit' } as any,
+      id: 'msg-plan-limit',
+    };
+
+    const { unmount } = render(
+      <ErrorMessageExtra data={planLimit} error={{ message: 'response.FreePlanLimit' }} />,
+    );
+    expect(screen.queryByText('dynamic')).not.toBeInTheDocument();
+    unmount();
+
+    serverConfigMock.enableBilling = true;
+    render(<ErrorMessageExtra data={planLimit} error={{ message: 'response.FreePlanLimit' }} />);
+    expect(screen.getByText('dynamic')).toBeInTheDocument();
   });
 
   it('keeps the localized message for known error types even when a traceId exists', () => {

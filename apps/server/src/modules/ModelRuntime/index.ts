@@ -179,6 +179,10 @@ export const buildPayloadFromKeyVaults = (
  * @param payload - The JWT payload.
  * @returns The options object.
  */
+/** The user set a credential of their own for this provider, so the provider bills them. */
+const hasOwnCredential = (payload: ClientSecretPayload) =>
+  !!(payload.apiKey || payload.awsAccessKeyId || payload.bearerToken);
+
 const getParamsFromPayload = (provider: string, payload: ClientSecretPayload) => {
   const llmConfig = getLLMConfig() as Record<string, any>;
 
@@ -474,8 +478,11 @@ export const initModelRuntimeFromDB = async (
 
   const payload = buildPayloadFromKeyVaults(keyVaults, runtimeProvider);
 
-  // 4. Get business hooks (billing in cloud, undefined in OSS)
-  const businessHooks = getBusinessModelRuntimeHooks(userId, provider, workspaceId);
+  // 4. Get business hooks (billing in cloud, undefined in OSS). A call without the user's own
+  //    credential runs on the platform's key, which is what plans meter.
+  const businessHooks = getBusinessModelRuntimeHooks(userId, provider, workspaceId, {
+    platformPaid: !hasOwnCredential(payload),
+  });
 
   // 5. Compose with the per-call llm_generation_tracing hook (no-op when the
   //    service is unconfigured, so OSS / self-hosted setups pay nothing for it).
