@@ -376,6 +376,8 @@ export interface PlatformMeta {
   appId?: string;
   botUsername?: string;
   id: string;
+  /** Lark: the App Directory listing where a workspace admin installs the app. */
+  installUrl?: string;
   name: string;
   phoneNumber?: string;
 }

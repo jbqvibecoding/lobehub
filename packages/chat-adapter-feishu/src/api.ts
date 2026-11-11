@@ -8,20 +8,30 @@ const MAX_TEXT_LENGTH = 4000;
 /**
  * Lightweight wrapper around the Lark/Feishu Open API.
  *
- * Auth: app_id + app_secret -> tenant_access_token (cached, auto-refreshed).
+ * Auth: app_id + app_secret -> tenant_access_token (cached, auto-refreshed), for an app built in
+ * one tenant. A store app installed by many tenants passes `tenantAccessToken` instead: its
+ * tokens come from the app ticket and the installing tenant's key, which the caller manages.
  */
 export class LarkApiClient {
   private readonly appId: string;
   private readonly appSecret: string;
   private readonly baseUrl: string;
 
+  private readonly tenantAccessToken?: () => Promise<string>;
+
   private cachedToken?: string;
   private tokenExpiresAt = 0;
 
-  constructor(appId: string, appSecret: string, platform: string = 'lark') {
+  constructor(
+    appId: string,
+    appSecret: string,
+    platform: string = 'lark',
+    tenantAccessToken?: () => Promise<string>,
+  ) {
     this.appId = appId;
     this.appSecret = appSecret;
     this.baseUrl = BASE_URLS[platform] || BASE_URLS.lark;
+    this.tenantAccessToken = tenantAccessToken;
   }
 
   // ------------------------------------------------------------------
@@ -33,6 +43,16 @@ export class LarkApiClient {
       content: JSON.stringify({ text: this.truncateText(text) }),
       msg_type: 'text',
       receive_id: chatId,
+    });
+    return { messageId: data.data.message_id, raw: data.data };
+  }
+
+  /** Message one person privately, by their `open_id` in this app. */
+  async sendMessageToUser(openId: string, text: string): Promise<{ messageId: string; raw: any }> {
+    const data = await this.call('POST', '/im/v1/messages?receive_id_type=open_id', {
+      content: JSON.stringify({ text: this.truncateText(text) }),
+      msg_type: 'text',
+      receive_id: openId,
     });
     return { messageId: data.data.message_id, raw: data.data };
   }
@@ -97,6 +117,16 @@ export class LarkApiClient {
   async getChatInfo(chatId: string): Promise<any> {
     const data = await this.call('GET', `/im/v1/chats/${chatId}`, {});
     return data.data;
+  }
+
+  /** The tenant the token belongs to (`tenant:tenant:readonly`); null without that scope. */
+  async getTenantInfo(): Promise<{ name?: string } | null> {
+    try {
+      const data = await this.call('GET', '/tenant/v2/tenant/query', {});
+      return data.data?.tenant ?? null;
+    } catch {
+      return null;
+    }
   }
 
   async getBotInfo(): Promise<any> {
@@ -230,6 +260,8 @@ export class LarkApiClient {
   // ------------------------------------------------------------------
 
   async getTenantAccessToken(): Promise<string> {
+    if (this.tenantAccessToken) return this.tenantAccessToken();
+
     if (this.cachedToken && Date.now() < this.tokenExpiresAt) {
       return this.cachedToken;
     }

@@ -3,7 +3,11 @@
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { buildSlackOpenBotUrl } from '../../constants';
+import {
+  buildLarkOpenBotUrl,
+  buildSlackOpenBotUrl,
+  type WorkspaceBotPlatform,
+} from '../../constants';
 import {
   ConfirmCard,
   type ExistingLink,
@@ -14,9 +18,10 @@ import {
 } from './shared';
 import { isSingleAccountRebindBlocked, shouldShowSingleAccountSuccess } from './singleAccountState';
 
-interface SlackBodyProps {
+interface WorkspaceBodyProps {
   existingLink?: ExistingLink | null;
   lobeAccount: string;
+  platform: WorkspaceBotPlatform;
   platformMeta?: PlatformMeta;
   randomId: string;
   signInUrl: string;
@@ -24,12 +29,31 @@ interface SlackBodyProps {
   userAvatar?: string | null;
 }
 
-const SlackBody = memo<SlackBodyProps>(
-  ({ existingLink, lobeAccount, platformMeta, randomId, signInUrl, tokenData, userAvatar }) => {
+const openBotUrl = (
+  platform: WorkspaceBotPlatform,
+  tenantId: string | undefined,
+  appId: string | undefined,
+): string | null => {
+  if (platform === 'lark') return appId ? buildLarkOpenBotUrl(appId) : null;
+  return tenantId ? buildSlackOpenBotUrl(tenantId, appId) : null;
+};
+
+/** A bot installed per workspace (Slack, Lark): the link names the workspace it belongs to. */
+const WorkspaceBody = memo<WorkspaceBodyProps>(
+  ({
+    existingLink,
+    lobeAccount,
+    platform,
+    platformMeta,
+    randomId,
+    signInUrl,
+    tokenData,
+    userAvatar,
+  }) => {
     const { t } = useTranslation('messenger');
     const [done, setDone] = useState(false);
 
-    const platformLabel = platformMeta?.name ?? 'Slack';
+    const platformLabel = platformMeta?.name ?? (platform === 'lark' ? 'Lark' : 'Slack');
     const rebindBlocked = isSingleAccountRebindBlocked(existingLink, tokenData);
     // Slack uses tenant from the existing link (post-confirm/refresh) or the
     // pending token (pre-confirm). Without a tenant, the workspace deep-link
@@ -39,7 +63,7 @@ const SlackBody = memo<SlackBodyProps>(
     if (shouldShowSingleAccountSuccess(existingLink, tokenData, done)) {
       return (
         <SuccessCard
-          openBotUrl={tenantId ? buildSlackOpenBotUrl(tenantId, platformMeta?.appId) : null}
+          openBotUrl={openBotUrl(platform, tenantId, platformMeta?.appId)}
           platformLabel={platformLabel}
         />
       );
@@ -62,13 +86,13 @@ const SlackBody = memo<SlackBodyProps>(
     return (
       <ConfirmCard
         infoRows={infoRows}
-        platform="slack"
+        platform={platform}
         randomId={randomId}
         userAvatar={userAvatar}
         blockingNotice={
           rebindBlocked
             ? {
-                ctaHref: '/settings/messenger/slack',
+                ctaHref: `/settings/messenger/${platform}`,
                 ctaLabel: t('verify.confirm.relink.manage'),
                 description: t('verify.confirm.relink.description', {
                   account:
@@ -94,6 +118,6 @@ const SlackBody = memo<SlackBodyProps>(
     );
   },
 );
-SlackBody.displayName = 'MessengerVerifySlackBody';
+WorkspaceBody.displayName = 'MessengerVerifyWorkspaceBody';
 
-export default SlackBody;
+export default WorkspaceBody;

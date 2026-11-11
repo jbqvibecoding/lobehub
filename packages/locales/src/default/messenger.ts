@@ -25,8 +25,11 @@ export default {
     "This messenger platform isn't available right now. Please try again later.",
   'messenger.linkCta': 'Connect',
   'messenger.linkModal.continueIn': 'Continue setup on {{platform}}',
+  'messenger.linkModal.installCta': 'Install {{platform}} in your workspace',
   'messenger.linkModal.instructions':
     'Open the bot, send /start, then tap "Link Account" to connect your LobeHub account.',
+  'messenger.linkModal.larkInstallNote':
+    'If {{platform}} is not in your workspace yet, a workspace admin installs it from the App Directory first.',
   'messenger.linkModal.notConfigured':
     "This connection isn't available right now. Please try again later.",
   'messenger.linkModal.openCta': 'Open in {{platform}}',
@@ -110,6 +113,8 @@ export default {
     'Chat with your LobeHub agents on Discord by DMing the LobeHub bot from any server.',
   'messenger.list.imessage.description':
     'Text your LobeHub agents from Messages on iPhone, iPad or Mac, and choose which agent replies.',
+  'messenger.list.lark.description':
+    'Chat with your LobeHub agents in your Lark workspace, and choose which agent replies.',
   'messenger.list.slack.description':
     'Chat with your LobeHub agents on Slack by DMing or mentioning @LobeHub in any workspace.',
   'messenger.list.telegram.description':

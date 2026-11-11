@@ -10,6 +10,11 @@ export interface LarkAdapterConfig {
   encryptKey?: string;
   /** 'lark' (international) or 'feishu' (China) — determines API base URL */
   platform?: 'lark' | 'feishu';
+  /**
+   * For a store app installed by many tenants: returns the token of the tenant this adapter
+   * serves. Without it, the adapter gets its own token as an app built in one tenant.
+   */
+  tenantAccessToken?: () => Promise<string>;
   /** Bot display name override */
   userName?: string;
   /** Verification token for webhook event validation (optional — skip verification when unset) */

@@ -3,6 +3,7 @@ import type { MessengerPlatform } from '@/config/messenger';
 import type { ConnectionMode } from '../../bot/platforms';
 import { DiscordInstallationStore } from './discord';
 import { ImessageInstallationStore } from './imessage';
+import { LarkInstallationStore } from './lark';
 import { SlackInstallationStore } from './slack';
 import { TelegramInstallationStore } from './telegram';
 import type { MessengerInstallationStore } from './types';
@@ -27,6 +28,9 @@ const create = (platform: MessengerPlatform): MessengerInstallationStore | null 
     }
     case 'imessage': {
       return new ImessageInstallationStore();
+    }
+    case 'lark': {
+      return new LarkInstallationStore();
     }
     default: {
       return null;
@@ -119,6 +123,7 @@ export const messengerConnectionIdForUser = (params: {
 
 export { DISCORD_INSTALLATION_KEY, DiscordInstallationStore } from './discord';
 export { IMESSAGE_INSTALLATION_KEY, ImessageInstallationStore } from './imessage';
+export { LarkInstallationStore } from './lark';
 export { SlackInstallationStore } from './slack';
 export { TELEGRAM_INSTALLATION_KEY, TelegramInstallationStore } from './telegram';
 export type { InstallationCredentials, MessengerInstallationStore } from './types';

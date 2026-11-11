@@ -4,12 +4,14 @@ import { regionEnv } from '@/envs/region';
 
 import { discord } from './discord';
 import { imessage } from './imessage';
+import { lark } from './lark';
 import { MessengerPlatformRegistry } from './registry';
 import { slack } from './slack';
 import { telegram } from './telegram';
 
 export { MessengerDiscordBinder } from './discord';
 export { MessengerImessageBinder } from './imessage';
+export { MessengerLarkBinder } from './lark';
 export { MessengerPlatformRegistry } from './registry';
 export { MessengerSlackBinder, slackWebhookGate } from './slack';
 export { MessengerTelegramBinder } from './telegram';
@@ -27,7 +29,7 @@ export type {
 export const messengerPlatformRegistry = new MessengerPlatformRegistry();
 
 // None of the product-owned messenger bots is reachable from the mainland edition.
-for (const definition of [slack, telegram, discord, imessage]) {
+for (const definition of [slack, telegram, discord, imessage, lark]) {
   if (isMessengerPlatformAvailable(regionEnv.APP_REGION, definition.id)) {
     messengerPlatformRegistry.register(definition);
   }

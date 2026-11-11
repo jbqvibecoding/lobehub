@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isMessengerPlatform, sharedBotUrl } from './constants';
+import { buildLarkOpenBotUrl, isMessengerPlatform, sharedBotUrl } from './constants';
 
 describe('sharedBotUrl', () => {
   it('opens Messages addressed to the iMessage line, whatever the number formatting', () => {
@@ -17,9 +17,18 @@ describe('sharedBotUrl', () => {
   });
 });
 
+describe('buildLarkOpenBotUrl', () => {
+  it("opens a chat with the Lark app's bot", () => {
+    expect(buildLarkOpenBotUrl('cli_a1b2')).toBe(
+      'https://applink.larksuite.com/client/bot/open?appId=cli_a1b2',
+    );
+  });
+});
+
 describe('isMessengerPlatform', () => {
   it('accepts iMessage alongside the other platforms and rejects unknown ones', () => {
     expect(isMessengerPlatform('imessage')).toBe(true);
+    expect(isMessengerPlatform('lark')).toBe(true);
     expect(isMessengerPlatform('telegram')).toBe(true);
     expect(isMessengerPlatform('whatsapp')).toBe(false);
     expect(isMessengerPlatform(undefined)).toBe(false);

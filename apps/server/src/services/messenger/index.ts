@@ -9,6 +9,7 @@ export { getMessengerRouter, MessengerRouter } from './MessengerRouter';
 export { messengerPlatformRegistry } from './platforms';
 export { MessengerDiscordBinder } from './platforms/discord';
 export { MessengerImessageBinder } from './platforms/imessage';
+export { MessengerLarkBinder } from './platforms/lark';
 export { MessengerSlackBinder } from './platforms/slack';
 export { MessengerTelegramBinder } from './platforms/telegram';
 export type { MessengerPlatformBinder } from './types';

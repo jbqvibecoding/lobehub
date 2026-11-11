@@ -296,7 +296,12 @@ export class LarkAdapter implements Adapter<LarkThreadId, LarkRawMessage> {
   constructor(config: LarkAdapterConfig & { logger?: Logger; userName?: string }) {
     this.platform = config.platform || 'lark';
     this.name = this.platform;
-    this.api = new LarkApiClient(config.appId, config.appSecret, this.platform);
+    this.api = new LarkApiClient(
+      config.appId,
+      config.appSecret,
+      this.platform,
+      config.tenantAccessToken,
+    );
     this.encryptKey = config.encryptKey;
     this.verificationToken = config.verificationToken;
     this.formatConverter = new LarkFormatConverter();

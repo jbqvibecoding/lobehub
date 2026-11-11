@@ -31,6 +31,11 @@ const log = debug('lobe-server:messenger:config');
  *
  * - **iMessage**: one product-owned phone line on Linq serves every user, like
  *   Telegram. The line's number is public and lives in `application_id`.
+ *
+ * - **Lark**: a store app that tenant admins install from the Lark App
+ *   Directory. The row carries the app's credentials; each install is recorded
+ *   in `messenger_installations` when Lark reports it, with no token of its
+ *   own (tenant tokens are minted from the app ticket on demand).
  */
 export const getMessengerConfig = () => {
   return createEnv({
@@ -46,13 +51,14 @@ export const getMessengerConfig = () => {
 
 export const messengerEnv = getMessengerConfig();
 
-export type MessengerPlatform = 'telegram' | 'slack' | 'discord' | 'imessage';
+export type MessengerPlatform = 'telegram' | 'slack' | 'discord' | 'imessage' | 'lark';
 
 export const MESSENGER_PLATFORMS = [
   'telegram',
   'slack',
   'discord',
   'imessage',
+  'lark',
 ] as const satisfies readonly MessengerPlatform[];
 
 export interface MessengerTelegramConfig {
@@ -88,6 +94,16 @@ export interface MessengerImessageConfig {
   phoneNumber?: string;
   /** Linq webhook signing secret (Standard Webhooks). */
   signingSecret: string;
+}
+
+export interface MessengerLarkConfig {
+  appId: string;
+  appSecret: string;
+  /** Lark encrypts events with it and signs every delivery. */
+  encryptKey?: string;
+  /** The app's App Directory listing, where tenant admins install it. */
+  installUrl?: string;
+  verificationToken: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +207,21 @@ export const getMessengerImessageConfig = async (): Promise<MessengerImessageCon
   });
 };
 
+export const getMessengerLarkConfig = async (): Promise<MessengerLarkConfig | null> => {
+  return fetchAndCache<MessengerLarkConfig>('lark', (row) => {
+    const c = row.credentials as Partial<Omit<MessengerLarkConfig, 'appId' | 'installUrl'>>;
+    if (!row.applicationId || !c.appSecret || !c.verificationToken) return null;
+    const installUrl = row.settings?.installUrl;
+    return {
+      appId: row.applicationId,
+      appSecret: c.appSecret,
+      encryptKey: c.encryptKey || undefined,
+      installUrl: typeof installUrl === 'string' && installUrl ? installUrl : undefined,
+      verificationToken: c.verificationToken,
+    };
+  });
+};
+
 export const isMessengerPlatformEnabled = async (platform: MessengerPlatform): Promise<boolean> => {
   switch (platform) {
     case 'telegram': {
@@ -204,6 +235,9 @@ export const isMessengerPlatformEnabled = async (platform: MessengerPlatform): P
     }
     case 'imessage': {
       return !!(await getMessengerImessageConfig());
+    }
+    case 'lark': {
+      return !!(await getMessengerLarkConfig());
     }
     default: {
       return false;

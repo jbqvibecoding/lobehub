@@ -206,6 +206,18 @@ vi.mock('./platforms/imessage/binder', () => ({
   })),
 }));
 
+vi.mock('./platforms/lark/binder', () => ({
+  MessengerLarkBinder: vi.fn().mockImplementation(() => ({
+    createClient: () => ({ createAdapter: () => ({}), extractChatId: (id: string) => id }),
+    handleUnlinkedMessage: vi.fn(),
+    notifyLinkSuccess: vi.fn(),
+    sendDmText: vi.fn(),
+  })),
+}));
+vi.mock('./platforms/lark/webhook', () => ({
+  larkWebhookGate: { preprocess: vi.fn(async () => null) },
+}));
+
 const buildSlackRequest = (body: string, headers: Record<string, string> = {}): Request =>
   new Request('https://app.example.com/api/agent/messenger/webhooks/slack', {
     body,

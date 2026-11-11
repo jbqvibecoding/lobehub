@@ -123,6 +123,7 @@ const MessengerSettings = memo(() => {
           <IntegrationDetail
             appId={selectedMeta.appId}
             botUsername={selectedMeta.botUsername}
+            installUrl={selectedMeta.installUrl}
             name={selectedMeta.name}
             phoneNumber={selectedMeta.phoneNumber}
             platform={selected}

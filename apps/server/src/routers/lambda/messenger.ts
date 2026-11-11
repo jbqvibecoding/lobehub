@@ -7,6 +7,7 @@ import {
   getEnabledMessengerPlatforms,
   getMessengerDiscordConfig,
   getMessengerImessageConfig,
+  getMessengerLarkConfig,
   getMessengerSlackConfig,
   getMessengerTelegramConfig,
   isMessengerPlatformEnabled,
@@ -34,6 +35,7 @@ import {
   consumeLinkToken,
   MessengerDiscordBinder,
   MessengerImessageBinder,
+  MessengerLarkBinder,
   messengerPlatformRegistry,
   MessengerSlackBinder,
   MessengerTelegramBinder,
@@ -207,12 +209,14 @@ export const messengerRouter = router({
       .listSerializedPlatforms()
       .filter((def) => enabledSet.has(def.id));
 
-    const [discordConfig, slackConfig, telegramConfig, imessageConfig] = await Promise.all([
-      enabledSet.has('discord') ? getMessengerDiscordConfig() : Promise.resolve(null),
-      enabledSet.has('slack') ? getMessengerSlackConfig() : Promise.resolve(null),
-      enabledSet.has('telegram') ? getMessengerTelegramConfig() : Promise.resolve(null),
-      enabledSet.has('imessage') ? getMessengerImessageConfig() : Promise.resolve(null),
-    ]);
+    const [discordConfig, slackConfig, telegramConfig, imessageConfig, larkConfig] =
+      await Promise.all([
+        enabledSet.has('discord') ? getMessengerDiscordConfig() : Promise.resolve(null),
+        enabledSet.has('slack') ? getMessengerSlackConfig() : Promise.resolve(null),
+        enabledSet.has('telegram') ? getMessengerTelegramConfig() : Promise.resolve(null),
+        enabledSet.has('imessage') ? getMessengerImessageConfig() : Promise.resolve(null),
+        enabledSet.has('lark') ? getMessengerLarkConfig() : Promise.resolve(null),
+      ]);
 
     return definitions.map((def) => ({
       ...def,
@@ -221,7 +225,9 @@ export const messengerRouter = router({
           ? slackConfig?.appId
           : def.id === 'discord'
             ? discordConfig?.applicationId
-            : undefined,
+            : def.id === 'lark'
+              ? larkConfig?.appId
+              : undefined,
       // Telegram-only: deep-link target (`https://t.me/<botUsername>`) — no
       // direct equivalent on Slack/Discord, both of which use App/Application
       // IDs to deep-link to the bot.
@@ -229,6 +235,8 @@ export const messengerRouter = router({
       enabled: true,
       // iMessage-only: the shared line's number, where users text the bot.
       phoneNumber: def.id === 'imessage' ? imessageConfig?.phoneNumber : undefined,
+      // Lark-only: the App Directory listing where a tenant admin installs the app.
+      installUrl: def.id === 'lark' ? larkConfig?.installUrl : undefined,
       // Legacy field — older callers index by `.platform` rather than `.id`.
       // Keep until those callers migrate; safe alias of the registry id.
       platform: def.id,
@@ -656,6 +664,10 @@ const notifyLinkSuccess = async (
       }
       case 'imessage': {
         await new MessengerImessageBinder().notifyLinkSuccess(params);
+        break;
+      }
+      case 'lark': {
+        await new MessengerLarkBinder().notifyLinkSuccess(params);
         break;
       }
     }

@@ -6,7 +6,7 @@ import type { MessengerPlatform } from '../../constants';
 import DiscordBody from './Discord';
 import type { ExistingLink, PeekedToken, PlatformMeta } from './shared';
 import SharedBotBody from './SharedBot';
-import SlackBody from './Slack';
+import WorkspaceBody from './Workspace';
 
 interface BodyProps {
   existingLink?: ExistingLink | null;
@@ -21,8 +21,9 @@ interface BodyProps {
 
 const Body = memo<BodyProps>(({ platform, ...rest }) => {
   switch (platform) {
-    case 'slack': {
-      return <SlackBody {...rest} />;
+    case 'slack':
+    case 'lark': {
+      return <WorkspaceBody {...rest} platform={platform} />;
     }
     case 'discord': {
       return <DiscordBody {...rest} />;

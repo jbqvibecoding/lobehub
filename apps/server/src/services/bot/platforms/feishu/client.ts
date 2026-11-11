@@ -55,12 +55,21 @@ function resolveDomain(platform: string): 'lark' | 'feishu' {
 
 // ---------- Shared runtime operations ----------
 
+/** A store app's per-tenant token; absent for an app built in one tenant. */
+type TenantAccessToken = () => Promise<string>;
+
 function createMessenger(
   config: BotProviderConfig,
   domain: 'lark' | 'feishu',
   platformThreadId: string,
+  tenantAccessToken?: TenantAccessToken,
 ): PlatformMessenger {
-  const api = new LarkApiClient(config.applicationId, config.credentials.appSecret, domain);
+  const api = new LarkApiClient(
+    config.applicationId,
+    config.credentials.appSecret,
+    domain,
+    tenantAccessToken,
+  );
   const chatId = extractChatId(platformThreadId);
   return {
     addReaction: (messageId, emoji) => api.addReaction(messageId, emoji).then(() => {}),
@@ -144,14 +153,20 @@ class FeishuWebhookClient implements PlatformClient {
 
   private config: BotProviderConfig;
   private domain: 'lark' | 'feishu';
+  private tenantAccessToken?: TenantAccessToken;
   /** Lazy-cached LarkApiClient — keeps the tenant token cache hot across calls. */
   private _api?: LarkApiClient;
 
-  constructor(config: BotProviderConfig, _context: BotPlatformRuntimeContext) {
+  constructor(
+    config: BotProviderConfig,
+    _context: BotPlatformRuntimeContext,
+    tenantAccessToken?: TenantAccessToken,
+  ) {
     this.config = config;
     this.id = config.platform;
     this.applicationId = config.applicationId;
     this.domain = resolveDomain(config.platform);
+    this.tenantAccessToken = tenantAccessToken;
   }
 
   private get api(): LarkApiClient {
@@ -160,6 +175,7 @@ class FeishuWebhookClient implements PlatformClient {
         this.config.applicationId,
         this.config.credentials.appSecret,
         this.domain,
+        this.tenantAccessToken,
       );
     }
     return this._api;
@@ -215,13 +231,14 @@ class FeishuWebhookClient implements PlatformClient {
         appSecret: this.config.credentials.appSecret,
         encryptKey: this.config.credentials.encryptKey,
         platform: this.domain,
+        tenantAccessToken: this.tenantAccessToken,
         verificationToken: this.config.credentials.verificationToken,
       }),
     };
   }
 
   getMessenger(platformThreadId: string): PlatformMessenger {
-    return createMessenger(this.config, this.domain, platformThreadId);
+    return createMessenger(this.config, this.domain, platformThreadId, this.tenantAccessToken);
   }
 
   async extractFiles(message: Message): Promise<AttachmentSource[] | undefined> {
@@ -245,6 +262,15 @@ class FeishuWebhookClient implements PlatformClient {
     return compositeId;
   }
 }
+
+/**
+ * A client for one tenant of a store app (an app many tenants install from the App Directory).
+ * Inbound events arrive by webhook, and every API call carries that tenant's token.
+ */
+export const createLarkStoreAppClient = (
+  config: BotProviderConfig,
+  tenantAccessToken: TenantAccessToken,
+): PlatformClient => new FeishuWebhookClient(config, {}, tenantAccessToken);
 
 // ---------- WebSocket Client (persistent, using Lark SDK WSClient) ----------
 

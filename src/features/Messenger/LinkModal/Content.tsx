@@ -4,7 +4,12 @@ import { Flexbox } from '@lobehub/ui';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { buildImessageUrl, buildTelegramDeepLink, type MessengerPlatform } from '../constants';
+import {
+  buildImessageUrl,
+  buildLarkOpenBotUrl,
+  buildTelegramDeepLink,
+  type MessengerPlatform,
+} from '../constants';
 import DiscordLinkBody from './Discord';
 import SharedBotLinkBody from './SharedBot';
 import SlackLinkBody from './Slack';
@@ -12,13 +17,15 @@ import SlackLinkBody from './Slack';
 export interface LinkModalContentProps {
   appId?: string;
   botUsername?: string;
+  /** Lark: the App Directory listing where a workspace admin installs the app. */
+  installUrl?: string;
   name: string;
   phoneNumber?: string;
   platform: MessengerPlatform;
 }
 
 const LinkModalContent = memo<LinkModalContentProps>(
-  ({ appId, botUsername, name, phoneNumber, platform }) => {
+  ({ appId, botUsername, installUrl, name, phoneNumber, platform }) => {
     const { t } = useTranslation('messenger');
 
     const renderBody = () => {
@@ -35,6 +42,24 @@ const LinkModalContent = memo<LinkModalContentProps>(
               deepLink={botUsername ? buildTelegramDeepLink(botUsername) : undefined}
               name={name}
               platform="telegram"
+            />
+          );
+        }
+        case 'lark': {
+          return (
+            <SharedBotLinkBody
+              deepLink={appId ? buildLarkOpenBotUrl(appId) : undefined}
+              name={name}
+              note={t('messenger.linkModal.larkInstallNote', { platform: name })}
+              platform="lark"
+              secondaryAction={
+                installUrl
+                  ? {
+                      href: installUrl,
+                      label: t('messenger.linkModal.installCta', { platform: name }),
+                    }
+                  : undefined
+              }
             />
           );
         }

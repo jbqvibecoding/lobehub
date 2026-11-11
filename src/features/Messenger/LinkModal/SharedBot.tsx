@@ -7,7 +7,7 @@ import { LinkIcon } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { PlatformAvatar, type SharedBotPlatform } from '../constants';
+import { type MessengerPlatform, PlatformAvatar } from '../constants';
 
 const styles = createStaticStyles(({ css, cssVar }) => ({
   qrIconOverlay: css`
@@ -43,15 +43,17 @@ interface SharedBotLinkBodyProps {
   name: string;
   /** A line under the hint, e.g. the iMessage number to text. */
   note?: string;
-  platform: SharedBotPlatform;
+  platform: MessengerPlatform;
+  /** A second way forward under the main button, e.g. installing the Lark app first. */
+  secondaryAction?: { href: string; label: string };
 }
 
 /**
- * Starts the link from a shared bot (Telegram, the iMessage line): the user messages it, and its
- * reply carries the link that connects their account. A QR code lets them start on their phone.
+ * Starts the link by messaging the bot (Telegram, the iMessage line, the Lark app): its reply
+ * carries the link that connects the account. A QR code lets the user start on their phone.
  */
 const SharedBotLinkBody = memo<SharedBotLinkBodyProps>(
-  ({ deepLink, disabled, name, note, platform }) => {
+  ({ deepLink, disabled, name, note, platform, secondaryAction }) => {
     const { t } = useTranslation('messenger');
 
     if (!deepLink) {
@@ -91,6 +93,11 @@ const SharedBotLinkBody = memo<SharedBotLinkBodyProps>(
         >
           {t('messenger.linkModal.openCta', { platform: name })}
         </Button>
+        {secondaryAction && (
+          <Button block href={secondaryAction.href} size="large" target="_blank">
+            {secondaryAction.label}
+          </Button>
+        )}
       </>
     );
   },
