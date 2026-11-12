@@ -531,28 +531,30 @@ export const agentRouter = router({
         headers['Authorization'] = `Bearer ${accessToken}`;
       }
 
+      // The catalog only suggests agents during onboarding, and the picker can be skipped. When
+      // the marketplace is unreachable (offline, self-hosted, blocked in the region) or answers
+      // with an error, an empty catalog lets the user carry on instead of failing the page.
       try {
         const response = await fetch(url, { headers, method: 'GET' });
 
         if (!response.ok) {
           const errorText = await response.text();
-          log(
-            'Get onboarding full failed: %s %s - %s',
+          console.warn(
+            '[market] onboarding catalog unavailable: %s %s - %s',
             response.status,
             response.statusText,
-            errorText,
+            errorText.slice(0, 200),
           );
-          throw new Error(`Failed to get onboarding full: ${response.statusText}`);
+          return {};
         }
 
         return (await response.json()) as Record<string, unknown[]>;
       } catch (error) {
-        log('Error getting onboarding full: %O', error);
-        throw new TRPCError({
-          cause: error,
-          code: 'INTERNAL_SERVER_ERROR',
-          message: error instanceof Error ? error.message : 'Failed to get onboarding full',
-        });
+        console.warn(
+          '[market] onboarding catalog unavailable: %s',
+          error instanceof Error ? error.message : String(error),
+        );
+        return {};
       }
     }),
 

@@ -96,3 +96,36 @@ describe('agentRouter.publishOrCreate', () => {
     expect(mockMarketSDK.headers['x-lobe-owner-account-id']).toBeUndefined();
   });
 });
+
+describe('agentRouter.getOnboardingFull', () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fetchSpy = vi.spyOn(globalThis, 'fetch' as never);
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  const caller = () => agentRouter.createCaller({ serverDB: {}, userId: 'user-1' } as any);
+
+  it('returns the catalog the marketplace sends', async () => {
+    const catalog = { productivity: [{ identifier: 'writer' }] };
+    fetchSpy.mockResolvedValue(new Response(JSON.stringify(catalog), { status: 200 }));
+
+    await expect(caller().getOnboardingFull({ locale: 'en-US' })).resolves.toEqual(catalog);
+  });
+
+  it('returns an empty catalog when the marketplace cannot be reached', async () => {
+    fetchSpy.mockRejectedValue(new TypeError('fetch failed'));
+
+    await expect(caller().getOnboardingFull({ locale: 'en-US' })).resolves.toEqual({});
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it('returns an empty catalog when the marketplace answers with an error', async () => {
+    fetchSpy.mockResolvedValue(new Response('upstream down', { status: 503 }));
+
+    await expect(caller().getOnboardingFull({ locale: 'en-US' })).resolves.toEqual({});
+  });
+});
