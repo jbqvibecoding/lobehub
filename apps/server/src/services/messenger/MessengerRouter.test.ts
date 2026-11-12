@@ -42,6 +42,9 @@ vi.mock('@/config/messenger', () => ({
     clientSecret: 'csecret',
     signingSecret: 'sigsec',
   }),
+  getMessengerTelegramConfig: vi
+    .fn()
+    .mockResolvedValue({ botToken: 'tg-token', webhookSecret: 'tg-secret' }),
   type: undefined,
 }));
 
@@ -413,7 +416,7 @@ describe('MessengerRouter.getWebhookHandler', () => {
     expect(await passedReq.text()).toBe(body);
   });
 
-  it('skips signature verification for telegram (no headers required)', async () => {
+  it('checks only the webhook secret for telegram, not a signature', async () => {
     mockResolveByPayload.mockResolvedValue({
       applicationId: 'telegram:singleton',
       botToken: 'tg-token',
@@ -425,11 +428,25 @@ describe('MessengerRouter.getWebhookHandler', () => {
     const router = new MessengerRouter();
     const req = new Request('https://e.com/api/agent/messenger/webhooks/telegram', {
       body: JSON.stringify({ message: { text: 'hi' } }),
+      headers: { 'x-telegram-bot-api-secret-token': 'tg-secret' },
       method: 'POST',
     });
     const res = await router.getWebhookHandler('telegram')(req);
     expect(res.status).toBe(200);
     expect(mockVerifySignature).not.toHaveBeenCalled();
+  });
+
+  it('refuses a telegram update without its webhook secret', async () => {
+    const router = new MessengerRouter();
+    const req = new Request('https://e.com/api/agent/messenger/webhooks/telegram', {
+      body: JSON.stringify({
+        callback_query: { data: 'messenger:approve:msg_1', from: { id: 1 }, id: 'cb' },
+      }),
+      method: 'POST',
+    });
+    const res = await router.getWebhookHandler('telegram')(req);
+    expect(res.status).toBe(401);
+    expect(mockResolveByPayload).not.toHaveBeenCalled();
   });
 
   describe('iMessage', () => {

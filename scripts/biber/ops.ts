@@ -152,6 +152,11 @@ const doctor = async () => {
       const response = await fetch(`https://api.telegram.org/bot${config.botToken}/getMe`);
       const data = (await response.json()) as { ok: boolean; result?: { username: string } };
       if (!data.ok) throw new Error('Telegram refused the bot token');
+      if (!config.webhookSecret) {
+        throw new Error(
+          `@${data.result?.username} has no webhookSecret: updates and button taps cannot be verified`,
+        );
+      }
       return `@${data.result?.username}`;
     }),
     await probe('bot: wechat', async () => {
