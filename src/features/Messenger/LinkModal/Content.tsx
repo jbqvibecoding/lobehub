@@ -22,10 +22,12 @@ export interface LinkModalContentProps {
   name: string;
   phoneNumber?: string;
   platform: MessengerPlatform;
+  /** WeChat: what the Official Account's follow QR code encodes. */
+  qrCodeUrl?: string;
 }
 
 const LinkModalContent = memo<LinkModalContentProps>(
-  ({ appId, botUsername, installUrl, name, phoneNumber, platform }) => {
+  ({ appId, botUsername, installUrl, name, phoneNumber, platform, qrCodeUrl }) => {
     const { t } = useTranslation('messenger');
 
     const renderBody = () => {
@@ -71,6 +73,18 @@ const LinkModalContent = memo<LinkModalContentProps>(
               name={name}
               note={phoneNumber && t('messenger.linkModal.textNumber', { number: phoneNumber })}
               platform="imessage"
+            />
+          );
+        }
+        case 'wechat': {
+          // An Official Account is found by scanning its code in WeChat, not by opening a link
+          return (
+            <SharedBotLinkBody
+              scanOnly
+              deepLink={qrCodeUrl}
+              name={name}
+              note={t('messenger.linkModal.wechatFollowNote')}
+              platform="wechat"
             />
           );
         }

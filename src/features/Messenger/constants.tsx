@@ -1,7 +1,8 @@
-import { Discord, IMessage, Lark, Slack, Telegram } from '@lobehub/ui/icons';
+import { Discord, IMessage, Lark, Slack, Telegram, WeChat } from '@lobehub/ui/icons';
 import type { ReactNode } from 'react';
 
-export type MessengerPlatform = 'telegram' | 'slack' | 'discord' | 'imessage' | 'lark' | 'feishu';
+export type MessengerPlatform =
+  'telegram' | 'slack' | 'discord' | 'imessage' | 'lark' | 'feishu' | 'wechat';
 
 export const SUPPORTED_MESSENGER_PLATFORMS = [
   { id: 'telegram', name: 'Telegram' },
@@ -10,13 +11,14 @@ export const SUPPORTED_MESSENGER_PLATFORMS = [
   { id: 'imessage', name: 'iMessage' },
   { id: 'lark', name: 'Lark' },
   { id: 'feishu', name: 'Feishu' },
+  { id: 'wechat', name: 'WeChat' },
 ] as const satisfies readonly { id: MessengerPlatform; name: string }[];
 
 export const isMessengerPlatform = (value: string | null | undefined): value is MessengerPlatform =>
   SUPPORTED_MESSENGER_PLATFORMS.some((platform) => platform.id === value);
 
 /** Platforms served by one shared bot that every user links to (no per-workspace install). */
-export type SharedBotPlatform = Extract<MessengerPlatform, 'imessage' | 'telegram'>;
+export type SharedBotPlatform = Extract<MessengerPlatform, 'imessage' | 'telegram' | 'wechat'>;
 
 /** Platforms installed per workspace, where each person links once per workspace. */
 export type WorkspaceBotPlatform = Extract<MessengerPlatform, 'feishu' | 'lark' | 'slack'>;
@@ -31,6 +33,7 @@ export const PLATFORM_TAB_ICONS: Record<MessengerPlatform, ReactNode> = {
   lark: <Lark.Color size={16} />,
   slack: <Slack.Color size={16} />,
   telegram: <Telegram.Color size={16} />,
+  wechat: <WeChat.Color size={16} />,
 };
 
 export const PlatformAvatar = ({
@@ -44,6 +47,7 @@ export const PlatformAvatar = ({
   if (platform === 'discord') return <Discord.Avatar size={size} />;
   if (platform === 'imessage') return <IMessage.Avatar size={size} />;
   if (platform === 'lark' || platform === 'feishu') return <Lark.Avatar size={size} />;
+  if (platform === 'wechat') return <WeChat.Avatar size={size} />;
   return <Slack.Avatar size={size} />;
 };
 
@@ -58,6 +62,7 @@ export const PlatformBrandIcon = ({
   if (platform === 'discord') return <Discord.Color size={size} />;
   if (platform === 'imessage') return <IMessage.Color size={size} />;
   if (platform === 'lark' || platform === 'feishu') return <Lark.Color size={size} />;
+  if (platform === 'wechat') return <WeChat.Color size={size} />;
   return <Slack.Color size={size} />;
 };
 
@@ -103,11 +108,15 @@ export const buildDiscordOpenBotUrl = (applicationId: string): string =>
 export const buildImessageUrl = (phoneNumber: string): string =>
   `sms:${phoneNumber.replaceAll(/[^\d+]/g, '')}`;
 
-/** Where to message the shared bot, or null when the deployment has not configured it. */
+/**
+ * Where to message the shared bot, or null when the deployment has not configured it. A WeChat
+ * Official Account cannot be opened from a link; it is found by scanning its QR code in WeChat.
+ */
 export const sharedBotUrl = (
   platform: SharedBotPlatform,
   meta: { botUsername?: string; phoneNumber?: string },
 ): string | null => {
+  if (platform === 'wechat') return null;
   if (platform === 'imessage') return meta.phoneNumber ? buildImessageUrl(meta.phoneNumber) : null;
   return meta.botUsername ? buildTelegramBotUrl(meta.botUsername) : null;
 };

@@ -19,10 +19,12 @@ interface IntegrationDetailProps {
   /** The iMessage line's number. */
   phoneNumber?: string;
   platform: MessengerPlatform;
+  /** WeChat: what the Official Account's follow QR code encodes. */
+  qrCodeUrl?: string;
 }
 
 const IntegrationDetail = memo<IntegrationDetailProps>(
-  ({ installUrl, phoneNumber, platform, ...rest }) => {
+  ({ installUrl, phoneNumber, platform, qrCodeUrl, ...rest }) => {
     switch (platform) {
       case 'slack': {
         return <SlackDetail {...rest} />;
@@ -31,8 +33,16 @@ const IntegrationDetail = memo<IntegrationDetailProps>(
         return <DiscordDetail {...rest} />;
       }
       case 'telegram':
-      case 'imessage': {
-        return <SharedBotDetail {...rest} phoneNumber={phoneNumber} platform={platform} />;
+      case 'imessage':
+      case 'wechat': {
+        return (
+          <SharedBotDetail
+            {...rest}
+            phoneNumber={phoneNumber}
+            platform={platform}
+            qrCodeUrl={qrCodeUrl}
+          />
+        );
       }
       case 'lark':
       case 'feishu': {

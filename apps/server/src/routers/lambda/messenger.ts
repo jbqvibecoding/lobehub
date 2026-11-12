@@ -40,8 +40,10 @@ import {
   messengerPlatformRegistry,
   MessengerSlackBinder,
   MessengerTelegramBinder,
+  MessengerWechatBinder,
   peekConsumedLinkToken,
   peekLinkToken,
+  wechatFollowQrUrl,
 } from '@/server/services/messenger';
 
 const platformEnum = z.enum(MESSENGER_PLATFORMS) satisfies z.ZodType<MessengerPlatform>;
@@ -221,6 +223,8 @@ export const messengerRouter = router({
       ]);
     // Lark and Feishu: the same store app on two domains
     const larkFamily = { feishu: feishuConfig, lark: larkConfig } as const;
+    // WeChat: what the Official Account's follow QR code encodes
+    const wechatQrUrl = enabledSet.has('wechat') ? await wechatFollowQrUrl() : undefined;
 
     return definitions.map((def) => ({
       ...def,
@@ -239,6 +243,8 @@ export const messengerRouter = router({
       enabled: true,
       // iMessage-only: the shared line's number, where users text the bot.
       phoneNumber: def.id === 'imessage' ? imessageConfig?.phoneNumber : undefined,
+      // WeChat-only: scanned in WeChat, it opens the Official Account to follow.
+      qrCodeUrl: def.id === 'wechat' ? wechatQrUrl : undefined,
       // Lark-only: the App Directory listing where a tenant admin installs the app.
       installUrl:
         def.id === 'lark' || def.id === 'feishu' ? larkFamily[def.id]?.installUrl : undefined,
@@ -674,6 +680,10 @@ const notifyLinkSuccess = async (
       case 'lark':
       case 'feishu': {
         await new MessengerLarkBinder(platform).notifyLinkSuccess(params);
+        break;
+      }
+      case 'wechat': {
+        await new MessengerWechatBinder().notifyLinkSuccess(params);
         break;
       }
     }

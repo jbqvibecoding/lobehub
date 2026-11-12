@@ -261,6 +261,12 @@ export class MessengerRouter {
         return new Response(`Unknown messenger platform: ${platform}`, { status: 404 });
       }
 
+      if (req.method === 'GET') {
+        return definition.webhookGate?.handleGet
+          ? definition.webhookGate.handleGet(req)
+          : new Response('Method not allowed', { status: 405 });
+      }
+
       const rawBody = await req.text();
 
       // ----- Per-platform gate (signature verification, setup challenges,

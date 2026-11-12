@@ -8,11 +8,12 @@ import { type AppRegion, isMainlandRegion } from './region';
 const MAINLAND_BOT_PLATFORMS: readonly string[] = ['feishu', 'qq', 'wechat'];
 
 /**
- * Platforms with one product-owned bot shared by every user (Telegram, Discord, the iMessage line)
- * or installed per workspace (Slack, Lark, Feishu). The mainland edition offers Feishu, the Lark
- * store app's China domain; the others are unreachable from mainland China.
+ * Platforms with one product-owned bot shared by every user (Telegram, Discord, the iMessage line,
+ * the WeChat Official Account) or installed per workspace (Slack, Lark, Feishu). The mainland
+ * edition offers WeChat and Feishu, the Lark store app's China domain; the others are unreachable
+ * from mainland China.
  */
-const MAINLAND_MESSENGER_PLATFORMS: readonly string[] = ['feishu'];
+const MAINLAND_MESSENGER_PLATFORMS: readonly string[] = ['feishu', 'wechat'];
 
 export const isBotPlatformAvailable = (region: AppRegion, platformId: string): boolean =>
   !isMainlandRegion(region) || MAINLAND_BOT_PLATFORMS.includes(platformId);

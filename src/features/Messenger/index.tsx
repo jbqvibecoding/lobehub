@@ -127,6 +127,7 @@ const MessengerSettings = memo(() => {
             name={selectedMeta.name}
             phoneNumber={selectedMeta.phoneNumber}
             platform={selected}
+            qrCodeUrl={selectedMeta.qrCodeUrl}
             onBack={() => navigate('/settings/messenger')}
           />
         ) : (

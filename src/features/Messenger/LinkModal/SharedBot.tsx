@@ -44,6 +44,8 @@ interface SharedBotLinkBodyProps {
   /** A line under the hint, e.g. the iMessage number to text. */
   note?: string;
   platform: MessengerPlatform;
+  /** The code is only for scanning in the app (WeChat); there is no link to open in a browser. */
+  scanOnly?: boolean;
   /** A second way forward under the main button, e.g. installing the Lark app first. */
   secondaryAction?: { href: string; label: string };
 }
@@ -53,7 +55,7 @@ interface SharedBotLinkBodyProps {
  * carries the link that connects the account. A QR code lets the user start on their phone.
  */
 const SharedBotLinkBody = memo<SharedBotLinkBodyProps>(
-  ({ deepLink, disabled, name, note, platform, secondaryAction }) => {
+  ({ deepLink, disabled, name, note, platform, scanOnly, secondaryAction }) => {
     const { t } = useTranslation('messenger');
 
     if (!deepLink) {
@@ -79,20 +81,24 @@ const SharedBotLinkBody = memo<SharedBotLinkBodyProps>(
             {t('messenger.linkModal.continueIn', { platform: name })}
           </Text>
           <Text style={{ textAlign: 'center' }} type="secondary">
-            {t('messenger.linkModal.scanHint', { platform: name })}
+            {scanOnly
+              ? t('messenger.linkModal.scanOnlyHint', { platform: name })
+              : t('messenger.linkModal.scanHint', { platform: name })}
           </Text>
           {note && <Text strong>{note}</Text>}
         </Flexbox>
-        <Button
-          block
-          disabled={disabled}
-          href={disabled ? undefined : deepLink}
-          size="large"
-          target="_blank"
-          type="primary"
-        >
-          {t('messenger.linkModal.openCta', { platform: name })}
-        </Button>
+        {!scanOnly && (
+          <Button
+            block
+            disabled={disabled}
+            href={disabled ? undefined : deepLink}
+            size="large"
+            target="_blank"
+            type="primary"
+          >
+            {t('messenger.linkModal.openCta', { platform: name })}
+          </Button>
+        )}
         {secondaryAction && (
           <Button block href={secondaryAction.href} size="large" target="_blank">
             {secondaryAction.label}

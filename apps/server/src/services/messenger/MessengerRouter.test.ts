@@ -283,6 +283,13 @@ describe('MessengerRouter.getWebhookHandler', () => {
     expect(res.status).toBe(404);
   });
 
+  it('answers a GET only on platforms that verify their URL that way', async () => {
+    const router = new MessengerRouter();
+    const res = await router.getWebhookHandler('slack')(new Request('https://e.com/x'));
+    expect(res.status).toBe(405);
+    expect(mockResolveByPayload).not.toHaveBeenCalled();
+  });
+
   it('returns 401 when Slack signature headers are missing', async () => {
     const router = new MessengerRouter();
     const handler = router.getWebhookHandler('slack');

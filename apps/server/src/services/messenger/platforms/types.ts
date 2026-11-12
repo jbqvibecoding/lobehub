@@ -34,6 +34,11 @@ export interface MessengerWebhookContext {
  * Ed25519 inside `chat-adapter-discord`), so they don't expose a gate.
  */
 export interface MessengerPlatformWebhookGate {
+  /**
+   * Answers a GET on the webhook URL. WeChat checks the server URL this way before it delivers
+   * anything; platforms without it get 405.
+   */
+  handleGet?: (req: Request) => Promise<Response>;
   preprocess: (
     req: Request,
     rawBody: string,

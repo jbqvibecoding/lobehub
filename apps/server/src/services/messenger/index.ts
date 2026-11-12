@@ -12,4 +12,6 @@ export { MessengerImessageBinder } from './platforms/imessage';
 export { MessengerLarkBinder } from './platforms/lark';
 export { MessengerSlackBinder } from './platforms/slack';
 export { MessengerTelegramBinder } from './platforms/telegram';
+export { MessengerWechatBinder } from './platforms/wechat';
+export { wechatFollowQrUrl } from './platforms/wechat/followQr';
 export type { MessengerPlatformBinder } from './types';

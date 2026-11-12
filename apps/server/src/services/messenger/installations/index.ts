@@ -7,6 +7,7 @@ import { LarkInstallationStore } from './lark';
 import { SlackInstallationStore } from './slack';
 import { TelegramInstallationStore } from './telegram';
 import type { MessengerInstallationStore } from './types';
+import { WechatInstallationStore } from './wechat';
 
 /**
  * One InstallationStore singleton per platform — they're stateless apart
@@ -32,6 +33,9 @@ const create = (platform: MessengerPlatform): MessengerInstallationStore | null 
     case 'lark':
     case 'feishu': {
       return new LarkInstallationStore(platform);
+    }
+    case 'wechat': {
+      return new WechatInstallationStore();
     }
     default: {
       return null;
@@ -128,3 +132,4 @@ export { LarkInstallationStore } from './lark';
 export { SlackInstallationStore } from './slack';
 export { TELEGRAM_INSTALLATION_KEY, TelegramInstallationStore } from './telegram';
 export type { InstallationCredentials, MessengerInstallationStore } from './types';
+export { WECHAT_INSTALLATION_KEY, WechatInstallationStore } from './wechat';

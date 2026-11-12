@@ -32,6 +32,9 @@ const log = debug('lobe-server:messenger:config');
  * - **iMessage**: one product-owned phone line on Linq serves every user, like
  *   Telegram. The line's number is public and lives in `application_id`.
  *
+ * - **WeChat**: one product-owned Official Account (服务号) that every user follows, like
+ *   Telegram. The row carries the account's AppID (`application_id`) and its server settings.
+ *
  * - **Lark**: a store app that tenant admins install from the Lark App
  *   Directory. The row carries the app's credentials; each install is recorded
  *   in `messenger_installations` when Lark reports it, with no token of its
@@ -51,7 +54,8 @@ export const getMessengerConfig = () => {
 
 export const messengerEnv = getMessengerConfig();
 
-export type MessengerPlatform = 'telegram' | 'slack' | 'discord' | 'imessage' | 'lark' | 'feishu';
+export type MessengerPlatform =
+  'telegram' | 'slack' | 'discord' | 'imessage' | 'lark' | 'feishu' | 'wechat';
 
 export const MESSENGER_PLATFORMS = [
   'telegram',
@@ -60,6 +64,7 @@ export const MESSENGER_PLATFORMS = [
   'imessage',
   'lark',
   'feishu',
+  'wechat',
 ] as const satisfies readonly MessengerPlatform[];
 
 export interface MessengerTelegramConfig {
@@ -95,6 +100,16 @@ export interface MessengerImessageConfig {
   phoneNumber?: string;
   /** Linq webhook signing secret (Standard Webhooks). */
   signingSecret: string;
+}
+
+/** The shared WeChat Official Account (服务号), from its developer settings. */
+export interface MessengerWechatConfig {
+  appId: string;
+  appSecret: string;
+  /** Set when messages are delivered encrypted (安全模式), which this deployment expects */
+  encodingAESKey?: string;
+  /** The token entered with the server URL; WeChat signs every delivery with it */
+  token: string;
 }
 
 /** A Lark or Feishu store app: the same platform on two domains (Lark abroad, Feishu in China). */
@@ -210,6 +225,19 @@ export const getMessengerImessageConfig = async (): Promise<MessengerImessageCon
   });
 };
 
+export const getMessengerWechatConfig = async (): Promise<MessengerWechatConfig | null> => {
+  return fetchAndCache<MessengerWechatConfig>('wechat', (row) => {
+    const c = row.credentials as Partial<Omit<MessengerWechatConfig, 'appId'>>;
+    if (!row.applicationId || !c.appSecret || !c.token) return null;
+    return {
+      appId: row.applicationId,
+      appSecret: c.appSecret,
+      encodingAESKey: c.encodingAESKey || undefined,
+      token: c.token,
+    };
+  });
+};
+
 export const getLarkFamilyConfig = async (
   platform: MessengerLarkConfig['platform'],
 ): Promise<MessengerLarkConfig | null> => {
@@ -251,6 +279,9 @@ export const isMessengerPlatformEnabled = async (platform: MessengerPlatform): P
     case 'lark':
     case 'feishu': {
       return !!(await getLarkFamilyConfig(platform));
+    }
+    case 'wechat': {
+      return !!(await getMessengerWechatConfig());
     }
     default: {
       return false;

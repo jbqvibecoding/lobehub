@@ -13,6 +13,8 @@ export const wechat: PlatformDefinition = {
     setupGuideUrl: channelDocUrl('wechat'),
   },
   schema,
+  // WeChat shows markdown markers as typed, so the agent is told to write plain text
+  supportsMarkdown: false,
   supportsMessageEdit: false,
   clientFactory: new WechatClientFactory(),
 };

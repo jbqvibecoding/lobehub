@@ -87,5 +87,7 @@ app.get('/messenger/:platform/oauth/callback', messengerOAuthCallback);
 
 // POST /api/agent/messenger/webhooks/:platform — shared Messenger bot webhook
 app.post('/messenger/webhooks/:platform', messengerWebhook);
+// WeChat checks the server URL with a GET before it delivers messages
+app.get('/messenger/webhooks/:platform', messengerWebhook);
 
 export default app;

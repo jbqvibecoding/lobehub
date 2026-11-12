@@ -27,13 +27,14 @@ interface SharedBotDetailProps {
   onBack: () => void;
   phoneNumber?: string;
   platform: SharedBotPlatform;
+  qrCodeUrl?: string;
 }
 
-// Telegram and the iMessage line are shared bots with no install audit list,
+// Telegram, the iMessage line and the WeChat Official Account are shared bots with no install audit list,
 // so each is a single global user link with a connect/disconnect toggle in the
 // header.
 const SharedBotDetail = memo<SharedBotDetailProps>(
-  ({ appId, botUsername, name, onBack, phoneNumber, platform }) => {
+  ({ appId, botUsername, name, onBack, phoneNumber, platform, qrCodeUrl }) => {
     const { t } = useTranslation('messenger');
     const { allowed: canCreate } = usePermission('create_content');
     const { allowed: canEdit } = usePermission('edit_own_content');
@@ -55,7 +56,7 @@ const SharedBotDetail = memo<SharedBotDetailProps>(
     const link = links[0];
 
     const handleOpenLink = () =>
-      createMessengerLinkModal({ appId, botUsername, name, phoneNumber, platform });
+      createMessengerLinkModal({ appId, botUsername, name, phoneNumber, platform, qrCodeUrl });
 
     const headerAction = hasLinks ? (
       <Button

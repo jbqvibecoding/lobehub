@@ -25,7 +25,10 @@ interface SharedBotBodyProps {
   userAvatar?: string | null;
 }
 
-/** A shared bot (Telegram, the iMessage line) has one account per user and no workspace. */
+/**
+ * A shared bot (Telegram, the iMessage line, the WeChat Official Account) has one account per user
+ * and no workspace.
+ */
 const SharedBotBody = memo<SharedBotBodyProps>(
   ({
     existingLink,
@@ -40,16 +43,21 @@ const SharedBotBody = memo<SharedBotBodyProps>(
     const { t } = useTranslation('messenger');
     const [done, setDone] = useState(false);
 
-    const platformLabel = platformMeta?.name ?? (platform === 'imessage' ? 'iMessage' : 'Telegram');
+    const platformLabel =
+      platformMeta?.name ??
+      { imessage: 'iMessage', telegram: 'Telegram', wechat: 'WeChat' }[platform];
     // iMessage identifies people by their phone number or Apple ID email, which reads as-is.
+    // WeChat gives only an opaque openid, shortened here so it can still be told apart.
     const describeAccount = (account: {
       platformUserId?: string;
       platformUsername?: string | null;
-    }) =>
-      account.platformUsername ??
-      (platform === 'imessage'
-        ? (account.platformUserId ?? '')
-        : `ID ${account.platformUserId ?? ''}`);
+    }) => {
+      if (account.platformUsername) return account.platformUsername;
+      const id = account.platformUserId ?? '';
+      if (platform === 'imessage') return id;
+      if (platform === 'wechat') return id.length > 12 ? `${id.slice(0, 6)}…${id.slice(-4)}` : id;
+      return `ID ${id}`;
+    };
     const rebindBlocked = isSingleAccountRebindBlocked(existingLink, tokenData);
 
     if (shouldShowSingleAccountSuccess(existingLink, tokenData, done)) {

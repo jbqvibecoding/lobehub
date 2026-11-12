@@ -30,7 +30,8 @@ const Body = memo<BodyProps>(({ platform, ...rest }) => {
       return <DiscordBody {...rest} />;
     }
     case 'telegram':
-    case 'imessage': {
+    case 'imessage':
+    case 'wechat': {
       return <SharedBotBody {...rest} platform={platform} />;
     }
   }

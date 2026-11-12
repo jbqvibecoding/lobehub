@@ -33,6 +33,9 @@ export default {
   'messenger.linkModal.notConfigured':
     "This connection isn't available right now. Please try again later.",
   'messenger.linkModal.openCta': 'Open in {{platform}}',
+  'messenger.linkModal.scanOnlyHint': 'Scan the code with {{platform}} on your phone.',
+  'messenger.linkModal.wechatFollowNote':
+    'Follow the account, and it replies with the link that connects it to your account.',
   'messenger.linkModal.scanHint': 'Or scan with your phone to open {{platform}}.',
   'messenger.linkModal.textNumber': 'Text {{number}} to get started.',
   'messenger.noPlatformsConfigured': 'No platforms are available yet. Check back soon.',
