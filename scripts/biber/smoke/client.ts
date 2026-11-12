@@ -21,6 +21,22 @@ export class SmokeClient {
     }
   }
 
+  /** POSTs JSON to a better-auth endpoint and keeps the session cookie it sets. */
+  async auth<T>(path: string, body: object): Promise<T> {
+    const response = await fetch(`${this.baseUrl}/api/auth${path}`, {
+      body: JSON.stringify(body),
+      headers: {
+        'Content-Type': 'application/json',
+        'Cookie': this.cookieHeader(),
+        'Origin': this.baseUrl,
+      },
+      method: 'POST',
+    });
+    if (!response.ok) throw new Error(`${path}: HTTP ${response.status} ${await response.text()}`);
+    this.remember(response);
+    return (await response.json()) as T;
+  }
+
   async signUp(email: string, password: string, name: string) {
     const response = await fetch(`${this.baseUrl}/api/auth/sign-up/email`, {
       body: JSON.stringify({ email, name, password }),

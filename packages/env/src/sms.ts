@@ -10,6 +10,7 @@ export const getSmsConfig = () => {
     runtimeEnv: {
       ALIYUN_SMS_ACCESS_KEY_ID: process.env.ALIYUN_SMS_ACCESS_KEY_ID,
       ALIYUN_SMS_ACCESS_KEY_SECRET: process.env.ALIYUN_SMS_ACCESS_KEY_SECRET,
+      ALIYUN_SMS_ENDPOINT: process.env.ALIYUN_SMS_ENDPOINT,
       ALIYUN_SMS_SIGN_NAME: process.env.ALIYUN_SMS_SIGN_NAME,
       ALIYUN_SMS_TEMPLATE_CODE: process.env.ALIYUN_SMS_TEMPLATE_CODE,
     },
@@ -17,6 +18,8 @@ export const getSmsConfig = () => {
       /** A RAM user's AccessKey limited to SMS sending (`dysms:SendSms`) */
       ALIYUN_SMS_ACCESS_KEY_ID: z.string().optional(),
       ALIYUN_SMS_ACCESS_KEY_SECRET: z.string().optional(),
+      /** A regional or VPC endpoint of the SMS API, e.g. `https://dysmsapi-vpc.cn-hangzhou.aliyuncs.com` */
+      ALIYUN_SMS_ENDPOINT: z.string().url().optional(),
       /** The approved signature shown at the start of each message, e.g. `Biber` */
       ALIYUN_SMS_SIGN_NAME: z.string().optional(),
       /** The approved verification-code template; it takes the code as `${code}` */

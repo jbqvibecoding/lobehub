@@ -21,11 +21,12 @@ const aliyunConfig = () => {
   const {
     ALIYUN_SMS_ACCESS_KEY_ID: accessKeyId,
     ALIYUN_SMS_ACCESS_KEY_SECRET: accessKeySecret,
+    ALIYUN_SMS_ENDPOINT: endpoint,
     ALIYUN_SMS_SIGN_NAME: signName,
     ALIYUN_SMS_TEMPLATE_CODE: templateCode,
   } = smsEnv;
   return accessKeyId && accessKeySecret && signName && templateCode
-    ? { accessKeyId, accessKeySecret, signName, templateCode }
+    ? { accessKeyId, accessKeySecret, endpoint, signName, templateCode }
     : undefined;
 };
 

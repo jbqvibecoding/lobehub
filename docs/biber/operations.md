@@ -82,3 +82,29 @@
 | 厂商推送服务端      | 请求格式参考的是公开的第三方 SDK；荣耀的接口地址和格式没有对照官方文档确认 |
 | 厂商推送手机端      | Kotlin 原生代码没有编译过                                                  |
 | 云电脑              | 没有在真实部署里运行过                                                     |
+
+## 8. 本地冒烟测试
+
+`scripts/biber/smoke` 里的两个脚本对着一个运行中的服务端走完主流程。模型、Expo 推送、阿里云短信由脚本
+自己起的本地假服务代替，支付宝的回调用本地生成的密钥签名，所以不需要任何真实账号。
+
+| 脚本             | 版本       | 走的流程                                                                                                                           |
+| ---------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `golden-path.ts` | 国际版     | 注册 → 登记手机推送 → 让 Agent 在云电脑上运行代码 → 运行暂停，手机收到 "需要你" → 手机批准 → 活动记录里有这条决定 → 运行恢复并回复 |
+| `mainland.ts`    | 中国大陆版 | 手机号收验证码登录 → 支付宝下单 → 支付宝签名回调 → 套餐生效一个月 → 重复回调不重复计时 → 篡改过的回调被拒                          |
+
+准备：
+
+1. 起一个 ParadeDB（带 `pg_search` 和 `vector` 的 Postgres）和 Redis，执行 `bun run db:migrate`。
+   Docker Hub 限流时可以用 `mirror.gcr.io/paradedb/paradedb:latest-pg17`。
+2. 服务端的环境变量：
+   - 国际版：`OPENAI_API_KEY` 设任意值，`OPENAI_PROXY_URL=http://127.0.0.1:4010/v1`，
+     `EXPO_BASE_URL=http://127.0.0.1:4020`。
+   - 中国大陆版：`ALIYUN_SMS_*` 设任意值，并设 `ALIYUN_SMS_ENDPOINT=http://127.0.0.1:4030`；
+     `ALIPAY_PUBLIC_KEY` 设成一把本地 RSA 密钥的公钥。
+3. 运行：
+   - `bunx tsx scripts/biber/smoke/golden-path.ts`，用 `SMOKE_BASE_URL` 指向服务端。
+   - `SMOKE_ALIPAY_SIGNING_KEY=<那把私钥的 PEM 文件> bunx tsx scripts/biber/smoke/mainland.ts`。
+
+服务端用 API 启动运行时默认是 "无人值守"，需要审批的工具会直接执行。冒烟脚本像网页端一样按手动审批启动运行；
+后台任务怎么请手机审批，见 [决策记录](./decisions.md) 第 5 条。

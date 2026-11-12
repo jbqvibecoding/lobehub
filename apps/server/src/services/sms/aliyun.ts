@@ -1,11 +1,14 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 
-const ENDPOINT = 'dysmsapi.aliyuncs.com';
+/** Alibaba Cloud SMS's public endpoint; a deployment may name a regional or VPC one instead. */
+export const DEFAULT_ALIYUN_SMS_ENDPOINT = 'https://dysmsapi.aliyuncs.com';
 const ALGORITHM = 'ACS3-HMAC-SHA256';
 
 export interface AliyunSmsConfig {
   accessKeyId: string;
   accessKeySecret: string;
+  /** Base URL of the SMS API; defaults to the public endpoint */
+  endpoint?: string;
   signName: string;
   templateCode: string;
 }
@@ -30,6 +33,7 @@ export const signAliyunRequest = ({
   action,
   body = '',
   date,
+  endpoint = DEFAULT_ALIYUN_SMS_ENDPOINT,
   nonce,
   query,
   version,
@@ -39,12 +43,15 @@ export const signAliyunRequest = ({
   action: string;
   body?: string;
   date: string;
+  endpoint?: string;
   nonce: string;
   query: Record<string, string>;
   version: string;
 }) => {
+  const base = new URL(endpoint);
   const headers: Record<string, string> = {
-    'host': ENDPOINT,
+    // The host is signed, so it must be the one the request goes to
+    'host': base.host,
     'x-acs-action': action,
     'x-acs-content-sha256': sha256Hex(body),
     'x-acs-date': date,
@@ -75,7 +82,7 @@ export const signAliyunRequest = ({
   };
   return {
     headers: signed,
-    url: `https://${ENDPOINT}/?${canonicalQuery}`,
+    url: `${base.origin}/?${canonicalQuery}`,
   };
 };
 
@@ -93,6 +100,7 @@ export const sendAliyunVerificationCode = async (
     accessKeySecret: config.accessKeySecret,
     action: 'SendSms',
     date: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    endpoint: config.endpoint,
     nonce: randomUUID(),
     query: {
       PhoneNumbers: phoneNumber.replace(/^\+86/, ''),

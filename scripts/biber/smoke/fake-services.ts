@@ -196,3 +196,18 @@ export const startFakeExpoPush = async (port: number) => {
   await listen(server, port);
   return { close: () => server.close(), sent };
 };
+
+/** Alibaba Cloud SMS, keeping the verification code of every message it is asked to send. */
+export const startFakeAliyunSms = async (port: number) => {
+  const codes = new Map<string, string>();
+  const server = createServer((req, res) => {
+    const query = new URL(req.url ?? '/', 'http://localhost').searchParams;
+    const phone = query.get('PhoneNumbers') ?? '';
+    const code = JSON.parse(query.get('TemplateParam') ?? '{}').code;
+    if (phone && code) codes.set(phone, code);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ BizId: `biz-${Date.now()}`, Code: 'OK', Message: 'OK' }));
+  });
+  await listen(server, port);
+  return { close: () => server.close(), codes };
+};

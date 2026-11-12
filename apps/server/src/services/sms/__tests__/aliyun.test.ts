@@ -47,6 +47,14 @@ describe('signAliyunRequest', () => {
     expect(signature({ nonce: 'nonce-2' })).not.toBe(signature({}));
     expect(signature({ query: { PhoneNumbers: '13900139000' } })).not.toBe(signature({}));
   });
+
+  it('sends to a regional endpoint and signs its host', () => {
+    const regional = request({ endpoint: 'https://dysmsapi-vpc.cn-hangzhou.aliyuncs.com' });
+
+    expect(regional.url).toMatch(/^https:\/\/dysmsapi-vpc\.cn-hangzhou\.aliyuncs\.com\/\?/);
+    expect(regional.headers.host).toBe('dysmsapi-vpc.cn-hangzhou.aliyuncs.com');
+    expect(regional.headers.authorization).not.toBe(request().headers.authorization);
+  });
 });
 
 describe('sendAliyunVerificationCode', () => {
