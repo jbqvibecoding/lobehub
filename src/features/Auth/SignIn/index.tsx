@@ -4,7 +4,7 @@ import { Text } from '@lobehub/ui/base-ui';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { serverConfigSelectors, useServerConfigStore } from '@/store/serverConfig';
+import { useAuthServerConfigStore } from '@/features/AuthShell';
 
 import { SignInEmailSentStep } from './SignInEmailSentStep';
 import { SignInEmailStep } from './SignInEmailStep';
@@ -36,7 +36,10 @@ const SignIn = () => {
     step,
   } = useSignIn();
   const { t } = useTranslation('auth');
-  const enablePhoneSignIn = useServerConfigStore(serverConfigSelectors.enablePhoneSignIn);
+  // The auth pages run outside the main app, with their own copy of the server settings
+  const enablePhoneSignIn = useAuthServerConfigStore(
+    (s) => s.serverConfig.enablePhoneSignIn || false,
+  );
   const [withPhone, setWithPhone] = useState(false);
 
   if (withPhone) return <SignInPhoneStep onBack={() => setWithPhone(false)} />;
