@@ -11,14 +11,12 @@ import { stripMarkdown } from '@/server/services/bot/platforms/stripMarkdown';
 
 import { WECHAT_INSTALLATION_KEY } from '../../installations/wechat';
 import { openIdOfThread, WECHAT_MP_ADAPTER_NAME, WechatMpAdapter } from './adapter';
-import { createWechatMpApi, type WechatMpApi } from './api';
+import { createWechatMpApi, type WechatMpApi, type WechatMpAppCredentials } from './api';
 import type { WechatMpSecrets } from './protocol';
 
 const log = debug('lobe-server:messenger:wechat:client');
 
-export interface WechatMpCredentials extends WechatMpSecrets {
-  appSecret: string;
-}
+export interface WechatMpCredentials extends WechatMpSecrets, WechatMpAppCredentials {}
 
 const toPostable = (content: MessengerContent): AdapterPostableMessage => {
   if (typeof content === 'string') return { markdown: content };

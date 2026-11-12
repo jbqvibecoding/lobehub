@@ -31,7 +31,16 @@
 ## 3. 共享机器人
 
 凭据不在环境变量里，而是加密存在 `system_bot_providers` 表，每个平台一行：`platform`、
-`application_id`（公开的应用标识）、`credentials`（加密的 JSON）、`enabled`。
+`application_id`（公开的应用标识）、`credentials`（加密的 JSON）、`settings`、`enabled`。
+用运维命令行写入，凭据从标准输入读，不进命令历史：
+
+```bash
+echo '{"appSecret":"…","token":"…","encodingAESKey":"…"}' \
+  | bunx tsx scripts/biber/ops.ts bot set wechat --application-id wx1234567890abcdef
+bunx tsx scripts/biber/ops.ts bot list
+```
+
+写入后命令行会按服务端的读取方式读一遍；服务端用不了（缺字段、被停用）时直接报出来。
 
 | 平台             | `application_id`  | `credentials`                                  | 回调地址                                          |
 | ---------------- | ----------------- | ---------------------------------------------- | ------------------------------------------------- |
@@ -67,7 +76,18 @@
 `SANDBOX_PROVIDER=openbot`，并设置 `OPENBOT_SUPERVISOR_URL` 和 `OPENBOT_SUPERVISOR_TOKEN`。
 服务本身在 `apps/computer`，用其中的 `compose.yml` 启动。
 
-## 7. 还没有实测过的集成
+## 7. 体检
+
+`bunx tsx scripts/biber/ops.ts doctor` 在部署的环境变量下运行。它检查：
+
+- 本区的配置规则；
+- 数据库（已执行的迁移数）和 Redis；
+- 每个已配置的外部服务，各做一次不改变对方任何东西的调用来验证密钥：Telegram 读机器人信息，
+  微信服务号取访问令牌，Stripe 核对 6 个价格都在，微信支付和支付宝查一笔不存在的订单。
+
+短信不发测试短信。有失败项时退出码为 1。
+
+## 8. 还没有实测过的集成
 
 以下代码有单元测试，但还没有对接过真实的对方服务。首次接入时按这个清单逐项验证。
 
@@ -83,7 +103,7 @@
 | 厂商推送手机端      | Kotlin 原生代码没有编译过                                                  |
 | 云电脑              | 没有在真实部署里运行过                                                     |
 
-## 8. 本地冒烟测试
+## 9. 本地冒烟测试
 
 `scripts/biber/smoke` 里的两个脚本对着一个运行中的服务端走完主流程。模型、Expo 推送、阿里云短信由脚本
 自己起的本地假服务代替，支付宝的回调用本地生成的密钥签名，所以不需要任何真实账号。
@@ -105,6 +125,8 @@
 3. 运行：
    - `bunx tsx scripts/biber/smoke/golden-path.ts`，用 `SMOKE_BASE_URL` 指向服务端。
    - `SMOKE_ALIPAY_SIGNING_KEY=<那把私钥的 PEM 文件> bunx tsx scripts/biber/smoke/mainland.ts`。
+   - `wechat-bot.ts` 先按脚本开头的说明用 `bot set wechat` 存一个指向本地替身的服务号，
+     再带上同样的 `SMOKE_WECHAT_TOKEN`、`SMOKE_WECHAT_AES_KEY` 运行。
 
 服务端用 API 启动运行时默认是 "无人值守"，需要审批的工具会直接执行。冒烟脚本像网页端一样按手动审批启动运行；
 后台任务怎么请手机审批，见 [决策记录](./decisions.md) 第 5 条。

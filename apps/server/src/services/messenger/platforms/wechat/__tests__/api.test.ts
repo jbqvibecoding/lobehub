@@ -126,3 +126,34 @@ describe('the WeChat API', () => {
     });
   });
 });
+
+describe('reaching WeChat through a proxy', () => {
+  it('sends every call to the configured base URL', async () => {
+    const appId = `wx_${Date.now()}_e`;
+    replies.push(json({ access_token: 't', expires_in: 7200 }), json({ errcode: 0 }));
+    const api = createWechatMpApi({
+      apiBaseUrl: 'https://wx-proxy.example.com/',
+      appId,
+      appSecret: 's',
+    });
+
+    await api.typing('oUser1');
+
+    expect(calls.map((call) => call.url)).toEqual([
+      'https://wx-proxy.example.com/cgi-bin/stable_token',
+      'https://wx-proxy.example.com/cgi-bin/message/custom/typing?access_token=t',
+    ]);
+  });
+
+  it('checks the credentials by getting a token, sending nothing', async () => {
+    const appId = `wx_${Date.now()}_f`;
+    replies.push(json({ errcode: 40_125, errmsg: 'invalid appsecret' }));
+
+    await expect(
+      createWechatMpApi({ appId, appSecret: 'bad' }).checkAccess(),
+    ).rejects.toMatchObject({
+      errcode: 40_125,
+    });
+    expect(calls).toHaveLength(1);
+  });
+});

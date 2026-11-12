@@ -4,7 +4,8 @@ import { expiringCache } from '../../expiringCache';
 
 const log = debug('lobe-server:messenger:wechat:api');
 
-const API = 'https://api.weixin.qq.com/cgi-bin';
+/** WeChat's API; a deployment may route it through a fixed-IP proxy, since WeChat allowlists IPs */
+export const DEFAULT_WECHAT_API_BASE = 'https://api.weixin.qq.com';
 
 /** Tokens are used until five minutes before WeChat expires them. */
 const ttlFor = (expiresIn?: number) => Math.max(60, (expiresIn ?? 7200) - 300);
@@ -51,6 +52,8 @@ export const splitWechatText = (text: string, limit = TEXT_BYTE_LIMIT): string[]
 };
 
 export interface WechatMpAppCredentials {
+  /** Base URL of WeChat's API (scheme and host); defaults to WeChat's own */
+  apiBaseUrl?: string;
   appId: string;
   appSecret: string;
 }
@@ -60,7 +63,8 @@ export interface WechatMpAppCredentials {
  * which WeChat accepts within 48 hours of the user's last message to the account. The access token
  * is the stable kind, so several server instances can share it without invalidating one another.
  */
-export const createWechatMpApi = ({ appId, appSecret }: WechatMpAppCredentials) => {
+export const createWechatMpApi = ({ apiBaseUrl, appId, appSecret }: WechatMpAppCredentials) => {
+  const API = `${(apiBaseUrl ?? DEFAULT_WECHAT_API_BASE).replace(/\/+$/, '')}/cgi-bin`;
   const tokenKey = `messenger:wechat:access-token:${appId}`;
   const qrKey = `messenger:wechat:follow-qr:${appId}`;
 
@@ -120,6 +124,11 @@ export const createWechatMpApi = ({ appId, appSecret }: WechatMpAppCredentials) 
   };
 
   return {
+    /** Confirms the AppID and AppSecret by getting an access token; sends nothing. */
+    async checkAccess() {
+      await accessToken();
+    },
+
     /** Sends text to a follower, split into as many messages as its length needs. */
     async sendText(openId: string, text: string) {
       for (const content of splitWechatText(text)) {

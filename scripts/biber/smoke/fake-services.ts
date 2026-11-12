@@ -211,3 +211,22 @@ export const startFakeAliyunSms = async (port: number) => {
   await listen(server, port);
   return { close: () => server.close(), codes };
 };
+
+/** WeChat's Official Account API, keeping every customer-service message the bot sends. */
+export const startFakeWechatApi = async (port: number) => {
+  const sent: { content: string; to: string }[] = [];
+  const server = createServer(async (req, res) => {
+    const body = await readJson(req).catch(() => ({}));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    if (req.url?.startsWith('/cgi-bin/stable_token')) {
+      res.end(JSON.stringify({ access_token: `smoke-token-${Date.now()}`, expires_in: 7200 }));
+      return;
+    }
+    if (req.url?.startsWith('/cgi-bin/message/custom/send') && body.msgtype === 'text') {
+      sent.push({ content: body.text?.content ?? '', to: body.touser });
+    }
+    res.end(JSON.stringify({ errcode: 0, errmsg: 'ok' }));
+  });
+  await listen(server, port);
+  return { close: () => server.close(), sent };
+};

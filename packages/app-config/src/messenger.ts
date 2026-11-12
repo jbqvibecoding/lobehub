@@ -104,6 +104,8 @@ export interface MessengerImessageConfig {
 
 /** The shared WeChat Official Account (服务号), from its developer settings. */
 export interface MessengerWechatConfig {
+  /** Where WeChat's API is reached, e.g. through a fixed-IP proxy (`settings.apiBaseUrl`) */
+  apiBaseUrl?: string;
   appId: string;
   appSecret: string;
   /** Set when messages are delivered encrypted (安全模式), which this deployment expects */
@@ -229,7 +231,9 @@ export const getMessengerWechatConfig = async (): Promise<MessengerWechatConfig 
   return fetchAndCache<MessengerWechatConfig>('wechat', (row) => {
     const c = row.credentials as Partial<Omit<MessengerWechatConfig, 'appId'>>;
     if (!row.applicationId || !c.appSecret || !c.token) return null;
+    const apiBaseUrl = row.settings?.apiBaseUrl;
     return {
+      apiBaseUrl: typeof apiBaseUrl === 'string' && apiBaseUrl ? apiBaseUrl : undefined,
       appId: row.applicationId,
       appSecret: c.appSecret,
       encodingAESKey: c.encodingAESKey || undefined,
