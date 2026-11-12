@@ -1,0 +1,6 @@
+{
+  "android": {
+    "modules": ["ai.biber.vendorpush.VendorPushModule"]
+  },
+  "platforms": ["android"]
+}

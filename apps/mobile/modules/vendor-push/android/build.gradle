@@ -1,0 +1,47 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'ai.biber.vendorpush'
+version = '0.1.0'
+
+repositories {
+  // Huawei and Honor publish their push SDKs in their own Maven repositories
+  maven { url 'https://developer.huawei.com/repo/' }
+  maven { url 'https://developer.hihonor.com/repo' }
+}
+
+/**
+ * Xiaomi, OPPO and vivo hand out their push SDKs as downloads. Each channel is compiled only when
+ * its SDK sits in libs/ (see libs/README.md), so the module builds with any subset of them.
+ */
+def vendorSdk = { String pattern -> fileTree(dir: 'libs', include: [pattern]) }
+def optionalChannels = [
+  xiaomi: vendorSdk('*MiPush*.aar') + vendorSdk('*mipush*.aar') + vendorSdk('*MiPush*.jar'),
+  oppo  : vendorSdk('*com.heytap.msp*.aar') + vendorSdk('*heytap*.aar') + vendorSdk('*opush*.aar'),
+  vivo  : vendorSdk('*vivo*push*.aar') + vendorSdk('*vivopush*.aar'),
+]
+
+android {
+  namespace "ai.biber.vendorpush"
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+  }
+  sourceSets {
+    main {
+      optionalChannels.each { name, sdk ->
+        if (!sdk.isEmpty()) java.srcDirs += "src/${name}/java"
+      }
+    }
+  }
+}
+
+dependencies {
+  implementation 'com.huawei.hms:push:6.12.0.300'
+  implementation 'com.hihonor.mcs:push:7.0.61.303'
+  optionalChannels.each { name, sdk ->
+    if (!sdk.isEmpty()) implementation sdk
+  }
+}

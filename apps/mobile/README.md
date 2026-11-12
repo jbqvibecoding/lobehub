@@ -16,7 +16,8 @@ it. The agent runs on the server and on agent computers, never on the phone.
   month's credits is used. On iPhone it sells the paid plans through the App Store (see below),
   with restore and subscription management. Sign out is here too.
 - **Push**: the server notifies the phone when something needs the user. Tapping the notification
-  opens the approvals list.
+  opens the approvals list. In the mainland edition, Android phones get notifications through
+  their maker's own push service (see below), since they have no Google services.
 - **Sign-in**: better-auth with the Expo client; the session cookie stays in the device keychain.
   The mainland edition signs in with a code texted to a mainland China mobile number.
 
@@ -41,6 +42,17 @@ names its region and an `https` server address.
 | `APP_REGION`          | EAS profile  | Edition: `global`, `cn` or `dev`                                                  |
 | `EXPO_PUBLIC_API_URL` | EAS env vars | The server, e.g. `https://app.example.com`; local default `http://localhost:3010` |
 | `EAS_PROJECT_ID`      | EAS env vars | The EAS project; without it the app cannot get a push token                       |
+
+The mainland Android build also takes the phone makers' client keys, all optional (a maker without
+keys falls back to Expo, which those phones cannot receive):
+
+| Variable                                    | Maker  | From                                         |
+| ------------------------------------------- | ------ | -------------------------------------------- |
+| `HUAWEI_PUSH_APP_ID`                        | Huawei | AppGallery Connect, the app's App ID         |
+| `HONOR_PUSH_APP_ID`                         | Honor  | Honor Developer Services, the app's App ID   |
+| `XIAOMI_PUSH_APP_ID`, `XIAOMI_PUSH_APP_KEY` | Xiaomi | Xiaomi Open Platform, Push                   |
+| `OPPO_PUSH_APP_KEY`, `OPPO_PUSH_APP_SECRET` | OPPO   | OPPO Open Platform, Push (AppKey, AppSecret) |
+| `VIVO_PUSH_APP_ID`, `VIVO_PUSH_API_KEY`     | vivo   | vivo Developer Platform, Push                |
 
 ## Develop
 
@@ -69,8 +81,28 @@ npx eas-cli@latest build --profile production-global --platform all
 npx eas-cli@latest submit --profile production-global --platform all
 ```
 
-The mainland edition (`production-cn`) builds today with the same features. Its own sign-in and
-push providers come after the Global edition.
+The mainland edition (`production-cn`) signs in with a phone number and, on Android, registers
+with the phone maker's push service.
+
+## Notifications on mainland Android phones
+
+Android phones sold in mainland China have no Google services, so Expo's Android notifications
+(which travel through Google) do not reach them. The local module `modules/vendor-push` registers
+the phone with its maker's push service instead: Huawei, Honor, Xiaomi (also Redmi, POCO), OPPO
+(also OnePlus, realme) and vivo (also iQOO). The server sends through the same maker; tapping the
+notification opens the app.
+
+1. Create the app in each maker's developer console with the package `ai.biber.app.cn`, and turn
+   on Push. Apply for the message category each maker uses for notifications the user must act on
+   (Huawei self-classification, the Xiaomi and OPPO private-message channels, vivo system
+   messages); without it the makers cap or hold back the messages.
+2. Huawei and Honor need nothing more: their SDKs come from their Maven repositories. Download the
+   Xiaomi, OPPO and vivo SDKs into `modules/vendor-push/android/libs/` (see the README there).
+3. Set the client keys above on the `production-cn` build, and the server keys (`*_PUSH_*` in the
+   repository's `.env.example`) on the mainland server.
+
+The native code has not been compiled in this repository's CI; the first EAS build of the
+mainland edition is where it is checked.
 
 ## Selling plans on the App Store
 

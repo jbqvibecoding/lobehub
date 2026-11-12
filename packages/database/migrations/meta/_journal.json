@@ -854,6 +854,13 @@
       "when": 1794439632740,
       "tag": "0121_add_payment_orders",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1794457041940,
+      "tag": "0122_add_push_token_provider",
+      "breakpoints": true
     }
   ],
   "version": "6"

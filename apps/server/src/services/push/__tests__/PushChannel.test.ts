@@ -4,8 +4,10 @@ import { PushChannel } from '../PushChannel';
 import type { PushDeliveryContext, PushTicketRecord } from '../types';
 
 const mockListByUserId = vi.fn();
+const mockDeleteOfProvider = vi.fn();
 
 vi.mock('@/database/models/pushToken', () => ({
+  deletePushTokensOfProvider: (...args: unknown[]) => mockDeleteOfProvider(...args),
   PushTokenModel: vi.fn(() => ({
     listByUserId: mockListByUserId,
   })),
@@ -189,5 +191,57 @@ describe('PushChannel', () => {
       [ctx.title, ctx.content],
       [ctx.title, ctx.content],
     ]);
+  });
+});
+
+describe('PushChannel with phone makers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const vendorRows = [
+    { deviceId: 'mate', expoToken: 'hw-1', locale: 'zh-CN', provider: 'huawei' },
+    { deviceId: 'mi', expoToken: 'mi-1', locale: 'zh-CN', provider: 'xiaomi' },
+  ];
+
+  it('sends each maker its own tokens and forgets the ones it reports gone', async () => {
+    mockListByUserId.mockResolvedValueOnce(vendorRows);
+    const huawei = { send: vi.fn().mockResolvedValue({ invalidTokens: [] }) };
+    const xiaomi = { send: vi.fn().mockResolvedValue({ invalidTokens: ['mi-1'] }) };
+    const expo = makeExpoMock();
+    const channel = new PushChannel(expo as any, { huawei, xiaomi });
+
+    const result = await channel.deliver({
+      ...ctx,
+      translations: { zh: { content: '图片好了', title: '生成完成' } },
+    });
+
+    expect(result).toEqual({ status: 'delivered' });
+    expect(huawei.send).toHaveBeenCalledWith(['hw-1'], { body: '图片好了', title: '生成完成' });
+    expect(mockDeleteOfProvider).toHaveBeenCalledWith({}, 'xiaomi', ['mi-1']);
+    expect(expo.sendPushNotificationsAsync).not.toHaveBeenCalled();
+  });
+
+  it('still sends to Expo phones, and fails only when no maker took the message', async () => {
+    mockListByUserId.mockResolvedValueOnce([
+      vendorRows[0],
+      { deviceId: 'iphone', expoToken: 'ExponentPushToken[abc]', provider: 'expo' },
+    ]);
+    const huawei = { send: vi.fn().mockRejectedValue(new Error('huawei down')) };
+    const expo = makeExpoMock();
+    expo.sendPushNotificationsAsync.mockResolvedValueOnce([{ id: 'ticket-1', status: 'ok' }]);
+
+    const result = await new PushChannel(expo as any, { huawei }).deliver(ctx);
+
+    expect(result.status).toBe('sent');
+    expect(expo.sendPushNotificationsAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips tokens of a maker this deployment has no keys for', async () => {
+    mockListByUserId.mockResolvedValueOnce([vendorRows[1]]);
+
+    const result = await new PushChannel(makeExpoMock() as any, {}).deliver(ctx);
+
+    expect(result).toEqual({ failedReason: 'invalid_tokens', status: 'failed' });
   });
 });

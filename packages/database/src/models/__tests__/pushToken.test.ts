@@ -8,6 +8,7 @@ import type { LobeChatDatabase } from '../../type';
 import {
   deletePushTokenByExpoTokenAndDevice,
   deletePushTokensByExpoTokens,
+  deletePushTokensOfProvider,
   PushTokenModel,
 } from '../pushToken';
 
@@ -211,5 +212,33 @@ describe('PushTokenModel', () => {
         .where(eq(pushTokens.userId, userId));
       expect(remaining).toHaveLength(0);
     });
+  });
+});
+
+describe("phone makers' push tokens", () => {
+  it('defaults to Expo, and remembers a maker when the phone names one', async () => {
+    const expo = await model.upsert({
+      deviceId: 'iphone',
+      expoToken: 'ExponentPushToken[x]',
+      platform: 'ios',
+    });
+    const huawei = await model.upsert({
+      deviceId: 'mate',
+      expoToken: 'huawei-token',
+      platform: 'android',
+      provider: 'huawei',
+    });
+
+    expect(expo.provider).toBe('expo');
+    expect(huawei.provider).toBe('huawei');
+  });
+
+  it("forgets only the named maker's tokens", async () => {
+    await model.upsert({ deviceId: 'a', expoToken: 'same', platform: 'android', provider: 'oppo' });
+    await model.upsert({ deviceId: 'b', expoToken: 'same', platform: 'android', provider: 'vivo' });
+
+    await deletePushTokensOfProvider(serverDB, 'oppo', ['same']);
+
+    expect((await model.listByUserId()).map((t) => t.provider)).toEqual(['vivo']);
   });
 });

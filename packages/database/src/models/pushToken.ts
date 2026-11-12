@@ -1,6 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 
-import type { NewPushToken, PushTokenItem } from '../schemas/pushToken';
+import type { NewPushToken, PushTokenItem, PushTokenProvider } from '../schemas/pushToken';
 import { pushTokens } from '../schemas/pushToken';
 import type { LobeChatDatabase } from '../type';
 
@@ -28,6 +28,7 @@ export class PushTokenModel {
           lastSeenAt: new Date(),
           locale: data.locale,
           platform: data.platform,
+          provider: data.provider ?? 'expo',
         },
         target: [pushTokens.userId, pushTokens.deviceId],
       })
@@ -59,6 +60,18 @@ export async function deletePushTokensByExpoTokens(
 ): Promise<void> {
   if (tokens.length === 0) return;
   await db.delete(pushTokens).where(inArray(pushTokens.expoToken, tokens));
+}
+
+/** Removes tokens a phone maker's push service reported as no longer valid. */
+export async function deletePushTokensOfProvider(
+  db: LobeChatDatabase,
+  provider: PushTokenProvider,
+  tokens: string[],
+): Promise<void> {
+  if (tokens.length === 0) return;
+  await db
+    .delete(pushTokens)
+    .where(and(eq(pushTokens.provider, provider), inArray(pushTokens.expoToken, tokens)));
 }
 
 /**

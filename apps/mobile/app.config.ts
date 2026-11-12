@@ -1,6 +1,7 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
 import { appIdentity } from './config/identity.ts';
+import { vendorPushKeysFromEnv, withVendorPush } from './config/vendor-push-plugin.ts';
 
 // EAS sets EAS_BUILD on its builders; APP_RELEASE=1 marks a local release build.
 const release = process.env.EAS_BUILD === 'true' || process.env.APP_RELEASE === '1';
@@ -11,7 +12,15 @@ const identity = appIdentity({
   release,
 });
 
-export default ({ config }: ConfigContext): ExpoConfig => ({
+export default ({ config }: ConfigContext): ExpoConfig => {
+  const expoConfig = biberConfig(config);
+  // Android phones in mainland China get notifications through their maker's push service
+  return identity.region === 'cn'
+    ? withVendorPush(expoConfig, vendorPushKeysFromEnv(process.env))
+    : expoConfig;
+};
+
+const biberConfig = (config: ConfigContext['config']): ExpoConfig => ({
   ...config,
   android: {
     adaptiveIcon: {

@@ -4,7 +4,8 @@ import { createdAt, timestamptz } from './_helpers';
 import { users } from './user';
 
 /**
- * Stores Expo push notification tokens registered by mobile clients.
+ * Stores the push tokens mobile clients register: Expo tokens, or on Android phones in mainland
+ * China, the token of the phone maker's own push service (`provider`).
  *
  * One row per (userId, deviceId) — a single user may have multiple devices
  * (e.g. iPhone + Android tablet), each receiving its own notifications.
@@ -22,8 +23,14 @@ export const pushTokens = pgTable(
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
 
-    /** Expo push token, format `ExponentPushToken[xxx]` */
+    /**
+     * The device's push token from `provider`: an Expo push token (`ExponentPushToken[xxx]`) for
+     * `expo`, otherwise the token or registration id the phone maker's push service issued
+     */
     expoToken: text('expo_token').notNull(),
+
+    /** Who delivers to this token: `expo`, or a phone maker (`huawei`, `honor`, `xiaomi`, `oppo`, `vivo`) */
+    provider: text('provider').$type<PushTokenProvider>().default('expo').notNull(),
 
     /** Stable device id persisted on the client (expo-secure-store) */
     deviceId: text('device_id').notNull(),
@@ -46,6 +53,8 @@ export const pushTokens = pgTable(
     index('idx_push_tokens_last_seen').on(table.lastSeenAt),
   ],
 );
+
+export type PushTokenProvider = 'expo' | 'honor' | 'huawei' | 'oppo' | 'vivo' | 'xiaomi';
 
 export type NewPushToken = typeof pushTokens.$inferInsert;
 export type PushTokenItem = typeof pushTokens.$inferSelect;

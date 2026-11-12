@@ -1,9 +1,6 @@
 import { z } from 'zod';
 
-import {
-  deletePushTokenByExpoTokenAndDevice,
-  PushTokenModel,
-} from '@/database/models/pushToken';
+import { deletePushTokenByExpoTokenAndDevice, PushTokenModel } from '@/database/models/pushToken';
 import { authedProcedure, publicProcedure, router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 
@@ -16,6 +13,11 @@ const authedPushTokenProcedure = authedProcedure.use(serverDatabase).use(async (
 });
 
 export const pushTokenRouter = router({
+  /**
+   * Registers this device's push token. `provider` names who delivers to it: Expo by default, or
+   * on Android phones without Google services the phone maker's own push service, whose token is
+   * sent in the same `expoToken` field.
+   */
   register: authedPushTokenProcedure
     .input(
       z.object({
@@ -24,6 +26,7 @@ export const pushTokenRouter = router({
         expoToken: z.string().min(1),
         locale: z.string().optional(),
         platform: z.enum(['ios', 'android']),
+        provider: z.enum(['expo', 'honor', 'huawei', 'oppo', 'vivo', 'xiaomi']).default('expo'),
       }),
     )
     .mutation(async ({ ctx, input }) => {
