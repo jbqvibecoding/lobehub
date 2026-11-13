@@ -138,6 +138,7 @@ export default defineConfig({
       '**/docs/**',
       '**/locales/**',
       '**/public/**',
+      '**/apps/computer/**',
       '**/apps/desktop/**',
       '**/apps/mobile/**',
       '**/apps/cli/**',
