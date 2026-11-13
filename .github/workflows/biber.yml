@@ -1,0 +1,101 @@
+name: Biber CI
+
+# The parts of Biber that the upstream Test CI does not run: its own packages (excluded from
+# the root vitest run), the migration journal after merges from upstream, the phone app and the
+# agent computers. Kept apart from test.yml so merges from upstream do not touch it.
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  packages:
+    name: Biber packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-env
+
+      - name: Install deps
+        run: pnpm install
+
+      - name: Test region, billing and agent policy
+        run: |
+          for package in @lobechat/region @lobechat/billing @lobechat/agent-policy; do
+            echo "::group::Testing $package"
+            bun run --filter "$package" test:coverage
+            echo "::endgroup::"
+          done
+
+  migrations:
+    name: Migration journal
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-env
+
+      - name: Install deps
+        run: pnpm install
+
+      - name: Check the migrations line up
+        run: bunx tsx scripts/biber/check-migrations.ts
+
+  mobile:
+    name: Phone app
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.11.1
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test -- --ci
+
+  computer:
+    name: Agent computers (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [agent-computer, supervisor]
+    defaults:
+      run:
+        working-directory: apps/computer/${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v6
+
+      # The version the Dockerfiles build with
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Type-check
+        run: bun run typecheck
+
+      - name: Test
+        run: bun test

@@ -23,7 +23,11 @@ Copied from OpenBot as shipped inside OpenDuet (`openbot/supervisor`, `openbot/a
 - `agent-computer/Dockerfile` installs `python3`, which the sandbox file tools run.
 - `supervisor/src/docker.ts` starts computers with `Init: true`, so finished background commands
   are reaped instead of piling up as zombies against `PidsLimit`.
+- `tsconfig.base.json`, `scripts/start-local-chrome-computer.ts` (a test imports it) and the
+  `@types/bun` dev dependency came from OpenBot's root and are copied here as they are.
+- Both `bun.lock` files are committed although the repository ignores `*.lock`: the Dockerfiles
+  install with `--frozen-lockfile` and need them.
 
 These are Bun projects with their own lockfiles and Biome style. They are not part of the pnpm
 workspace and are excluded from the root ESLint and Prettier runs. Their tests run with `bun test`
-inside each directory.
+inside each directory, and in the `Biber CI` workflow (`.github/workflows/biber.yml`).
