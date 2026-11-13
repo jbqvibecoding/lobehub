@@ -20,11 +20,16 @@ export interface PlanDefinition {
    * catalog works in test and live mode. A plan without them cannot be bought.
    */
   stripeLookupKeys?: Record<BillingInterval, string>;
+  /**
+   * What Stripe charges for this plan, in US cents, for each of its lookup keys. The prices in
+   * Stripe are created from these (`scripts/biber/ops.ts stripe prices`).
+   */
+  usdPrices?: Record<BillingInterval, number>;
 }
 
 /**
- * What each plan includes. Plan keys are the product's own (`Plans`); prices live in the payment
- * provider and are found through the lookup keys.
+ * What each plan includes and costs. Plan keys are the product's own (`Plans`). Stripe and the
+ * mainland providers charge the prices kept here; App Store prices are set in App Store Connect.
  */
 export const PLAN_CATALOG: Record<Plans, PlanDefinition> = {
   [Plans.Free]: { monthlyCredits: 500_000 },
@@ -35,18 +40,21 @@ export const PLAN_CATALOG: Record<Plans, PlanDefinition> = {
     appleProductIds: { monthly: 'ai.biber.starter.monthly', yearly: 'ai.biber.starter.yearly' },
     cnyPrices: { monthly: 6800, yearly: 68_000 },
     stripeLookupKeys: { monthly: 'biber_starter_monthly', yearly: 'biber_starter_yearly' },
+    usdPrices: { monthly: 990, yearly: 9900 },
   },
   [Plans.Premium]: {
     monthlyCredits: 15_000_000,
     appleProductIds: { monthly: 'ai.biber.premium.monthly', yearly: 'ai.biber.premium.yearly' },
     cnyPrices: { monthly: 19_800, yearly: 198_000 },
     stripeLookupKeys: { monthly: 'biber_premium_monthly', yearly: 'biber_premium_yearly' },
+    usdPrices: { monthly: 2900, yearly: 29_000 },
   },
   [Plans.Ultimate]: {
     monthlyCredits: 35_000_000,
     appleProductIds: { monthly: 'ai.biber.ultimate.monthly', yearly: 'ai.biber.ultimate.yearly' },
     cnyPrices: { monthly: 46_800, yearly: 468_000 },
     stripeLookupKeys: { monthly: 'biber_ultimate_monthly', yearly: 'biber_ultimate_yearly' },
+    usdPrices: { monthly: 6900, yearly: 69_000 },
   },
 };
 
@@ -90,6 +98,10 @@ export const planForAppleProductId = (
   }
   return undefined;
 };
+
+/** What Stripe charges for a plan, in US cents; undefined when Stripe does not sell it. */
+export const usdPriceFor = (plan: Plans, interval: BillingInterval): number | undefined =>
+  PLAN_CATALOG[plan].usdPrices?.[interval];
 
 /** The mainland prepaid price of a plan, in fen; undefined when it is not sold that way. */
 export const cnyPriceFor = (plan: Plans, interval: BillingInterval): number | undefined =>

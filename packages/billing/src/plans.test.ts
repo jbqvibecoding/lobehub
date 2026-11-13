@@ -1,7 +1,13 @@
 import { Plans } from '@lobechat/types';
 import { describe, expect, it } from 'vitest';
 
-import { PLAN_CATALOG, planForStripeLookupKey, planRank, stripeLookupKeyFor } from './plans';
+import {
+  PLAN_CATALOG,
+  planForStripeLookupKey,
+  planRank,
+  stripeLookupKeyFor,
+  usdPriceFor,
+} from './plans';
 
 describe('plan catalog', () => {
   it('maps every sold price back to exactly the plan and interval that sells it', () => {
@@ -39,5 +45,26 @@ describe('plan catalog', () => {
     expect(PLAN_CATALOG[Plans.Premium].monthlyCredits).toBeLessThan(
       PLAN_CATALOG[Plans.Ultimate].monthlyCredits,
     );
+  });
+
+  it('charges a US dollar price for every plan Stripe sells, with a year at ten months', () => {
+    for (const plan of Object.values(Plans)) {
+      for (const interval of ['monthly', 'yearly'] as const) {
+        expect(usdPriceFor(plan, interval) !== undefined).toBe(
+          stripeLookupKeyFor(plan, interval) !== undefined,
+        );
+      }
+      const monthly = usdPriceFor(plan, 'monthly');
+      if (monthly !== undefined) expect(usdPriceFor(plan, 'yearly')).toBe(monthly * 10);
+    }
+  });
+
+  it('never includes more model usage than the plan costs', () => {
+    // 1,000,000 credits pay for one US dollar, so a month's credits in cents is credits / 10,000
+    for (const plan of [Plans.Starter, Plans.Premium, Plans.Ultimate]) {
+      const usageCents = PLAN_CATALOG[plan].monthlyCredits / 10_000;
+      expect(usageCents).toBeLessThan(usdPriceFor(plan, 'monthly')!);
+      expect(usageCents * 12).toBeLessThan(usdPriceFor(plan, 'yearly')!);
+    }
   });
 });

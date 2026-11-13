@@ -4,6 +4,7 @@
  *   bunx tsx scripts/biber/ops.ts bot set <platform> [--application-id ID] [--settings JSON]
  *                                      [--disabled] < credentials.json
  *   bunx tsx scripts/biber/ops.ts bot list
+ *   bunx tsx scripts/biber/ops.ts stripe prices [--apply]
  *   bunx tsx scripts/biber/ops.ts doctor
  *
  * `bot set` stores a shared bot's credentials encrypted with KEY_VAULTS_SECRET, then reads them
@@ -11,10 +12,13 @@
  * are read from stdin (a JSON object) to keep them out of the shell history; which fields each
  * platform needs is in docs/biber/operations.md.
  *
+ * `stripe prices` compares the Stripe prices with the plan catalog's US dollar prices and, with
+ * `--apply`, creates the missing ones and replaces changed ones (the old price is archived, so
+ * existing subscribers keep it). Without `--apply` it only prints what it would do.
+ *
  * `doctor` checks this deployment against its region, reaches the database and Redis, and makes
  * one call to each configured outside service that changes nothing there, to prove its keys.
  */
-import { PLAN_CATALOG } from '@lobechat/billing';
 import { regionDeploymentProblems, resolveAppRegion } from '@lobechat/region';
 import { sql } from 'drizzle-orm';
 
@@ -39,6 +43,7 @@ import {
   isWechatPayConfigured,
 } from '@/server/services/billing/mainland';
 import { getStripe, isStripeConfigured } from '@/server/services/billing/stripe';
+import { type StripePriceChange, syncStripePrices } from '@/server/services/billing/stripePrices';
 import { createWechatMpApi } from '@/server/services/messenger/platforms/wechat/api';
 import { vendorPushSenders } from '@/server/services/push/vendors';
 import { isPhoneSignInEnabled } from '@/server/services/sms';
@@ -105,6 +110,28 @@ const botList = async () => {
       `${row.platform.padEnd(9)} ${row.enabled ? 'on ' : 'off'} app=${row.applicationId ?? '-'} credentials: ${fields || '(none)'}`,
     );
   }
+};
+
+const dollars = (cents: number | null | undefined) =>
+  cents === null || cents === undefined ? '?' : `$${(cents / 100).toFixed(2)}`;
+
+const describeChange = (change: StripePriceChange) => {
+  const what = `${change.lookupKey.padEnd(24)} ${dollars(change.amount)}/${change.interval}`;
+  if (change.action === 'create') return `create  ${what}`;
+  if (change.action === 'replace') return `replace ${what} (was ${dollars(change.previousAmount)})`;
+  return `ok      ${what}`;
+};
+
+const stripePrices = async (args: string[]) => {
+  if (!isStripeConfigured()) throw new Error('STRIPE_SECRET_KEY is not set');
+  const apply = args.includes('--apply');
+  const stripe = getStripe();
+  const mode = (await stripe.balance.retrieve()).livemode ? 'LIVE' : 'test';
+
+  const changes = await syncStripePrices(stripe, { apply });
+  console.log(`Stripe ${mode} mode${apply ? '' : ' (dry run: add --apply to make these changes)'}`);
+  for (const change of changes) console.log(`  ${describeChange(change)}`);
+  if (changes.every((change) => change.action === 'ok')) console.log('Stripe matches the catalog.');
 };
 
 /** Runs one check, turning a thrown error into a failed line. */
@@ -182,18 +209,14 @@ const doctor = async () => {
   checks.push(
     await probe('pay: stripe', async () => {
       if (!isStripeConfigured()) return undefined;
-      const lookupKeys = Object.values(PLAN_CATALOG).flatMap((plan) =>
-        plan.stripeLookupKeys ? Object.values(plan.stripeLookupKeys) : [],
-      );
-      const { data } = await getStripe().prices.list({
-        active: true,
-        limit: lookupKeys.length,
-        lookup_keys: lookupKeys,
-      });
-      const found = new Set(data.map((price) => price.lookup_key));
-      const missing = lookupKeys.filter((key) => !found.has(key));
-      if (missing.length > 0) throw new Error(`no active price for ${missing.join(', ')}`);
-      return `${data.length} prices`;
+      const changes = await syncStripePrices(getStripe(), { apply: false });
+      const off = changes.filter((change) => change.action !== 'ok');
+      if (off.length > 0) {
+        throw new Error(
+          `prices differ from the catalog (run ops.ts stripe prices): ${off.map(describeChange).join('; ')}`,
+        );
+      }
+      return `${changes.length} prices match the catalog`;
     }),
     await probe('pay: wechat pay', async () => {
       if (!isWechatPayConfigured()) return undefined;
@@ -237,8 +260,11 @@ const main = async () => {
   const [command, sub, ...rest] = process.argv.slice(2);
   if (command === 'bot' && sub === 'set') return botSet(rest);
   if (command === 'bot' && sub === 'list') return botList();
+  if (command === 'stripe' && sub === 'prices') return stripePrices(rest);
   if (command === 'doctor') return doctor();
-  console.log('Usage: ops.ts bot set <platform> | bot list | doctor (see the comment at the top)');
+  console.log(
+    'Usage: ops.ts bot set <platform> | bot list | stripe prices [--apply] | doctor (see the comment at the top)',
+  );
   process.exitCode = 1;
 };
 

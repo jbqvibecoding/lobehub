@@ -19,14 +19,40 @@
 
 环境变量见仓库根目录 `.env.example` 开头的说明。
 
-| 方式     | 版本 | 回调地址                                                  | 在对方后台要做的事                                                                   |
-| -------- | ---- | --------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Stripe   | 国际 | `<APP_URL>/api/webhooks/stripe`                           | 建 6 个价格，查找键为 `biber_{starter,premium,ultimate}_{monthly,yearly}`            |
-| 苹果内购 | 两个 | `<APP_URL>/api/webhooks/apple`（App Store 服务器通知 V2） | 建一个订阅组，6 个商品，ID 为 `ai.biber.{starter,premium,ultimate}.{monthly,yearly}` |
-| 微信支付 | 国内 | `<APP_URL>/api/webhooks/wechatpay`                        | 开通 Native 支付；商户号绑定 AppID                                                   |
-| 支付宝   | 国内 | `<APP_URL>/api/webhooks/alipay`                           | 应用开通 "电脑网站支付"                                                              |
+| 方式     | 版本 | 回调地址                                                  | 在对方后台要做的事                                                                             |
+| -------- | ---- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Stripe   | 国际 | `<APP_URL>/api/webhooks/stripe`                           | 价格用下面的命令建，不在后台手建                                                               |
+| 苹果内购 | 两个 | `<APP_URL>/api/webhooks/apple`（App Store 服务器通知 V2） | 建一个订阅组，6 个商品，ID 为 `ai.biber.{starter,premium,ultimate}.{monthly,yearly}`；价格见下 |
+| 微信支付 | 国内 | `<APP_URL>/api/webhooks/wechatpay`                        | 开通 Native 支付；商户号绑定 AppID                                                             |
+| 支付宝   | 国内 | `<APP_URL>/api/webhooks/alipay`                           | 应用开通 "电脑网站支付"                                                                        |
 
-人民币价格写在 `packages/billing/src/plans.ts`，单位是分。
+价格都写在 `packages/billing/src/plans.ts`：
+
+| 套餐     | 美元（月 / 年） | 人民币（月 / 年） |
+| -------- | --------------- | ----------------- |
+| Starter  | $9.90 / $99     | ¥68 / ¥680        |
+| Premium  | $29 / $290      | ¥198 / ¥1980      |
+| Ultimate | $69 / $690      | ¥468 / ¥4680      |
+
+**Stripe 价格**按目录创建。先在部署的环境变量下演练，确认后再加 `--apply`：
+
+```sh
+bunx tsx scripts/biber/ops.ts stripe prices         # 只打印要做的改动
+bunx tsx scripts/biber/ops.ts stripe prices --apply # 执行
+```
+
+- 每个套餐一个产品，每种周期一个美元价格，用查找键 `biber_{starter,premium,ultimate}_{monthly,yearly}` 找到。
+- 改了目录里的价格后再跑一次：
+  - 新价格接过查找键，旧价格停用；
+  - 已订阅的用户保持原价，直到他们换套餐。
+- 测试模式和正式模式各跑一次，命令会先打印当前是哪种模式。
+
+**App Store 价格**在 App Store Connect 里手动设置，选最接近的价格档：
+
+- 月付：$9.99 / $29.99 / $69.99；
+- 年付：$99.99 / $299.99 / $699.99。
+
+商品 ID 不变。
 
 ## 3. 共享机器人
 
@@ -83,7 +109,7 @@ bunx tsx scripts/biber/ops.ts bot list
 - 本区的配置规则；
 - 数据库（已执行的迁移数）和 Redis；
 - 每个已配置的外部服务，各做一次不改变对方任何东西的调用来验证密钥：Telegram 读机器人信息，
-  微信服务号取访问令牌，Stripe 核对 6 个价格都在，微信支付和支付宝查一笔不存在的订单。
+  微信服务号取访问令牌，Stripe 核对 6 个价格都在且金额与目录一致，微信支付和支付宝查一笔不存在的订单。
 
 短信不发测试短信。有失败项时退出码为 1。
 
