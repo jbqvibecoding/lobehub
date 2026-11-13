@@ -120,17 +120,18 @@ bunx tsx scripts/biber/ops.ts bot list
 
 以下代码有单元测试，但还没有对接过真实的对方服务。首次接入时按这个清单逐项验证。
 
-| 集成                | 状态                                                                       |
-| ------------------- | -------------------------------------------------------------------------- |
-| 微信支付、支付宝    | 签名、验签、解密用自生成的密钥测过；没有连过真实商户                       |
-| 微信服务号          | 加密模式的收发用自造的消息测过；没有连过真实服务号                         |
-| 飞书、Lark 商店应用 | 没有走过真实的安装和事件回调                                               |
-| iMessage（Linq）    | 没有连过真实线路                                                           |
-| 苹果内购            | 验签用自签证书链测过；没有用过真实的 App Store 交易                        |
-| 阿里云短信          | 请求签名测过；没有真实发送过                                               |
-| 厂商推送服务端      | 请求格式参考的是公开的第三方 SDK；荣耀的接口地址和格式没有对照官方文档确认 |
-| 厂商推送手机端      | Kotlin 原生代码没有编译过                                                  |
-| 云电脑              | 没有在真实部署里运行过                                                     |
+| 集成                | 状态                                                                                |
+| ------------------- | ----------------------------------------------------------------------------------- |
+| 微信支付、支付宝    | 签名、验签、解密用自生成的密钥测过；没有连过真实商户                                |
+| 微信服务号          | 加密模式的收发用本地替身走通过（`wechat-bot.ts`）；没有连过真实服务号               |
+| 飞书、Lark 商店应用 | 加密回调、安装、按租户令牌收发用本地替身走通过（`lark-bot.ts`）；没有走过真实的安装 |
+| iMessage（Linq）    | 签名回调和收发用本地替身走通过（`imessage-bot.ts`）；没有连过真实线路               |
+| 苹果内购            | 验签用自签证书链测过；没有用过真实的 App Store 交易                                 |
+| 阿里云短信          | 请求签名测过；没有真实发送过                                                        |
+| 厂商推送服务端      | 请求格式参考的是公开的第三方 SDK；荣耀的接口地址和格式没有对照官方文档确认          |
+| 厂商推送手机端      | Kotlin 原生代码没有编译过                                                           |
+| 云电脑              | 没有在真实部署里运行过                                                              |
+| Telegram            | 收发、绑定、按钮审批用本地替身走通过（`telegram-bot.ts`）；没有连过真实机器人       |
 
 ## 9. 本地冒烟测试
 
@@ -169,3 +170,29 @@ bunx tsx scripts/biber/ops.ts bot list
 
 服务端用 API 启动运行时默认是 "无人值守"，需要审批的工具会直接执行。冒烟脚本像网页端一样按手动审批启动运行；
 后台任务怎么请手机审批，见 [决策记录](./decisions.md) 第 5 条。
+
+## 10. 持续集成
+
+上游的 `Test CI`（`.github/workflows/test.yml`）不跑 Biber 加的这些：根目录的 vitest 排除了 `packages/**`、
+`apps/mobile`，也没有 bun 测试。`Biber CI`（`.github/workflows/biber.yml`）补上：
+
+| 任务              | 内容                                                                        |
+| ----------------- | --------------------------------------------------------------------------- |
+| Biber packages    | `@lobechat/region`、`@lobechat/billing`、`@lobechat/agent-policy` 的测试    |
+| Migration journal | `scripts/biber/check-migrations.ts`：迁移编号连续不重复、文件齐全、时间递增 |
+| Phone app         | `apps/mobile` 的类型检查和 jest 测试                                        |
+| Agent computers   | `apps/computer` 两个 Bun 项目的类型检查和 `bun test`                        |
+
+每次合并上游后先跑 `bunx tsx scripts/biber/check-migrations.ts` 和 `node scripts/brand/rename-assistant.mjs`。
+
+**上游自带的失败（2026-11-13，基线 `ae2c2710`）。** 仓库设置了 `lockfile: false`，每次安装都取依赖的最新版本，
+以下失败与 Biber 的改动无关，在上游的同一份代码上也会出现。合并上游后重新核对：
+
+- 类型检查 12 个错误（`src/services/message/__tests__/metadata-race-condition.test.ts` 等）；
+- `bun run lint` 的 ESLint 有约 2000 处 `no-restricted-imports`（旧的 `@lobehub/ui` / `antd` 引用），
+  所以 `Test Database` 任务的 lint 步骤失败；
+- `@lobechat/model-runtime`：`newapi` 的一个 baseURL 测试；
+- 服务端：`search/impls/jina` 的两个测试；
+- 应用：`ContentBlock` 三个、`WorkflowCollapse` 一个、`oidc-provider/http-adapter` 一个测试。
+
+另外 `lint:style` 带 `--fix`，本地跑会直接改文件。
