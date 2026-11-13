@@ -6,7 +6,6 @@ import { TopicModel } from '@/database/models/topic';
 import type { LobeChatDatabase } from '@/database/type';
 import { AiAgentService } from '@/server/services/aiAgent';
 import { botTopicWebhookBody, buildBotDeliveryHooks } from '@/server/services/bot/deliveryHooks';
-import { isQueueAgentRuntimeEnabled } from '@/server/services/queue/impls';
 
 const log = debug('lobe-server:tool-approval');
 
@@ -76,9 +75,8 @@ export const answerToolApproval = async (
     ? await new TopicModel(db, userId, workspaceId).findById(message.topicId)
     : undefined;
   const bot = topic?.metadata?.bot;
-  const reportToChat = !!bot && isQueueAgentRuntimeEnabled();
 
-  log('answering %s (%s via %s), chat=%s', toolMessageId, decision, via, reportToChat);
+  log('answering %s (%s via %s), chat=%s', toolMessageId, decision, via, !!bot);
 
   const result = await new AiAgentService(db, userId, { workspaceId }).execAgent({
     agentId: message.agentId,
@@ -88,8 +86,9 @@ export const answerToolApproval = async (
       topicId: message.topicId,
     },
     ...(bot && { botContext: bot }),
-    ...(reportToChat && {
+    ...(bot && {
       hooks: buildBotDeliveryHooks({
+        db,
         webhookBody: botTopicWebhookBody(bot, {
           progressMessageId: chatMessageId,
           userId,

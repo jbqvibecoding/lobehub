@@ -102,15 +102,17 @@ describe('answerToolApproval', () => {
     const inApp = await pendingCallIn();
     await answerToolApproval(db, { ...inApp, decision: 'rejected', via: 'mobile' });
 
+    expect(mockExecAgent.mock.calls[0][0].hooks).toBeUndefined();
+    expect(mockExecAgent.mock.calls[0][0].trigger).toBe('chat');
+  });
+
+  it('reports a resumed chat run to the chat when runs are not queued too', async () => {
     mockQueueMode.mockReturnValue(false);
     const local = await pendingCallIn(telegramChat);
     await answerToolApproval(db, { ...local, decision: 'approved', via: 'mobile' });
 
-    expect(mockExecAgent.mock.calls.map(([params]) => params.hooks)).toEqual([
-      undefined,
-      undefined,
-    ]);
-    expect(mockExecAgent.mock.calls[0][0].trigger).toBe('chat');
+    const { hooks } = mockExecAgent.mock.calls[0][0];
+    expect(hooks.map((hook: any) => hook.id)).toEqual(['bot-step-progress', 'bot-completion']);
   });
 
   it('takes only the first answer', async () => {

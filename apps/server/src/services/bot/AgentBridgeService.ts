@@ -16,7 +16,11 @@ import { messengerPlatformOfInstallationKey } from '@/server/services/messenger/
 import { isQueueAgentRuntimeEnabled } from '@/server/services/queue/impls';
 import { SystemAgentService } from '@/server/services/systemAgent';
 
-import { BOT_CALLBACK_URL, buildBotDeliveryHooks } from './deliveryHooks';
+import {
+  BOT_CALLBACK_URL,
+  buildBotDeliveryHooks,
+  deliverBotCallbackInProcess,
+} from './deliveryHooks';
 import { formatPrompt as formatPromptUtil } from './formatPrompt';
 import type { BotReplyLocale, PlatformClient } from './platforms';
 import {
@@ -983,7 +987,7 @@ export class AgentBridgeService {
               }
             : undefined,
           files,
-          hooks: buildBotDeliveryHooks({ userPrompt: prompt, webhookBody }),
+          hooks: buildBotDeliveryHooks({ db: this.db, userPrompt: prompt, webhookBody }),
           prompt,
           signal,
           title: '',
@@ -1259,6 +1263,22 @@ export class AgentBridgeService {
                   return;
                 }
 
+                if (reason === 'waiting_for_human') {
+                  // The run paused for the owner's approval. Show the request in the chat, as the
+                  // queue-mode completion callback does; the answer resumes it as a new run.
+                  try {
+                    await deliverBotCallbackInProcess(this.db, event, {
+                      ...webhookBody,
+                      type: 'completion',
+                      userPrompt: prompt,
+                    });
+                  } catch (error) {
+                    log('onComplete: showing the approval request failed: %O', error);
+                  }
+                  resolve({ reply: '', topicId: resolvedTopicId });
+                  return;
+                }
+
                 try {
                   const lastAssistantContent = event.lastAssistantContent;
                   // Convert hook-event attachments (JSON-safe) to chat-sdk
@@ -1380,7 +1400,8 @@ export class AgentBridgeService {
           signal,
           title: '',
           trigger,
-          userInterventionConfig: { approvalMode: 'headless' },
+          // A call that needs approval pauses the run and the chat shows the request (above)
+          userInterventionConfig: { approvalMode: 'manual' },
         }),
       )
         .then(async (result) => {

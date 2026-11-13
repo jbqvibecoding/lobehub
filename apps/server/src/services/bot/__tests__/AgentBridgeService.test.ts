@@ -5,6 +5,7 @@ const mockExecAgent = vi.hoisted(() => vi.fn());
 const mockFormatPrompt = vi.hoisted(() => vi.fn());
 const mockGetPlatform = vi.hoisted(() => vi.fn());
 const mockIsQueueAgentRuntimeEnabled = vi.hoisted(() => vi.fn());
+const mockHandleCallback = vi.hoisted(() => vi.fn());
 
 vi.mock('@/database/models/topic', () => ({
   TopicModel: vi.fn().mockImplementation(() => ({
@@ -35,6 +36,9 @@ vi.mock('@/server/services/gateway/MessageGatewayClient', () => ({
   getMessageGatewayClient: vi.fn().mockReturnValue({ isConfigured: false, isEnabled: false }),
 }));
 
+vi.mock('../BotCallbackService', () => ({
+  BotCallbackService: vi.fn().mockImplementation(() => ({ handleCallback: mockHandleCallback })),
+}));
 vi.mock('@/server/services/queue/impls', () => ({
   isQueueAgentRuntimeEnabled: mockIsQueueAgentRuntimeEnabled,
 }));
@@ -163,23 +167,43 @@ describe('AgentBridgeService', () => {
     ).toMatchObject({ isOwner: true, platformThreadId: THREAD_ID, type: 'completion' });
   });
 
-  it('keeps refusing such calls when runs are not queued, since nothing could show the request', async () => {
+  it('pauses for approval when runs are not queued too, and shows the request in the chat', async () => {
     mockIsQueueAgentRuntimeEnabled.mockReturnValue(false);
     mockExecAgent.mockReturnValue(new Promise(() => {}));
     const service = new AgentBridgeService(FAKE_DB, USER_ID);
 
-    void service.handleMention(createThread(), createMessage(), {
+    const reply = service.handleMention(createThread(), createMessage(), {
       agentId: 'agent-1',
-      botContext: { platformThreadId: THREAD_ID } as any,
+      botContext: { isOwner: true, platformThreadId: THREAD_ID } as any,
       client: createClient(),
     });
     await vi.waitFor(() => expect(mockExecAgent).toHaveBeenCalled());
 
-    expect(mockExecAgent.mock.calls[0][0].userInterventionConfig).toEqual({
-      approvalMode: 'headless',
+    const params = mockExecAgent.mock.calls[0][0];
+    expect(params.userInterventionConfig).toEqual({ approvalMode: 'manual' });
+
+    // The runtime pauses the run: the completion hook hands it to the chat callback in process
+    const onComplete = params.hooks.find((hook: any) => hook.type === 'onComplete');
+    await onComplete.handler({
+      finalState: { large: true },
+      operationId: 'op-1',
+      reason: 'waiting_for_human',
+      topicId: 'topic-1',
+      userId: USER_ID,
     });
-    // The local run never completes here; free its thread for the tests that follow
-    AgentBridgeService.clearActiveThread(THREAD_ID);
+    await reply;
+
+    expect(mockHandleCallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isOwner: true,
+        operationId: 'op-1',
+        platformThreadId: THREAD_ID,
+        reason: 'waiting_for_human',
+        topicId: 'topic-1',
+        type: 'completion',
+      }),
+    );
+    expect(mockHandleCallback.mock.calls[0][0]).not.toHaveProperty('finalState');
   });
 
   it('constructs AiAgentService with workspaceId for workspace bot runs', async () => {
