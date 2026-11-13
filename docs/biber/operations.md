@@ -77,6 +77,9 @@ bunx tsx scripts/biber/ops.ts bot list
 
 各平台的注意事项：
 
+- **Telegram：** `bot set telegram` 保存后，会把回调地址 `<APP_URL>/api/agent/messenger/webhooks/telegram`
+  连同 `webhookSecret` 注册到 Telegram（`APP_URL` 必须是 https）。没有注册回调时，聊天适配器会退回到
+  每台服务器各自轮询 Telegram。`doctor` 会检查注册的地址对不对，并报告 Telegram 记录的最近一次投递错误。
 - **微信服务号：** 必须是认证服务号。服务器配置里选 "安全模式"；把服务器出口 IP 加进接口 IP 白名单。
 - **飞书、Lark：** 是商店应用，由各企业管理员安装；应用后台的事件订阅要选加密并填 `encryptKey`。
 - **iMessage：** 只回一对一聊天，群聊消息会被忽略。
@@ -131,13 +134,17 @@ bunx tsx scripts/biber/ops.ts bot list
 
 ## 9. 本地冒烟测试
 
-`scripts/biber/smoke` 里的两个脚本对着一个运行中的服务端走完主流程。模型、Expo 推送、阿里云短信由脚本
-自己起的本地假服务代替，支付宝的回调用本地生成的密钥签名，所以不需要任何真实账号。
+`scripts/biber/smoke` 里的脚本对着一个运行中的服务端走完主流程。模型、Expo 推送、阿里云短信、各聊天平台的接口
+由脚本自己起的本地替身代替，回调按各平台的方式签名或加密，所以不需要任何真实账号。
 
-| 脚本             | 版本       | 走的流程                                                                                                                           |
-| ---------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `golden-path.ts` | 国际版     | 注册 → 登记手机推送 → 让 Agent 在云电脑上运行代码 → 运行暂停，手机收到 "需要你" → 手机批准 → 活动记录里有这条决定 → 运行恢复并回复 |
-| `mainland.ts`    | 中国大陆版 | 手机号收验证码登录 → 支付宝下单 → 支付宝签名回调 → 套餐生效一个月 → 重复回调不重复计时 → 篡改过的回调被拒                          |
+| 脚本              | 版本       | 走的流程                                                                                                                                            |
+| ----------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `golden-path.ts`  | 国际版     | 注册 → 登记手机推送 → 让 Agent 在云电脑上运行代码 → 运行暂停，手机收到 "需要你" → 手机批准 → 活动记录里有这条决定 → 运行恢复并回复                  |
+| `mainland.ts`     | 中国大陆版 | 手机号收验证码登录 → 支付宝下单 → 支付宝签名回调 → 套餐生效一个月 → 重复回调不重复计时 → 篡改过的回调被拒                                           |
+| `wechat-bot.ts`   | 中国大陆版 | 微信校验服务器地址 → 伪造的推送被拒 → 新关注者收到绑定链接 → 绑定后收到确认 → 发消息收到 Agent 回复（安全模式加密）                                 |
+| `telegram-bot.ts` | 国际版     | 不带密钥的更新被拒 → `/start` 收到绑定链接 → 绑定后收到确认 → 发消息收到回复 → 运行代码时出现批准按钮 → 不带密钥的点击被拒 → 点批准后运行恢复并回复 |
+| `imessage-bot.ts` | 国际版     | 签名错误的回调被拒 → 群聊被忽略 → 新号码收到绑定链接 → 绑定后收到确认 → 发消息收到回复（Standard Webhooks 签名）                                    |
+| `lark-bot.ts`     | 国际版     | 回应地址校验 → 校验令牌错误的事件被拒 → 企业安装应用 → 员工收到绑定链接 → 绑定后收到确认 → 发消息收到回复，全程用该企业的租户令牌                   |
 
 准备：
 
@@ -153,6 +160,12 @@ bunx tsx scripts/biber/ops.ts bot list
    - `SMOKE_ALIPAY_SIGNING_KEY=<那把私钥的 PEM 文件> bunx tsx scripts/biber/smoke/mainland.ts`。
    - `wechat-bot.ts` 先按脚本开头的说明用 `bot set wechat` 存一个指向本地替身的服务号，
      再带上同样的 `SMOKE_WECHAT_TOKEN`、`SMOKE_WECHAT_AES_KEY` 运行。
+   - `telegram-bot.ts`、`imessage-bot.ts`、`lark-bot.ts` 也是先按脚本开头的说明用 `bot set` 存好凭据。
+     这三家的接口地址是写死的，所以服务端启动时要加载 `scripts/biber/smoke/redirect-hosts.mjs`，
+     把它们的请求改发到本地替身：
+     `SMOKE_REDIRECT_HOSTS=api.telegram.org=http://127.0.0.1:4050,api.linqapp.com=http://127.0.0.1:4060,open.larksuite.com=http://127.0.0.1:4070`
+     加上 `NODE_OPTIONS="--import ./scripts/biber/smoke/redirect-hosts.mjs"`。不设 `SMOKE_REDIRECT_HOSTS` 时它什么也不做，
+     生产环境也不会加载它。
 
 服务端用 API 启动运行时默认是 "无人值守"，需要审批的工具会直接执行。冒烟脚本像网页端一样按手动审批启动运行；
 后台任务怎么请手机审批，见 [决策记录](./decisions.md) 第 5 条。

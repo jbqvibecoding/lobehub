@@ -8,7 +8,8 @@
  *   bunx tsx scripts/biber/ops.ts doctor
  *
  * `bot set` stores a shared bot's credentials encrypted with KEY_VAULTS_SECRET, then reads them
- * back the way the server does, so a row the server cannot use is reported at once. Credentials
+ * back the way the server does, so a row the server cannot use is reported at once. For Telegram
+ * it also registers the webhook at APP_URL with the bot's webhook secret. Credentials
  * are read from stdin (a JSON object) to keep them out of the shell history; which fields each
  * platform needs is in docs/biber/operations.md.
  *
@@ -44,6 +45,7 @@ import {
 } from '@/server/services/billing/mainland';
 import { getStripe, isStripeConfigured } from '@/server/services/billing/stripe';
 import { type StripePriceChange, syncStripePrices } from '@/server/services/billing/stripePrices';
+import { setTelegramWebhook } from '@/server/services/bot/platforms/telegram/helpers';
 import { createWechatMpApi } from '@/server/services/messenger/platforms/wechat/api';
 import { vendorPushSenders } from '@/server/services/push/vendors';
 import { isPhoneSignInEnabled } from '@/server/services/sms';
@@ -59,6 +61,33 @@ const readStdin = async () => {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
   return Buffer.concat(chunks).toString('utf8').trim();
+};
+
+/** Where Telegram must send the shared bot's updates; undefined when APP_URL is not public */
+const telegramWebhookUrl = () => {
+  const appUrl = process.env.APP_URL?.trim().replace(/\/$/, '');
+  return appUrl?.startsWith('https://')
+    ? `${appUrl}/api/agent/messenger/webhooks/telegram`
+    : undefined;
+};
+
+/**
+ * Tells Telegram where to send the shared bot's updates, signed with its webhook secret. Without
+ * a registered webhook the chat adapter falls back to polling Telegram from every server.
+ */
+const registerTelegramWebhook = async () => {
+  const config = await getMessengerTelegramConfig();
+  const url = telegramWebhookUrl();
+  if (!config) return;
+  if (!url) {
+    console.log('telegram: APP_URL is not an https address, so the webhook was not registered');
+    return;
+  }
+  if (!config.webhookSecret) {
+    throw new Error('telegram: set webhookSecret before registering the webhook');
+  }
+  await setTelegramWebhook(config.botToken, url, config.webhookSecret);
+  console.log(`telegram: webhook registered at ${url}`);
 };
 
 const isPlatform = (value: string | undefined): value is MessengerPlatform =>
@@ -93,7 +122,11 @@ const botSet = async (args: string[]) => {
       ? `${platform}: saved, and the server can use it`
       : `${platform}: saved, but the server cannot use it yet (disabled, or a required field is missing)`,
   );
-  if (!usable) process.exitCode = 1;
+  if (!usable) {
+    process.exitCode = 1;
+    return;
+  }
+  if (platform === 'telegram') await registerTelegramWebhook();
 };
 
 const botList = async () => {
@@ -179,12 +212,21 @@ const doctor = async () => {
       const response = await fetch(`https://api.telegram.org/bot${config.botToken}/getMe`);
       const data = (await response.json()) as { ok: boolean; result?: { username: string } };
       if (!data.ok) throw new Error('Telegram refused the bot token');
+      const bot = `@${data.result?.username}`;
       if (!config.webhookSecret) {
+        throw new Error(`${bot} has no webhookSecret: updates and button taps cannot be verified`);
+      }
+      const info = (await (
+        await fetch(`https://api.telegram.org/bot${config.botToken}/getWebhookInfo`)
+      ).json()) as { result?: { last_error_message?: string; url?: string } };
+      const expected = telegramWebhookUrl();
+      if (expected && info.result?.url !== expected) {
         throw new Error(
-          `@${data.result?.username} has no webhookSecret: updates and button taps cannot be verified`,
+          `${bot} sends its updates to ${info.result?.url || 'nowhere (polling)'}, not ${expected}; run bot set telegram again`,
         );
       }
-      return `@${data.result?.username}`;
+      const lastError = info.result?.last_error_message;
+      return lastError ? `${bot}, last delivery error: ${lastError}` : bot;
     }),
     await probe('bot: wechat', async () => {
       const config = await getMessengerWechatConfig();
