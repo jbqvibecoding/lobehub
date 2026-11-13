@@ -24,7 +24,11 @@ export const deliverBotCallbackInProcess = async (
   const { finalState: _finalState, ...fields } = event as Record<string, unknown>;
   // Imported here because BotCallbackService imports AgentBridgeService, which imports this module
   const { BotCallbackService } = await import('./BotCallbackService');
-  await new BotCallbackService(db).handleCallback({ ...fields, ...body } as BotCallbackBody);
+  // The same fields the webhook carries: the event's, then the chat's (see BotCallbackBody)
+  await new BotCallbackService(db).handleCallback({
+    ...fields,
+    ...body,
+  } as unknown as BotCallbackBody);
 };
 
 /** Queue mode delivers by webhook; local mode calls the handler, which delivers in process. */
