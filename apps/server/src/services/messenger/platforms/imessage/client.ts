@@ -29,8 +29,23 @@ export const linqThreadId = (chatId: string) => `${LINQ_ADAPTER_NAME}:${chatId}`
 /** `linq:<chatId>` (and the adapter's legacy `linq:<chatId>:dm`) → `<chatId>`. */
 export const linqChatId = (platformThreadId: string) => platformThreadId.split(':')[1] ?? '';
 
-export const createLinqLineAdapter = ({ apiKey, signingSecret }: LinqLineCredentials) =>
-  createLinqAdapter({ apiKey, signingSecret });
+/**
+ * Linq names each chat participant with an id of its own (`sender_handle.id`); their phone number or
+ * email address is `sender_handle.handle`. The adapter takes the id as the sender, but Biber knows
+ * an iMessage user by their handle: it is what they recognize when linking their account, what a
+ * new chat has to be addressed to (the link confirmation starts one), and the same in every chat.
+ */
+export const createLinqLineAdapter = ({ apiKey, signingSecret }: LinqLineCredentials) => {
+  const adapter = createLinqAdapter({ apiKey, signingSecret });
+  const parseMessage = adapter.parseMessage.bind(adapter);
+  adapter.parseMessage = (raw) => {
+    const message = parseMessage(raw);
+    const handle = (raw as { sender_handle?: { handle?: unknown } }).sender_handle?.handle;
+    if (typeof handle === 'string' && handle) message.author.userId = handle;
+    return message;
+  };
+  return adapter;
+};
 
 type LinqAdapter = ReturnType<typeof createLinqLineAdapter>;
 

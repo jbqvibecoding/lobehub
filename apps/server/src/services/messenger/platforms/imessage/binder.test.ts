@@ -18,7 +18,11 @@ const openDM = vi.fn();
 beforeEach(() => {
   postMessage.mockResolvedValue({ id: 'msg-1', threadId: 'linq:chat-1' });
   openDM.mockImplementation(async (handle: string) => `linq:pending:${handle}`);
-  vi.mocked(createLinqAdapter).mockReturnValue({ openDM, postMessage } as any);
+  vi.mocked(createLinqAdapter).mockReturnValue({
+    openDM,
+    parseMessage: vi.fn(),
+    postMessage,
+  } as any);
   vi.mocked(getMessengerImessageConfig).mockResolvedValue({
     apiKey: 'linq-key',
     phoneNumber: '+12025550100',

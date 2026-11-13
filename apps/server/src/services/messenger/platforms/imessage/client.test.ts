@@ -8,6 +8,11 @@ vi.mock('@linqapp/chat-sdk-adapter', () => ({ createLinqAdapter: vi.fn() }));
 
 const adapter = {
   editMessage: vi.fn(),
+  // What the Linq adapter makes of a message: the sender is Linq's participant id
+  parseMessage: vi.fn((raw: any) => ({
+    author: { userId: raw.sender_handle?.id ?? 'unknown', userName: raw.sender_handle?.handle },
+    text: 'hi',
+  })),
   postMessage: vi.fn(),
   startTyping: vi.fn(),
 };
@@ -30,6 +35,18 @@ describe('LinqImessageClient', () => {
       apiKey: 'linq-key',
       signingSecret: 'whsec_test',
     });
+  });
+
+  it("knows the sender by their phone number or email, not by Linq's participant id", () => {
+    const linq = client().createAdapter().linq;
+
+    const message = linq.parseMessage({
+      chat: { id: 'chat-1', is_group: false },
+      direction: 'inbound',
+      sender_handle: { handle: '+12025550147', id: 'handle-7f3a' },
+    });
+
+    expect(message.author.userId).toBe('+12025550147');
   });
 
   it('sends a reply to the thread as plain text', async () => {
