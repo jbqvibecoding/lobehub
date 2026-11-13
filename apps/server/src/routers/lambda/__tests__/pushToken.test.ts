@@ -49,6 +49,8 @@ describe('pushTokenRouter', () => {
         expoToken: 'ExponentPushToken[abc]',
         locale: 'zh-CN',
         platform: 'ios',
+        // A token registered without a provider is delivered by Expo
+        provider: 'expo',
       });
       expect(result).toEqual({ id: 'row-1' });
     });
@@ -67,6 +69,7 @@ describe('pushTokenRouter', () => {
         deviceId: 'd',
         expoToken: 't',
         platform: 'android',
+        provider: 'expo',
       });
     });
 
@@ -175,9 +178,7 @@ describe('pushTokenRouter', () => {
 
     it('should reject empty expoToken when provided', async () => {
       const caller = createCaller();
-      await expect(
-        caller.unregister({ deviceId: 'device-1', expoToken: '' }),
-      ).rejects.toThrow();
+      await expect(caller.unregister({ deviceId: 'device-1', expoToken: '' })).rejects.toThrow();
     });
   });
 });
