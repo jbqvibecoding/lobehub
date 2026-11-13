@@ -725,16 +725,15 @@ export class MessengerRouter {
       await handle(thread, message, 'handleMention');
     });
 
-    // Native slash commands — wired only for platforms that opt in by
-    // exposing `replyPrivately` (Slack, Discord). The full set of command
-    // names comes from the shared registry so every native-slash platform
-    // surfaces the same menu.
-    if (binder.replyPrivately) {
-      const slashPaths = this.commands.map((cmd) => `/${cmd.name}`);
-      bot.onSlashCommand(slashPaths, async (event) => {
-        await this.handleSlashCommand({ binder, bot, client, creds, event, serverDB });
-      });
-    }
+    // Native slash commands. Slack and Discord deliver them as slash events, and so does
+    // chat-sdk's Telegram adapter for a message that starts with a bot_command entity — which
+    // is what Telegram's Start button and its command menu send. Registered for every platform,
+    // so a command reaches its handler whichever way the adapter delivers it; the full set of
+    // names comes from the shared registry so every platform surfaces the same menu.
+    const slashPaths = this.commands.map((cmd) => `/${cmd.name}`);
+    bot.onSlashCommand(slashPaths, async (event) => {
+      await this.handleSlashCommand({ binder, bot, client, creds, event, serverDB });
+    });
 
     // Tap-action callbacks delivered via chat-sdk (Discord). Slack and
     // Telegram peek at the raw webhook body via `binder.extractCallbackAction`
@@ -995,12 +994,6 @@ export class MessengerRouter {
       return;
     }
 
-    const replyPrivately = binder.replyPrivately;
-    if (!replyPrivately) {
-      log('handleSlashCommand: binder for %s has no replyPrivately', creds.platform);
-      return;
-    }
-
     // `event.command` is the literal `/foo` the platform sent.
     const cmdName = event.command.replace(/^\//, '').toLowerCase();
     // chat-sdk wraps the raw channel id with the platform prefix
@@ -1009,7 +1002,12 @@ export class MessengerRouter {
     const chatId = client.extractChatId((event.channel as any).id as string);
     const args = event.text?.trim() ?? '';
 
-    const reply = (text: string) => replyPrivately.call(binder, event.channel, event.user, text);
+    // Slack and Discord answer only the invoker. Telegram has no private reply in a chat, and
+    // its commands come from the user's own chat with the bot, so the answer goes there.
+    const replyPrivately = binder.replyPrivately;
+    const reply = replyPrivately
+      ? (text: string) => replyPrivately.call(binder, event.channel, event.user, text)
+      : (text: string) => binder.sendDmText(chatId, text);
 
     const command = this.commands.find((c) => c.name === cmdName);
     if (!command) {
@@ -1049,8 +1047,11 @@ export class MessengerRouter {
     // raw Slack ids that start with `D` are 1:1 DMs (`G` / `MPDM` are
     // group DMs, `C` is public). For other platforms (Discord today) the
     // chat-sdk flag is reliable so we keep that path too.
+    // Telegram's adapter passes the message as `raw`; its chat type says whether it is private.
     const isDmChannel =
-      event.channel.isDM === true || (creds.platform === 'slack' && chatId.startsWith('D'));
+      event.channel.isDM === true ||
+      (creds.platform === 'slack' && chatId.startsWith('D')) ||
+      (event.raw as { chat?: { type?: string } } | undefined)?.chat?.type === 'private';
 
     // Discord slash commands arrive as deferred interactions (the
     // `patchDiscordForwardedInteractions` patch ack's them with type 5

@@ -184,17 +184,20 @@ vi.mock('./platforms/slack/binder', () => ({
   MessengerSlackBinder: vi.fn().mockImplementation(() => mockSlackBinder),
 }));
 
+// Telegram has no `replyPrivately`: command answers go to the chat through `sendDmText`
+const mockTelegramBinder = {
+  createClient: () => ({
+    createAdapter: () => ({}),
+    extractChatId: (id: string) => id.replace(/^telegram:/, ''),
+  }),
+  handleUnlinkedMessage: vi.fn(),
+  notifyLinkSuccess: vi.fn(),
+  registerWebhook: vi.fn(),
+  sendAgentPicker: vi.fn(),
+  sendDmText: vi.fn(),
+};
 vi.mock('./platforms/telegram/binder', () => ({
-  MessengerTelegramBinder: vi.fn().mockImplementation(() => ({
-    createClient: () => ({
-      createAdapter: () => ({}),
-      extractChatId: (id: string) => id,
-    }),
-    handleUnlinkedMessage: vi.fn(),
-    notifyLinkSuccess: vi.fn(),
-    registerWebhook: vi.fn(),
-    sendDmText: vi.fn(),
-  })),
+  MessengerTelegramBinder: vi.fn().mockImplementation(() => mockTelegramBinder),
 }));
 
 vi.mock('./platforms/imessage/binder', () => ({
@@ -272,6 +275,9 @@ beforeEach(() => {
   mockSlackBinder.replyPrivately.mockReset();
   mockSlackBinder.sendAgentPicker.mockReset();
   mockSlackBinder.sendDmText.mockReset();
+  mockTelegramBinder.handleUnlinkedMessage.mockReset();
+  mockTelegramBinder.sendAgentPicker.mockReset();
+  mockTelegramBinder.sendDmText.mockReset();
 });
 
 afterEach(() => {
@@ -964,6 +970,66 @@ describe('MessengerRouter slash command dispatch', () => {
       authorUserId: 'U_ALICE',
       chatId: 'D_DM',
       channelMentionThreadId: undefined,
+    });
+  });
+
+  // chat-sdk's Telegram adapter delivers a message starting with a bot_command entity (the
+  // Start button, the command menu) as a slash command rather than as message text
+  describe('telegram', () => {
+    const loadTelegramBot = async () => {
+      mockResolveByPayload.mockResolvedValue({
+        applicationId: 'telegram:singleton',
+        botToken: 'tg-token',
+        installationKey: 'telegram:singleton',
+        metadata: {},
+        platform: 'telegram',
+        tenantId: '',
+      });
+      await new MessengerRouter().getWebhookHandler('telegram')(
+        new Request('https://e.com/api/agent/messenger/webhooks/telegram', {
+          body: JSON.stringify({ message: { text: 'hi' } }),
+          headers: { 'x-telegram-bot-api-secret-token': 'tg-secret' },
+          method: 'POST',
+        }),
+      );
+      return mockChatBot.onSlashCommand.mock.calls.at(-1)![1] as (event: any) => Promise<void>;
+    };
+
+    const telegramSlash = (command: string) => ({
+      channel: { id: 'telegram:4242', isDM: false },
+      command,
+      raw: { chat: { id: 4242, type: 'private' }, text: command },
+      text: '',
+      user: { userId: '4242', userName: 'alice' },
+    });
+
+    it('answers /start from a new user with the link to connect their account', async () => {
+      const handler = await loadTelegramBot();
+      mockFindLink.mockResolvedValue(null);
+
+      await handler(telegramSlash('/start'));
+
+      expect(mockTelegramBinder.handleUnlinkedMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ authorUserId: '4242', chatId: '4242' }),
+      );
+    });
+
+    it('answers in the chat itself, since Telegram has no private reply', async () => {
+      const handler = await loadTelegramBot();
+      mockFindLink.mockResolvedValue({
+        activeAgentId: 'agt_a',
+        id: 'link_1',
+        platformUserId: '4242',
+        tenantId: '',
+        userId: 'user_alice',
+      });
+
+      await handler(telegramSlash('/start'));
+
+      expect(mockTelegramBinder.sendDmText).toHaveBeenCalledWith(
+        '4242',
+        expect.stringContaining('already linked'),
+      );
     });
   });
 });
