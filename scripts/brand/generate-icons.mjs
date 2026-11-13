@@ -192,6 +192,9 @@ const web = async () => {
   // Replaced by favicon-32x32-error.ico, the name the app requests.
   await rm(out('public/favicon-32x-32-error.ico'), { force: true });
   await write(out('public/apple-touch-icon.png'), await png(square(), 180));
+  // The default assistant's avatar: the inbox and the other built-in agents name this file, and so
+  // may agents saved with it, so it keeps its upstream name
+  await write(out('public/avatars/lobe-ai.png'), await png(tile(), 512));
   for (const size of [192, 512]) {
     await write(out(`public/icons/icon-${size}x${size}.png`), await png(tile(), size));
     // Maskable icons keep the mark inside the 80% safe zone.

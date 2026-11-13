@@ -451,12 +451,12 @@ export const messengerRouter = router({
    *
    * Excludes virtual agents (page-copilot, etc.) but explicitly keeps the
    * inbox/LobeAI agent — historical inbox sessions get migrated with
-   * `virtual=true`, so a plain virtual filter would hide LobeAI even though
+   * `virtual=true`, so a plain virtual filter would hide Biber even though
    * the home sidebar shows it (sidebar fetches it separately via
    * `agent.getBuiltinAgent`).
    *
    * Order matches the home sidebar (`updatedAt DESC`). Title fallback for the
-   * inbox agent resolves to `"LobeAI"` + default avatar; everything else falls
+   * inbox agent resolves to `"Biber"` + default avatar; everything else falls
    * back on the client via `common.defaultSession`.
    */
   listAgentsForBinding: messengerProcedure

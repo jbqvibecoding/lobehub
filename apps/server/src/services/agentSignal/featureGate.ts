@@ -16,17 +16,17 @@ export interface AgentSelfIterationCapabilityInput {
    */
   isAgentSelfIterationFeatureEnabled: boolean;
   /**
-   * Whether the agent is the product-owned Lobe AI agent.
+   * Whether the agent is the product-owned Biber agent.
    */
   isLobeAiAgent: boolean;
 }
 
 /**
- * Checks whether a slug belongs to Lobe AI.
+ * Checks whether a slug belongs to Biber.
  *
  * Use when:
  * - Agent Signal must special-case the product-owned default assistant
- * - Code must avoid treating every virtual/builtin agent as Lobe AI
+ * - Code must avoid treating every virtual/builtin agent as Biber
  *
  * Expects:
  * - `slug` is the persisted agent slug or `undefined` when unavailable
@@ -41,14 +41,14 @@ export const isLobeAiAgentSlug = (slug?: string | null) => slug === INBOX_SESSIO
  *
  * Use when:
  * - Server code has an agent context and must combine rollout with per-agent capability
- * - Lobe AI should be managed by feature flag instead of stored chat config
+ * - Biber should be managed by feature flag instead of stored chat config
  *
  * Expects:
  * - `isAgentSelfIterationFeatureEnabled` already includes the user-level feature-flag result
  *
  * Returns:
- * - `true` for Lobe AI when the feature flag is enabled
- * - `true` for non-Lobe AI only when `agentSelfIterationEnabled` is true
+ * - `true` for Biber when the feature flag is enabled
+ * - `true` for non-Biber only when `agentSelfIterationEnabled` is true
  */
 export const resolveAgentSelfIterationCapability = (input: AgentSelfIterationCapabilityInput) => {
   if (!input.isAgentSelfIterationFeatureEnabled) return false;

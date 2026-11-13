@@ -1138,7 +1138,7 @@ export class MessengerRouter {
         entries: this.toPickerEntries(userAgents, link.activeAgentId),
         // Channel invocation → render ephemeral so only the invoker sees
         // their personal agent list (otherwise `/agents` from a public
-        // channel would broadcast everyone's `LobeAI / Claude Code / …`
+        // channel would broadcast everyone's `Biber / Claude Code / …`
         // grid). DMs stay non-ephemeral so the picker persists in history.
         ephemeralTo: ctx.isDM ? undefined : ctx.authorUserId,
         // Discord-only: forward the slash interaction so the binder can
@@ -1575,7 +1575,7 @@ export class MessengerRouter {
    *  - excludes virtual agents but explicitly keeps the inbox/LobeAI agent
    *  - orders by `updatedAt DESC`
    *  - pins inbox/LobeAI to the top regardless of updatedAt
-   *  - applies the LobeAI title fallback (slug='inbox') and a generic
+   *  - applies the Biber title fallback (slug='inbox') and a generic
    *    "Custom Agent" fallback for agents without a title
    */
   private async fetchUserAgents(

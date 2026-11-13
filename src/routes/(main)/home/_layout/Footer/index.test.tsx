@@ -13,7 +13,7 @@ vi.mock('react-i18next', () => ({
       ({
         'agentOnboardingPromo.actionLabel': 'Try it now',
         'agentOnboardingPromo.description':
-          'Set up your agent teams in a quick chat with Lobe AI. Your existing agents remain unchanged.',
+          'Set up your agent teams in a quick chat with Biber. Your existing agents remain unchanged.',
         'agentOnboardingPromo.title': 'Quick Wizard',
         'changelog': 'Changelog',
         'getApp': 'Get App',

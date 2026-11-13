@@ -396,7 +396,7 @@ export default {
   'historySummary': 'Historical Message Summary',
   'inactive': 'Inactive',
   'inbox.desc': 'Collaborate in one Workspace and move ideas into outcomes.',
-  'inbox.title': 'Lobe AI',
+  'inbox.title': 'Biber',
   'input.addAi': 'Add an AI message',
   'input.addUser': 'Add a user message',
   'input.agentModeUnsupportedModel':
@@ -555,12 +555,12 @@ export default {
   'createModal.skillSuggestion.actions.install': 'Add Skill',
   'createModal.skillSuggestion.actions.installing': 'Adding…',
   'createModal.skillSuggestion.actions.openSkills': 'View in Skills',
-  'createModal.skillSuggestion.actions.tryInLobeAI': 'Use in LobeAI',
+  'createModal.skillSuggestion.actions.tryInLobeAI': 'Use in Biber',
   'createModal.skillSuggestion.description':
     'This looks like a reusable workflow. Install the Skill once, then use it across Agents.',
   'createModal.skillSuggestion.installed.description':
-    'You can use this Skill in LobeAI or add it to any Agent.',
-  'createModal.skillSuggestion.installed.ready': 'Ready in LobeAI',
+    'You can use this Skill in Biber or add it to any Agent.',
+  'createModal.skillSuggestion.installed.ready': 'Ready in Biber',
   'createModal.skillSuggestion.installed.title': 'Skill added',
   'createModal.skillSuggestion.installError':
     "Skill wasn't added. Retry, or create an Agent anyway.",
@@ -1195,7 +1195,7 @@ export default {
   'taskList.orderBy.updatedAt': 'Updated at',
   'taskList.title': 'Tasks',
   'taskList.unassigned': 'Unassigned',
-  'taskList.unassignedHint': 'Lobe AI will run this task when no assignee is set',
+  'taskList.unassignedHint': 'Biber will run this task when no assignee is set',
   'taskList.assigneeSearch.empty': 'No matching agent',
   'taskList.assigneeSearch.placeholder': 'Search agent...',
   'taskList.contextMenu.copyConfirm': 'Copy',

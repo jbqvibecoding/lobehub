@@ -91,7 +91,7 @@ export const useAgentDropdownMenu = ({
   // appears on private agents; the inverse "Make private" (LOBE-11551)
   // appears on published agents, but only for the creator (LOBE-11760 —
   // owners demoting another member's agent would appropriate it), and never
-  // on builtin agents (LobeAI etc.). The server enforces the same rules as
+  // on builtin agents (Biber etc.). The server enforces the same rules as
   // a backstop.
   const activeWorkspaceId = useActiveWorkspaceId();
   const currentUserId = useUserStore(userProfileSelectors.userId);

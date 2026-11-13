@@ -1294,7 +1294,7 @@ describe('MessengerRouter /switch', () => {
     ]);
     // `fetchUserAgents` pins the inbox/LobeAI first; the switch lands on it.
     vi.spyOn(MessengerRouter.prototype as any, 'fetchUserAgents').mockResolvedValue([
-      { id: 'agt_inbox', title: 'LobeAI' },
+      { id: 'agt_inbox', title: 'Biber' },
     ]);
 
     const router = new MessengerRouter();

@@ -12,7 +12,7 @@ import { messengerService } from '@/services/messenger';
 
 interface AgentSelectProps extends Omit<SelectProps<string>, 'options' | 'value' | 'onChange'> {
   /**
-   * When nothing is selected, auto-select the scope's inbox (LobeAI) agent once
+   * When nothing is selected, auto-select the scope's inbox (Biber) agent once
    * the list resolves. Used when the user switches scope so the active agent
    * falls back to that scope's inbox instead of going empty.
    */
@@ -56,7 +56,7 @@ const AgentSelect = memo<AgentSelectProps>(
       [agentsSWR.data, defaultAgentTitle],
     );
 
-    // Inbox (LobeAI) agent of the current scope, pinned to the top server-side.
+    // Inbox (Biber) agent of the current scope, pinned to the top server-side.
     const inboxAgentId = useMemo(
       () => (agentsSWR.data ?? []).find((agent) => agent.isInbox)?.id,
       [agentsSWR.data],

@@ -38,7 +38,7 @@ vi.mock('antd', async (importOriginal) => {
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => (key === 'inbox.title' ? 'Lobe AI' : key),
+    t: (key: string) => (key === 'inbox.title' ? 'Biber' : key),
   }),
 }));
 
