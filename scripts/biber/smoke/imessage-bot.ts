@@ -1,6 +1,6 @@
 /**
  * The shared iMessage line (through Linq), against a running server: a delivery with a bad
- * signature is refused, a group chat is ignored, a new number is sent the link that connects
+ * signature is refused, a group chat and a text message (SMS) are ignored, a new number is sent the link that connects
  * their account, they connect it and are told so, and a message gets the agent's reply. Every
  * delivery is signed as Linq signs it (Standard Webhooks).
  *
@@ -98,6 +98,19 @@ const main = async () => {
         received('hello all', { id: `group-${stamp}`, is_group: true }),
       );
       if (status !== 200) throw new Error(`HTTP ${status}`);
+    });
+
+    await step('a text message (SMS), whose sender number can be forged, is ignored', async () => {
+      const smsChat = `sms-${stamp}`;
+      const sms = received('hi from SMS', { id: smsChat, is_group: false });
+      sms.data.sender_handle = { ...sender, service: 'SMS' };
+      const { status } = await deliver(sms);
+      if (status !== 200) throw new Error(`HTTP ${status}`);
+      // Give the server time to answer, if it were going to
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      if (linq.sent.some((message) => message.chatId === smsChat)) {
+        throw new Error('the line answered a text message');
+      }
     });
 
     const link = await step('a new number is sent the link to connect their account', async () => {

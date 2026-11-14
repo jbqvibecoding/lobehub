@@ -90,7 +90,7 @@ bunx tsx scripts/biber/ops.ts bot list
   每台服务器各自轮询 Telegram。`doctor` 会检查注册的地址对不对，并报告 Telegram 记录的最近一次投递错误。
 - **微信服务号：** 必须是认证服务号。服务器配置里选 "安全模式"；把服务器出口 IP 加进接口 IP 白名单。
 - **飞书、Lark：** 是商店应用，由各企业管理员安装；应用后台的事件订阅要选加密并填 `encryptKey`。
-- **iMessage：** 只回一对一聊天，群聊消息会被忽略。
+- **iMessage：** 只回一对一的 iMessage 聊天。群聊消息、以短信（SMS）或 RCS 发来的消息都会被忽略：用户按号码识别，而短信的发送号码可以伪造，iMessage 的发送方由苹果认证。
 
 ## 4. 登录
 

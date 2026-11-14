@@ -22,13 +22,33 @@ describe('imessageWebhookGate', () => {
     expect(res?.status).toBe(200);
   });
 
-  it('passes a one-to-one message on to the adapter', async () => {
+  it('passes a one-to-one iMessage on to the adapter', async () => {
     const res = await preprocess({
-      data: { chat: { id: 'chat-1', is_group: false }, direction: 'inbound' },
+      data: {
+        chat: { id: 'chat-1', is_group: false },
+        direction: 'inbound',
+        sender_handle: { handle: '+12025550147', service: 'iMessage' },
+      },
       event_type: 'message.received',
     });
 
     expect(res).toBeNull();
+  });
+
+  // Users are known by their number, and a text message's sender number can be forged
+  it('acknowledges a message sent as SMS or RCS without passing it on', async () => {
+    for (const service of ['SMS', 'RCS', undefined]) {
+      const res = await preprocess({
+        data: {
+          chat: { id: 'chat-1', is_group: false },
+          direction: 'inbound',
+          sender_handle: { handle: '+12025550147', service },
+        },
+        event_type: 'message.received',
+      });
+
+      expect(res?.status).toBe(200);
+    }
   });
 
   it('leaves a body it cannot read to the adapter, which rejects it', async () => {
