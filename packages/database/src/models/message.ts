@@ -69,6 +69,7 @@ import {
   messageTranslates,
   messageTTS,
   threads,
+  topics,
   users,
 } from '../schemas';
 import type { LobeChatDatabase, Transaction } from '../type';
@@ -3119,6 +3120,42 @@ export class MessageModel {
   private matchThread = (threadId?: string | null) => {
     if (!!threadId) return eq(messages.threadId, threadId);
     return isNull(messages.threadId);
+  };
+
+  /**
+   * Tool calls still waiting for an answer that were asked before `before`, in conversations whose
+   * topic was started by one of `triggers`, across every user, oldest first. The approval expiry
+   * sweep refuses these, so a background run is not left waiting forever.
+   */
+  static listStalePendingInterventions = async (
+    db: LobeChatDatabase,
+    {
+      before,
+      limit = 100,
+      triggers,
+    }: { before: Date; limit?: number; triggers: readonly string[] },
+  ) => {
+    if (triggers.length === 0) return [];
+    const rows = await db
+      .select({
+        id: messagePlugins.id,
+        userId: messages.userId,
+        workspaceId: messages.workspaceId,
+      })
+      .from(messagePlugins)
+      .innerJoin(messages, eq(messagePlugins.id, messages.id))
+      .innerJoin(topics, eq(messages.topicId, topics.id))
+      .where(
+        and(
+          sql`${messagePlugins.intervention}->>'status' = 'pending'`,
+          lte(messages.createdAt, before),
+          inArray(topics.trigger, [...triggers]),
+        ),
+      )
+      .orderBy(asc(messages.createdAt), asc(messages.id))
+      .limit(limit);
+
+    return rows.map((row) => ({ ...row, workspaceId: row.workspaceId ?? undefined }));
   };
 
   /**

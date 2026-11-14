@@ -333,6 +333,27 @@ describe('TaskLifecycleService.onTopicComplete', () => {
     });
   });
 
+  describe('reason=waiting_for_human', () => {
+    it('leaves the task and its topic running until the answer resumes the run', async () => {
+      findById.mockResolvedValue(baseTask({ automationMode: 'schedule' }));
+
+      await service.onTopicComplete({
+        operationId: 'op-1',
+        reason: 'waiting_for_human',
+        runTrigger: 'schedule',
+        taskId: 'task-1',
+        taskIdentifier: 'TASK-1',
+        topicId: 'topic-1',
+      });
+
+      expect(updateHeartbeat).toHaveBeenCalledWith('task-1');
+      expect(updateTopicStatus).not.toHaveBeenCalled();
+      expect(updateStatus).not.toHaveBeenCalled();
+      expect(createBrief).not.toHaveBeenCalled();
+      expect(fakeScheduler.scheduleNextTopic).not.toHaveBeenCalled();
+    });
+  });
+
   describe('reason=error', () => {
     it('non-automation task → status="paused" (unchanged behavior)', async () => {
       const task = baseTask({ automationMode: null });

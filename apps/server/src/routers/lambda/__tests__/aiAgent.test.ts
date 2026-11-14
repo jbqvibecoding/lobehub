@@ -4,6 +4,7 @@ import {
   agents,
   agentsToSessions,
   messages,
+  pushTokens,
   sessions,
   threads,
   topics,
@@ -310,6 +311,52 @@ describe('AI Agent Router Integration Tests', () => {
           userId,
         }),
       );
+    });
+
+    describe('approval mode when the caller does not say one', () => {
+      const runWith = async (input: { userInterventionConfig?: { approvalMode: 'auto-run' } }) => {
+        const { AgentRuntimeService } = await import('@/server/services/agentRuntime');
+        const createOperation = vi.fn().mockResolvedValue({
+          autoStarted: true,
+          messageId: 'mock-message-id',
+          operationId: 'mock-operation-id',
+          success: true,
+        });
+        vi.mocked(AgentRuntimeService).mockImplementation(() => ({ createOperation }) as any);
+
+        await aiAgentRouter
+          .createCaller(createTestContext())
+          .execAgent({ agentId: testAgentId, prompt: 'Run the report', ...input });
+        return createOperation.mock.calls[0][0].userInterventionConfig;
+      };
+
+      it('asks the phone when the user has one', async () => {
+        await serverDB.insert(pushTokens).values({
+          deviceId: 'phone',
+          expoToken: 'ExponentPushToken[x]',
+          platform: 'ios',
+          userId,
+        });
+
+        expect(await runWith({})).toEqual({ approvalMode: 'manual' });
+      });
+
+      it('runs unattended when there is no phone to ask', async () => {
+        expect(await runWith({})).toEqual({ approvalMode: 'headless' });
+      });
+
+      it('keeps the mode a caller does say', async () => {
+        await serverDB.insert(pushTokens).values({
+          deviceId: 'phone',
+          expoToken: 'ExponentPushToken[x]',
+          platform: 'ios',
+          userId,
+        });
+
+        expect(await runWith({ userInterventionConfig: { approvalMode: 'auto-run' } })).toEqual({
+          approvalMode: 'auto-run',
+        });
+      });
     });
 
     it('should handle autoStart=true by default', async () => {

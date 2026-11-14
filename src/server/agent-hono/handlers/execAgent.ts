@@ -1,8 +1,10 @@
+import { RequestTrigger } from '@lobechat/types';
 import debug from 'debug';
 import type { Context } from 'hono';
 
 import { getServerDB } from '@/database/core/db-adaptor';
 import { AiAgentService } from '@/server/services/aiAgent';
+import { backgroundInterventionConfig } from '@/server/services/toolApproval/background';
 
 const log = debug('lobe-server:agent:exec');
 
@@ -51,6 +53,10 @@ export async function execAgent(c: Context): Promise<Response> {
       existingMessageIds: existingMessageIds as string[] | undefined,
       prompt: prompt as string,
       slug: slug as string | undefined,
+      // Nobody is watching a run started from here: a tool that asks for approval asks the
+      // user's phone, and the request expires like other background requests (toolApproval/expire)
+      trigger: RequestTrigger.Api,
+      userInterventionConfig: await backgroundInterventionConfig(serverDB, userId as string),
     });
 
     const executionTime = Date.now() - startTime;

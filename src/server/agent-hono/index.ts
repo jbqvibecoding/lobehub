@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 
 import { botCallback } from './handlers/botCallback';
 import { execAgent } from './handlers/execAgent';
+import { expireApprovals } from './handlers/expireApprovals';
 import { finalizeAbandoned } from './handlers/finalizeAbandoned';
 import { gatewayCallback } from './handlers/gatewayCallback';
 import { gatewayCron } from './handlers/gatewayCron';
@@ -54,6 +55,13 @@ app.get(
   '/gateway',
   bearerSecretAuth(() => process.env.CRON_SECRET),
   gatewayCron,
+);
+
+// GET /api/agent/approvals/expire — refuse background approvals nobody answered (Bearer CRON_SECRET)
+app.get(
+  '/approvals/expire',
+  bearerSecretAuth(() => process.env.CRON_SECRET),
+  expireApprovals,
 );
 
 // POST /api/agent/gateway/start — non-Vercel ensureRunning (Bearer KEY_VAULTS_SECRET)

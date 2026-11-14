@@ -29,6 +29,7 @@ import { AiAgentService } from '@/server/services/aiAgent';
 import { AiChatService } from '@/server/services/aiChat';
 import { getFileProxyUrl } from '@/server/services/file';
 import { HeterogeneousAgentService } from '@/server/services/heterogeneousAgent';
+import { backgroundInterventionConfig } from '@/server/services/toolApproval/background';
 
 const log = debug('lobe-server:ai-agent-router');
 
@@ -241,7 +242,8 @@ const ExecAgentSchema = z
     /**
      * User intervention configuration for tool approvals.
      * Pass `{ approvalMode: 'headless' }` from headless clients (CLI, cron, bots)
-     * so tool calls auto-execute without waiting for human approval.
+     * so tool calls auto-execute without waiting for human approval. Left out, the run asks the
+     * user's phone when they have one registered, and is headless otherwise.
      */
     userInterventionConfig: UserInterventionConfigSchema.optional(),
   })
@@ -746,7 +748,10 @@ export const aiAgentRouter = router({
         selectedToolIds,
         slug,
         trigger: trigger ?? RequestTrigger.Chat,
-        userInterventionConfig,
+        // The web and phone apps always say how to approve; a caller that does not (an API
+        // client, a script) is a run nobody is watching, which asks the user's phone when they have one
+        userInterventionConfig:
+          userInterventionConfig ?? (await backgroundInterventionConfig(ctx.serverDB, ctx.userId)),
       });
     } catch (error: any) {
       console.error('execAgent failed: %O', error);

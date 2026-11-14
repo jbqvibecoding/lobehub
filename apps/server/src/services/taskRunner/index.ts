@@ -13,8 +13,10 @@ import { TaskTopicModel } from '@/database/models/taskTopic';
 import type { LobeChatDatabase } from '@/database/type';
 import { AiAgentService } from '@/server/services/aiAgent';
 import { TaskLifecycleService } from '@/server/services/taskLifecycle';
+import { backgroundInterventionConfig } from '@/server/services/toolApproval/background';
 
 import { buildTaskPrompt } from './buildTaskPrompt';
+import { taskCompletionHook } from './completionHook';
 
 const log = debug('task-runner');
 
@@ -194,37 +196,22 @@ export class TaskRunnerService {
         ...(typeof taskConfig.model === 'string' && { model: taskConfig.model }),
         ...(typeof taskConfig.provider === 'string' && { provider: taskConfig.provider }),
         hooks: [
-          {
-            handler: async (event) => {
-              await taskLifecycle.onTopicComplete({
-                errorMessage: event.errorMessage,
-                lastAssistantContent: event.lastAssistantContent,
-                operationId: event.operationId,
-                reason: event.reason || 'done',
-                runTrigger: trigger,
-                taskId,
-                taskIdentifier,
-                topicId: event.topicId,
-              });
-            },
-            id: 'task-on-complete',
-            type: 'onComplete' as const,
-            webhook: {
-              // `runTrigger` rides in the static body so the production webhook
-              // callback (which reconstructs onTopicComplete params server-side)
-              // knows whether this was a manual run or an automation tick.
-              body: { runTrigger: trigger, taskId, taskIdentifier, userId },
-              delivery: 'qstash' as const,
-              url: '/api/workflows/task/on-topic-complete',
-            },
-          },
+          taskCompletionHook({
+            runTrigger: trigger,
+            taskId,
+            taskIdentifier,
+            taskLifecycle,
+            userId,
+          }),
         ],
         ...(attachmentFileIds.length > 0 ? { fileIds: attachmentFileIds } : {}),
         prompt,
         taskId: task.id,
         title: extraPrompt ? extraPrompt.slice(0, 100) : task.name || task.identifier,
         trigger: TopicTrigger.RunTask,
-        userInterventionConfig: { approvalMode: 'headless' },
+        // With a phone registered, a tool that asks for approval pauses the run and the phone is
+        // asked; the answer resumes it (toolApproval), and the topic stays running meanwhile
+        userInterventionConfig: await backgroundInterventionConfig(this.db, userId),
         ...(continueTopicId && { appContext: { topicId: continueTopicId } }),
       });
 

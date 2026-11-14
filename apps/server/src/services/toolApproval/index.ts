@@ -2,10 +2,16 @@ import { RequestTrigger } from '@lobechat/types';
 import debug from 'debug';
 
 import { MessageModel } from '@/database/models/message';
+import { TaskModel } from '@/database/models/task';
+import { TaskTopicModel } from '@/database/models/taskTopic';
 import { TopicModel } from '@/database/models/topic';
 import type { LobeChatDatabase } from '@/database/type';
 import { AiAgentService } from '@/server/services/aiAgent';
 import { botTopicWebhookBody, buildBotDeliveryHooks } from '@/server/services/bot/deliveryHooks';
+import { TaskLifecycleService } from '@/server/services/taskLifecycle';
+import { taskCompletionHook } from '@/server/services/taskRunner/completionHook';
+
+import { backgroundInterventionConfig } from './background';
 
 const log = debug('lobe-server:tool-approval');
 
@@ -75,8 +81,39 @@ export const answerToolApproval = async (
     ? await new TopicModel(db, userId, workspaceId).findById(message.topicId)
     : undefined;
   const bot = topic?.metadata?.bot;
+  // A run of a task paused without settling the task; the resumed run settles it when it ends
+  const taskTopic = message.topicId
+    ? await new TaskTopicModel(db, userId, workspaceId).findByTopicId(message.topicId)
+    : null;
+  const task = taskTopic
+    ? await new TaskModel(db, userId, workspaceId).findById(taskTopic.taskId)
+    : null;
 
-  log('answering %s (%s via %s), chat=%s', toolMessageId, decision, via, !!bot);
+  log('answering %s (%s via %s), chat=%s task=%s', toolMessageId, decision, via, !!bot, task?.id);
+
+  const hooks = [
+    ...(bot
+      ? buildBotDeliveryHooks({
+          db,
+          webhookBody: botTopicWebhookBody(bot, {
+            progressMessageId: chatMessageId,
+            userId,
+            workspaceId,
+          }),
+        })
+      : []),
+    ...(task
+      ? [
+          taskCompletionHook({
+            runTrigger: taskTopic?.trigger ?? 'manual',
+            taskId: task.id,
+            taskIdentifier: task.identifier,
+            taskLifecycle: new TaskLifecycleService(db, userId, workspaceId),
+            userId,
+          }),
+        ]
+      : []),
+  ];
 
   const result = await new AiAgentService(db, userId, { workspaceId }).execAgent({
     agentId: message.agentId,
@@ -86,16 +123,7 @@ export const answerToolApproval = async (
       topicId: message.topicId,
     },
     ...(bot && { botContext: bot }),
-    ...(bot && {
-      hooks: buildBotDeliveryHooks({
-        db,
-        webhookBody: botTopicWebhookBody(bot, {
-          progressMessageId: chatMessageId,
-          userId,
-          workspaceId,
-        }),
-      }),
-    }),
+    ...(hooks.length > 0 && { hooks }),
     parentMessageId: toolMessageId,
     prompt: '',
     resume: true,
@@ -107,9 +135,21 @@ export const answerToolApproval = async (
       via,
     },
     trigger: bot ? RequestTrigger.Bot : RequestTrigger.Chat,
-    // Later calls in the resumed run ask again rather than running unattended
-    userInterventionConfig: { approvalMode: 'manual' },
+    // Later calls in the resumed run ask again rather than running unattended; a task's run keeps
+    // the rules of a run nobody is watching
+    userInterventionConfig: task
+      ? await backgroundInterventionConfig(db, userId)
+      : { approvalMode: 'manual' },
   });
+
+  // Stopping the task stops its current operation, which is now the resumed one
+  if (task && message.topicId && result.operationId) {
+    await new TaskTopicModel(db, userId, workspaceId).updateOperationId(
+      task.id,
+      message.topicId,
+      result.operationId,
+    );
+  }
 
   return { operationId: result.operationId };
 };

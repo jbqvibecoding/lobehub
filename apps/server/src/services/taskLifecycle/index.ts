@@ -120,6 +120,11 @@ export class TaskLifecycleService {
 
     await this.taskModel.updateHeartbeat(taskId);
 
+    // The run paused to ask the user about a tool call; nothing is settled yet. The topic stays
+    // running, so scheduled ticks skip the task meanwhile, and the run resumed by the answer
+    // carries this hook again and settles the task when it ends (see answerToolApproval).
+    if (reason === 'waiting_for_human') return;
+
     const currentTask = await this.taskModel.findById(taskId);
 
     // Whether a confirmed verify plan owns this run's delivery acceptance. Set in
