@@ -1,7 +1,8 @@
 /**
  * The mainland edition's own paths, against a running `APP_REGION=cn` server: sign in with a code
- * texted to a mainland mobile number, buy a month of a plan with Alipay, receive Alipay's signed
- * payment notification, and find the plan active; the same notification again changes nothing.
+ * texted to a mainland mobile number (and not into an account someone else made with that number),
+ * buy a month of a plan with Alipay, receive Alipay's signed payment notification, and find the plan
+ * active; the same notification again changes nothing.
  *
  *   bunx tsx scripts/biber/smoke/mainland.ts
  *
@@ -76,6 +77,33 @@ const main = async () => {
     await step('the code signs in a new account', () =>
       client.auth('/phone-number/verify', { code: sms.codes.get(national), phoneNumber }),
     );
+
+    await step("an email sign-up cannot claim someone else's number", async () => {
+      // Someone signs up with their own email and password and slips another person's number in
+      const victimNational = `139${String(Date.now()).slice(-8)}`;
+      const victimPhone = `+86${victimNational}`;
+      const attacker = await new SmokeClient(BASE_URL).auth<{ user: { id: string } }>(
+        '/sign-up/email',
+        {
+          email: `claim-${Date.now()}@biber.test`,
+          name: victimNational.slice(-4),
+          password: 'Smoke-pass-12345',
+          phoneNumber: victimPhone,
+        },
+      );
+
+      // The number's owner then signs in by text message
+      const owner = new SmokeClient(BASE_URL);
+      await owner.auth('/phone-number/send-otp', { phoneNumber: victimPhone });
+      const code = await waitFor('the text message', async () => sms.codes.get(victimNational));
+      const signedIn = await owner.auth<{ user: { id: string } }>('/phone-number/verify', {
+        code,
+        phoneNumber: victimPhone,
+      });
+      if (signedIn.user.id === attacker.user.id) {
+        throw new Error('the owner was signed in to the account the other person created');
+      }
+    });
 
     const before = await step(
       'the plans are sold in yuan through WeChat Pay or Alipay',

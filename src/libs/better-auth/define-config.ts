@@ -112,6 +112,24 @@ interface CustomBetterAuthOptions {
   plugins: BetterAuthPlugin[];
 }
 
+/** The endpoint that signs in, or signs up, with a code texted to the number */
+const PHONE_VERIFY_PATH = '/phone-number/verify';
+
+/**
+ * Only signing in with a texted code may give a new account a phone number. The phone plugin's
+ * `phoneNumber` field takes input, so without this an email sign-up could carry someone else's
+ * number, and when that person later signed in by text message the plugin would find the account
+ * by the number and sign them in to it, an account its creator can also open with their password.
+ * Returned as a before-create hook result: the hook's data is merged into the user being created.
+ */
+export const phoneOnlyFromVerification = (
+  user: Record<string, unknown>,
+  path: string | undefined,
+): { data: { phoneNumber: null } } | undefined =>
+  path === PHONE_VERIFY_PATH || user.phoneNumber == null
+    ? undefined
+    : { data: { phoneNumber: null } };
+
 export function defineConfig(customOptions: CustomBetterAuthOptions) {
   const options = {
     account: {
@@ -224,6 +242,7 @@ export function defineConfig(customOptions: CustomBetterAuthOptions) {
     databaseHooks: {
       user: {
         create: {
+          before: async (user, context) => phoneOnlyFromVerification(user, context?.path),
           after: async (user) => {
             const userService = new UserService(serverDB);
             await userService.initUser({

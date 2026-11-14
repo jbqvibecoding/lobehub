@@ -165,6 +165,22 @@ describe('defineConfig', () => {
     mocks.isPhoneSignInEnabled.mockReturnValue(false);
   });
 
+  // Otherwise an email sign-up could carry someone else's number, and that person's text-message
+  // sign-in would land in the account its creator controls
+  it('lets only the text-message sign-in give a new account a phone number', async () => {
+    const { defineConfig } = await import('./define-config');
+    defineConfig({ plugins: [] });
+    const { before } = mocks.betterAuth.mock.calls.at(-1)![0].databaseHooks.user.create;
+    const user = { email: 'someone@example.com', phoneNumber: '+8613800138000' };
+
+    expect(await before(user, { path: '/sign-up/email' })).toEqual({ data: { phoneNumber: null } });
+    expect(await before(user, null)).toEqual({ data: { phoneNumber: null } });
+    expect(await before(user, { path: '/phone-number/verify' })).toBeUndefined();
+    expect(
+      await before({ email: 'someone@example.com' }, { path: '/sign-up/email' }),
+    ).toBeUndefined();
+  });
+
   it('should respect NO_PROXY when configuring the development proxy dispatcher', async () => {
     process.env = {
       ...process.env,
