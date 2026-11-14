@@ -102,8 +102,12 @@ bunx tsx scripts/biber/ops.ts bot list
 
 ## 6. 云电脑
 
-`SANDBOX_PROVIDER=openbot`，并设置 `OPENBOT_SUPERVISOR_URL` 和 `OPENBOT_SUPERVISOR_TOKEN`。
+`SANDBOX_PROVIDER=openbot`，并设置 `OPENBOT_SUPERVISOR_URL`、`OPENBOT_SUPERVISOR_TOKEN` 和 `OPENBOT_COMPUTER_TOKEN`。
 服务本身在 `apps/computer`，用其中的 `compose.yml` 启动。
+
+`OPENBOT_COMPUTER_TOKEN`（supervisor 那边叫 `COMPUTER_TOKEN`）是派生用的密钥，不会下发给任何一台电脑：
+每台电脑只拿到用它和自己 id 算出的令牌，并且只接受发给自己的请求。所以用户在自己的云电脑上能看到的，
+只有自己这台的令牌，进不了别人的电脑。旧容器里还是旧令牌，supervisor 下次用到时会自动重建。
 
 ## 7. 体检
 

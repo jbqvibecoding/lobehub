@@ -25,6 +25,12 @@ Copied from OpenBot as shipped inside OpenDuet (`openbot/supervisor`, `openbot/a
   are reaped instead of piling up as zombies against `PidsLimit`.
 - `tsconfig.base.json`, `scripts/start-local-chrome-computer.ts` (a test imports it) and the
   `@types/bun` dev dependency came from OpenBot's root and are copied here as they are.
+- Each computer gets its own token: the supervisor passes it `HMAC-SHA256(COMPUTER_TOKEN, "computer:" + botId)`
+  instead of `COMPUTER_TOKEN` itself, and the Biber server derives the same value to call it. A
+  computer the supervisor started for a Bot also refuses requests naming any other Bot. In OpenBot
+  every computer held the shared token, so a command run on one user's computer could read it and
+  reach every other computer on the network. The supervisor already replaces a computer that holds
+  a token it no longer hands out, so existing computers are recreated on their next use.
 - Both `bun.lock` files are committed although the repository ignores `*.lock`: the Dockerfiles
   install with `--frozen-lockfile` and need them.
 

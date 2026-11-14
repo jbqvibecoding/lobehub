@@ -1,3 +1,17 @@
+import { createHmac } from "node:crypto";
+
+/**
+ * The token one computer accepts: an HMAC of its Bot id under the deployment's COMPUTER_TOKEN.
+ *
+ * Each computer holds only its own, so a command run on one computer can read that token from its
+ * environment and still reach no other computer. The Biber server derives the same value to call
+ * it (`computerTokenFor` in apps/server/src/services/sandbox/providers/openbot.ts); keep the two
+ * identical.
+ */
+export function computerTokenFor(secret: string, botId: string): string {
+  return createHmac("sha256", secret).update(`computer:${botId}`).digest("hex");
+}
+
 /**
  * What a computer is told about itself.
  *
@@ -30,7 +44,9 @@ export function environmentFor(
   const browserMode = rawBrowserMode;
   return [
     `COMPUTER_BOT_ID=${botId}`,
-    ...(computerToken ? [`COMPUTER_TOKEN=${computerToken}`] : []),
+    ...(computerToken
+      ? [`COMPUTER_TOKEN=${computerTokenFor(computerToken, botId)}`]
+      : []),
     ...(spireSocketVolume
       ? ["SPIFFE_ENDPOINT_SOCKET=/tmp/spire-agent/public/api.sock"]
       : []),

@@ -4,6 +4,7 @@ import {
   isOpenPath,
   matchesToken,
   offeredToken,
+  servesBot,
 } from "../src/authorisation";
 
 /**
@@ -141,5 +142,17 @@ describe("what the wheel stops while a person is driving", () => {
     ]) {
       expect(actsOnTheComputer(path)).toBeFalse();
     }
+  });
+});
+
+describe("which Bot a computer serves", () => {
+  // One user's computer must not act for another user's Bot, even with a valid token in hand
+  test("a computer started for one Bot refuses another", () => {
+    expect(servesBot("u-alice", "u-alice")).toBeTrue();
+    expect(servesBot("u-alice", "u-bob")).toBeFalse();
+  });
+
+  test("a computer started without a Bot serves every Bot, as OpenBot's shared one does", () => {
+    expect(servesBot(undefined, "u-alice")).toBeTrue();
   });
 });

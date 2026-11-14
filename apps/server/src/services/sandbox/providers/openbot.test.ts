@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MarketService } from '@/server/services/market';
 
-import { clearOpenBotComputerCache, OpenBotSandboxProvider } from './openbot';
+import { clearOpenBotComputerCache, computerTokenFor, OpenBotSandboxProvider } from './openbot';
 
 const env = vi.hoisted(() => ({ sandboxEnv: {} as Record<string, unknown> }));
 vi.mock('@/envs/sandbox', () => env);
@@ -82,9 +82,21 @@ describe('OpenBotSandboxProvider', () => {
 
     const [, execInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
     const execHeaders = execInit.headers as Headers;
-    expect(execHeaders.get('Authorization')).toBe('Bearer computer-token');
+    // Each computer accepts only its own token, never the deployment secret
+    expect(execHeaders.get('Authorization')).toBe(
+      `Bearer ${computerTokenFor('computer-token', computerId)}`,
+    );
     expect(execHeaders.get('x-openbot-bot-id')).toBe(computerId);
     expect(JSON.parse(String(execInit.body))).toEqual({ command: 'echo ok', timeoutMs: 120_000 });
+  });
+
+  // The same vector is pinned in apps/computer/supervisor/tests/environment.test.ts: the server and
+  // the supervisor must derive the same token or every call to a computer is refused
+  it('derives the token each computer holds the same way the supervisor does', () => {
+    expect(computerTokenFor('secret', 'bot-1')).toBe(
+      '260314326e66c3a2cb0305df0d59da1480fee67461d9793f4bb8ef6f701bebd6',
+    );
+    expect(computerTokenFor('secret', 'bot-2')).not.toBe(computerTokenFor('secret', 'bot-1'));
   });
 
   it('gives each topic its own computer when scoped by topic', async () => {

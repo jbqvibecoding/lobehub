@@ -99,7 +99,7 @@ tags:
 ### `OPENBOT_COMPUTER_TOKEN`
 
 - 类型：当 `SANDBOX_PROVIDER=openbot` 时必填
-- 描述：访问 Agent 电脑的 Bearer Token，必须与 supervisor 的 `COMPUTER_TOKEN` 一致，supervisor 会把它交给每台启动的电脑。
+- 描述：派生各台电脑令牌用的密钥，必须与 supervisor 的 `COMPUTER_TOKEN` 一致。每台电脑只拿到用它和自己 id 算出的令牌（HMAC），所以在一个用户的电脑上运行的命令进不了别人的电脑。
 - 默认值：-
 - 示例：`change-me-computer-token`
 

@@ -15,6 +15,7 @@ import {
   matchesToken,
   mutatesBrowser,
   offeredToken,
+  servesBot,
 } from "./authorisation";
 import { isPlainBotId } from "./bot-id";
 import { browserRuntimeFromEnv } from "./browser-runtime";
@@ -294,6 +295,9 @@ const shell = createShell(process.env.WORKSPACE_DIR?.trim() || "/workspace");
  * Bot to name, such as a health check, so the container stays demonstrable on its own rather than
  * refusing everything that is not the server.
  */
+/** The one Bot this computer serves, when the supervisor started it for one. */
+const BOUND_BOT_ID = process.env.COMPUTER_BOT_ID?.trim() || undefined;
+
 const DEFAULT_BOT_ID = (() => {
   const configured = process.env.COMPUTER_BOT_ID ?? "shared";
   // At boot rather than per request. This is the id every unheadered call falls back to, so a value
@@ -761,6 +765,10 @@ serve<StreamData>({
     if (!isOpenPath(url.pathname) && !isPlainBotId(botId)) {
       return json({ error: "That is not a usable bot id." }, 400);
     }
+    // A computer the supervisor started for one Bot answers for that Bot only.
+    if (!isOpenPath(url.pathname) && !servesBot(BOUND_BOT_ID, botId)) {
+      return json({ error: "Not authorised." }, 403);
+    }
     // The admin network policy, pushed by the server on every change; applied without a restart.
     // The deployment's Web Bot Auth key rides the same push (see `web-bot-auth.ts`).
     if (url.pathname === "/egress-policy" && request.method === "PUT") {
@@ -800,6 +808,9 @@ serve<StreamData>({
         const streamBotId = botIdOf(request, url.searchParams.get("bot"));
         if (!isPlainBotId(streamBotId)) {
           return json({ error: "That is not a usable bot id." }, 400);
+        }
+        if (!servesBot(BOUND_BOT_ID, streamBotId)) {
+          return json({ error: "Not authorised." }, 403);
         }
         const recordingId = url.searchParams.get("recording")?.trim();
         if (recordingId && !/^[a-f0-9-]{36}$/.test(recordingId))

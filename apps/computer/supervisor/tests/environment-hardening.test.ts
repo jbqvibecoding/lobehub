@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { environmentFor } from "../src/environment";
+import { computerTokenFor, environmentFor } from "../src/environment";
 
 /**
  * Whitespace-only `COMPUTER_TOKEN` used to be forwarded verbatim while the child trims and then
@@ -18,7 +18,7 @@ describe("supervisor environment hardening", () => {
 
   test("trims a padded token", () => {
     expect(environmentFor("bot-1", { COMPUTER_TOKEN: "  secret  " })).toContain(
-      "COMPUTER_TOKEN=secret",
+      `COMPUTER_TOKEN=${computerTokenFor("secret", "bot-1")}`,
     );
   });
 

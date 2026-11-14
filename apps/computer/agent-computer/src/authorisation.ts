@@ -43,6 +43,17 @@ export function offeredToken(headers: Headers, url: URL): string {
 }
 
 /**
+ * Whether this computer serves the Bot a request names.
+ *
+ * The supervisor starts one computer per Bot and tells it which (`COMPUTER_BOT_ID`), so a computer
+ * it started answers for that Bot only. A computer started by hand without one serves every Bot,
+ * as OpenBot's shared computer does.
+ */
+export function servesBot(boundBotId: string | undefined, botId: string): boolean {
+  return boundBotId === undefined || botId === boundBotId;
+}
+
+/**
  * Health is the one thing an unauthenticated caller may ask.
  *
  * An orchestrator has to be able to check whether this process is up without holding a secret, and

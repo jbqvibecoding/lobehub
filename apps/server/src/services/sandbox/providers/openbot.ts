@@ -1,3 +1,5 @@
+import { createHmac } from 'node:crypto';
+
 import type { SandboxCallToolResult } from '@lobechat/builtin-tool-cloud-sandbox';
 import { isRecord } from '@lobechat/utils';
 import debug from 'debug';
@@ -61,6 +63,15 @@ const computerUrlCache = new Map<string, { expiresAt: number; url: string }>();
 
 /** Test hook: the cache is module state shared by every provider instance. */
 export const clearOpenBotComputerCache = () => computerUrlCache.clear();
+
+/**
+ * The token one computer accepts: an HMAC of its id under OPENBOT_COMPUTER_TOKEN. The supervisor
+ * gives each computer only its own (`computerTokenFor` in apps/computer/supervisor/src/environment.ts;
+ * keep the two identical), so a command running on one user's computer can read its token and still
+ * reach no other user's computer.
+ */
+export const computerTokenFor = (secret: string, computerId: string) =>
+  createHmac('sha256', secret).update(`computer:${computerId}`).digest('hex');
 
 /**
  * Cloud Sandbox backed by an OpenBot computer: a container with Chromium, a durable `/workspace`
@@ -481,7 +492,7 @@ export class OpenBotSandboxProvider implements SandboxProvider {
     return this.request<ShellResult>(`${computerUrl}/exec`, {
       body: JSON.stringify({ command, timeoutMs: boundedTimeout }),
       headers: {
-        'Authorization': `Bearer ${this.computerToken}`,
+        'Authorization': `Bearer ${computerTokenFor(this.computerToken, this.computerId)}`,
         'x-openbot-bot-id': this.computerId,
       },
       method: 'POST',
