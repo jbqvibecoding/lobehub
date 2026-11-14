@@ -8,6 +8,7 @@ import {
 import { isPaymentProviderAvailable, regionalIdentifier } from '@lobechat/region';
 import debug from 'debug';
 
+import { UserModel } from '@/database/models/user';
 import { UserSubscriptionModel } from '@/database/models/userSubscription';
 import type { LobeChatDatabase } from '@/database/type';
 import { billingEnv } from '@/envs/billing';
@@ -40,6 +41,24 @@ const readTransaction = (jws: string) => {
     throw new AppleJwsError(`Transaction belongs to another app (${transaction.bundleId})`);
   }
   return transaction;
+};
+
+const isSandbox = (transaction: AppleTransaction) => transaction.environment === 'Sandbox';
+
+/**
+ * Whether this user's App Store sandbox purchases grant plans here. A sandbox purchase (TestFlight,
+ * Xcode) costs nothing, so it counts only on a deployment that allows it for testing, or for the
+ * accounts App Review signs in with, since review buys in the sandbox.
+ */
+const sandboxCountsFor = async (db: LobeChatDatabase, userId: string) => {
+  if (billingEnv.APPLE_IAP_ALLOW_SANDBOX) return true;
+  const accounts = (billingEnv.APPLE_IAP_SANDBOX_ACCOUNTS ?? '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  if (accounts.length === 0) return false;
+  const email = (await UserModel.findById(db, userId))?.email?.toLowerCase();
+  return !!email && accounts.includes(email);
 };
 
 /** Why purchases the phone reported were not recorded. */
@@ -102,6 +121,9 @@ export const syncApplePurchases = async (
   }
 
   const transaction = latest(transactions);
+  if (isSandbox(transaction) && !(await sandboxCountsFor(db, userId))) {
+    throw new AppleSyncError('BAD_REQUEST', 'App Store sandbox purchases do not count here');
+  }
   const snapshot = appleSubscriptionSnapshot(transaction);
   if (!snapshot) {
     throw new AppleSyncError('BAD_REQUEST', `Unknown product ${transaction.productId}`);
@@ -175,6 +197,10 @@ export const handleAppleNotification = async (db: LobeChatDatabase, signedPayloa
 
   const signedAt = new Date(notification.signedDate ?? Date.now());
   const stored = await UserSubscriptionModel.findByCustomer(db, 'apple', customer);
+  if (isSandbox(transaction) && !(stored?.userId && (await sandboxCountsFor(db, stored.userId)))) {
+    log('skipping a sandbox notification for %s', snapshot.providerSubscriptionId);
+    return;
+  }
   if (stored?.syncedAt && stored.syncedAt > signedAt) {
     log('skipping an older notification for %s', snapshot.providerSubscriptionId);
     return;

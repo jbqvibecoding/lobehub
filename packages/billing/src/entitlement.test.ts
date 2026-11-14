@@ -30,6 +30,51 @@ describe('effectivePlan', () => {
       ]),
     ).toBe(Plans.Ultimate);
   });
+
+  // Apple announces renewals and endings by notification; one that goes missing must not grant
+  // the plan for good
+  describe('an App Store subscription', () => {
+    const now = new Date('2026-11-14T12:00:00Z');
+    const HOUR = 60 * 60 * 1000;
+    const endedAgo = (ms: number, status: 'active' | 'past_due' = 'active') => [
+      {
+        currentPeriodEnd: new Date(now.getTime() - ms),
+        plan: Plans.Premium,
+        provider: 'apple',
+        status,
+      },
+    ];
+
+    it('keeps granting for an hour past its period end, for the renewal to arrive', () => {
+      expect(effectivePlan(endedAgo(-HOUR), now)).toBe(Plans.Premium);
+      expect(effectivePlan(endedAgo(HOUR / 2), now)).toBe(Plans.Premium);
+    });
+
+    it('stops granting once its period ended over an hour ago without a renewal', () => {
+      expect(effectivePlan(endedAgo(2 * HOUR), now)).toBe(Plans.Free);
+    });
+
+    it("keeps granting through Apple's billing grace period, at most 16 days", () => {
+      expect(effectivePlan(endedAgo(10 * 24 * HOUR, 'past_due'), now)).toBe(Plans.Premium);
+      expect(effectivePlan(endedAgo(17 * 24 * HOUR, 'past_due'), now)).toBe(Plans.Free);
+    });
+
+    it('leaves other providers to their own events', () => {
+      expect(
+        effectivePlan(
+          [
+            {
+              currentPeriodEnd: new Date(now.getTime() - 2 * HOUR),
+              plan: Plans.Premium,
+              provider: 'stripe',
+              status: 'active',
+            },
+          ],
+          now,
+        ),
+      ).toBe(Plans.Premium);
+    });
+  });
 });
 
 describe('needsResync', () => {

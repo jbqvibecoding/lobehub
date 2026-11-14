@@ -13,7 +13,9 @@ export const getBillingConfig = () => {
       ALIPAY_GATEWAY: process.env.ALIPAY_GATEWAY,
       ALIPAY_PRIVATE_KEY: process.env.ALIPAY_PRIVATE_KEY,
       ALIPAY_PUBLIC_KEY: process.env.ALIPAY_PUBLIC_KEY,
+      APPLE_IAP_ALLOW_SANDBOX: ['1', 'true'].includes(process.env.APPLE_IAP_ALLOW_SANDBOX ?? ''),
       APPLE_IAP_BUNDLE_ID: process.env.APPLE_IAP_BUNDLE_ID,
+      APPLE_IAP_SANDBOX_ACCOUNTS: process.env.APPLE_IAP_SANDBOX_ACCOUNTS,
       APPLE_ROOT_CERTIFICATES: process.env.APPLE_ROOT_CERTIFICATES,
       STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
       STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
@@ -34,8 +36,18 @@ export const getBillingConfig = () => {
       ALIPAY_PRIVATE_KEY: z.string().optional(),
       /** Alipay's public key from the app's key settings (not the app's own public key) */
       ALIPAY_PUBLIC_KEY: z.string().optional(),
+      /**
+       * Whether App Store sandbox purchases (TestFlight, Xcode) grant plans to everyone. Only for test
+       * deployments: a sandbox purchase costs nothing.
+       */
+      APPLE_IAP_ALLOW_SANDBOX: z.boolean(),
       /** The phone app's bundle id, when it differs from this edition's (`ai.biber.app`, `.cn`) */
       APPLE_IAP_BUNDLE_ID: z.string().optional(),
+      /**
+       * Emails of the accounts whose sandbox purchases grant plans on this deployment, comma-separated:
+       * the demo account App Review signs in with, since review buys in the sandbox.
+       */
+      APPLE_IAP_SANDBOX_ACCOUNTS: z.string().optional(),
       /**
        * Apple's root certificates that App Store purchases are signed under, base64 DER and
        * comma-separated (at least Apple Root CA - G3, from apple.com/certificateauthority). The App

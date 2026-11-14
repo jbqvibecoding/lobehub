@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { type LobeChatDatabase } from '@lobechat/database';
+import { users } from '@lobechat/database/schemas';
 import { getTestDB } from '@lobechat/database/test-utils';
+import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UserSubscriptionModel } from '@/database/models/userSubscription';
@@ -15,8 +17,16 @@ import {
 } from '../index';
 import { signLikeApple } from './fixtures';
 
+const { billing } = vi.hoisted(() => ({
+  billing: {
+    APPLE_IAP_ALLOW_SANDBOX: false,
+    APPLE_IAP_SANDBOX_ACCOUNTS: undefined as string | undefined,
+  },
+}));
 vi.mock('@/envs/billing', async () => ({
-  billingEnv: { APPLE_ROOT_CERTIFICATES: (await import('./fixtures')).TEST_ROOT },
+  billingEnv: Object.assign(billing, {
+    APPLE_ROOT_CERTIFICATES: (await import('./fixtures')).TEST_ROOT,
+  }),
 }));
 vi.mock('@/envs/region', () => ({ regionEnv: { APP_REGION: 'global' } }));
 
@@ -63,6 +73,60 @@ describe('App Store purchases', () => {
   beforeEach(async () => {
     db = await getTestDB();
     subscriptionId = `2000${Math.floor(Math.random() * 1e9)}`;
+    billing.APPLE_IAP_ALLOW_SANDBOX = false;
+    billing.APPLE_IAP_SANDBOX_ACCOUNTS = undefined;
+  });
+
+  // A sandbox purchase (TestFlight, Xcode) costs nothing
+  describe('sandbox purchases', () => {
+    const sandboxPurchase = async (email?: string) => {
+      const user = await createTestUser(db);
+      if (email) await db.update(users).set({ email }).where(eq(users.id, user));
+      const token = await appleAccountToken(db, user);
+      const purchase = signLikeApple(
+        transaction({ appAccountToken: token, environment: 'Sandbox' }),
+      );
+      return { purchase, token, user };
+    };
+
+    it('grant nothing to an ordinary account', async () => {
+      const { purchase, user } = await sandboxPurchase();
+
+      await expect(syncApplePurchases(db, user, [purchase])).rejects.toMatchObject({
+        code: 'BAD_REQUEST',
+      });
+      expect((await appleRow(user))?.status ?? null).toBeNull();
+    });
+
+    it("are ignored when Apple's notification reports one for an ordinary account", async () => {
+      const { token, user } = await sandboxPurchase();
+
+      await notify(
+        'SUBSCRIBED',
+        transaction({ appAccountToken: token, environment: 'Sandbox' }),
+        undefined,
+      );
+
+      expect((await appleRow(user))?.status ?? null).toBeNull();
+    });
+
+    it('grant the plan to the accounts App Review signs in with', async () => {
+      const { purchase, user } = await sandboxPurchase(`review-${subscriptionId}@biber.ai`);
+      billing.APPLE_IAP_SANDBOX_ACCOUNTS = `other@biber.ai, Review-${subscriptionId}@Biber.ai `;
+
+      await syncApplePurchases(db, user, [purchase]);
+
+      expect(await appleRow(user)).toMatchObject({ plan: 'premium', status: 'active' });
+    });
+
+    it('grant the plan to everyone on a deployment that allows them', async () => {
+      billing.APPLE_IAP_ALLOW_SANDBOX = true;
+      const { purchase, user } = await sandboxPurchase();
+
+      await syncApplePurchases(db, user, [purchase]);
+
+      expect(await appleRow(user)).toMatchObject({ plan: 'premium', status: 'active' });
+    });
   });
 
   it('records a purchase the phone reports for the user it was bought for', async () => {
