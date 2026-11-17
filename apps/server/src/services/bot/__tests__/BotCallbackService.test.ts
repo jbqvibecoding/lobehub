@@ -1323,10 +1323,7 @@ describe('BotCallbackService', () => {
       });
 
     beforeEach(() => {
-      mockListPendingInterventions.mockResolvedValue([
-        pendingEmail,
-        { ...pendingEmail, id: 'tool-msg-elsewhere', topicId: 'topic-2' },
-      ]);
+      mockListPendingInterventions.mockResolvedValue([pendingEmail]);
     });
 
     it('puts Approve / Reject on the request in a Telegram Messenger chat', async () => {
@@ -1338,6 +1335,7 @@ describe('BotCallbackService', () => {
 
       await service.handleCallback(paused({ messengerInstallationKey: 'telegram:singleton' }));
 
+      expect(mockListPendingInterventions).toHaveBeenCalledWith({ topicId: 'topic-1' });
       expect(mockSendApprovalRequest).toHaveBeenCalledWith('chat-456', {
         approvals: [{ toolMessageId: 'tool-msg-1' }],
         labels: { approve: 'Approve', reject: 'Reject' },
@@ -1348,7 +1346,27 @@ describe('BotCallbackService', () => {
       expect(mockCreateMessage).not.toHaveBeenCalled();
     });
 
-    it('points to the app where the chat has no buttons', async () => {
+    it('asks for "1" or "2" in a shared-bot chat without buttons, one call at a time', async () => {
+      // Newest first, as the model returns them; the chat asks about the oldest
+      mockListPendingInterventions.mockResolvedValue([
+        { ...pendingEmail, apiName: 'delete_file', arguments: '{}', id: 'tool-msg-2' },
+        pendingEmail,
+      ]);
+
+      await service.handleCallback(paused({ messengerInstallationKey: 'telegram:singleton' }));
+
+      expect(mockEditMessage).toHaveBeenCalledWith(
+        'progress-msg-1',
+        [
+          '⏸ Waiting for your approval',
+          'Send email · gmail-mcp\nTo: ana@example.com',
+          "Reply 1 to approve or 2 to reject, or tell me what to do instead (then this won't run).",
+          'One more is waiting after this one.',
+        ].join('\n\n'),
+      );
+    });
+
+    it("points to the app in an agent's own bot channel", async () => {
       await service.handleCallback(paused());
 
       expect(mockEditMessage).toHaveBeenCalledWith(

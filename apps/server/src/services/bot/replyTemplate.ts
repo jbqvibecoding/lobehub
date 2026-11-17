@@ -270,9 +270,15 @@ type SystemStrings = {
   toolApprovalApprove: string;
   toolApprovalApproved: string;
   toolApprovalGone: string;
+  toolApprovalMoreWaiting: (count: number) => string;
   toolApprovalOpenApp: string;
+  toolApprovalRedirected: (title: string) => string;
   toolApprovalReject: string;
   toolApprovalRejected: string;
+  toolApprovalReplyHint: string;
+  toolApprovalReplyOnlyText: string;
+  toolApprovalTitledApproved: (title: string) => string;
+  toolApprovalTitledRejected: (title: string) => string;
   toolApprovalWaitingForOwner: string;
   toolApprovalWaitingForYou: string;
   toolsCallingHeader: (count: number, time: string) => string;
@@ -362,9 +368,20 @@ const SYSTEM_STRINGS: Partial<Record<BotReplyLocale, SystemStrings>> = {
     toolApprovalApprove: 'Approve',
     toolApprovalApproved: '✅ Approved. Continuing…',
     toolApprovalGone: 'This request is no longer waiting.',
+    toolApprovalMoreWaiting: (count) =>
+      count === 1
+        ? 'One more is waiting after this one.'
+        : `${count} more are waiting after this one.`,
     toolApprovalOpenApp: 'Approve or reject it in the Biber app.',
+    toolApprovalRedirected: (title) =>
+      `OK, not doing “${title}”. I've passed your message on to the agent.`,
     toolApprovalReject: 'Reject',
     toolApprovalRejected: '❌ Rejected. Letting the agent know…',
+    toolApprovalReplyHint:
+      "Reply 1 to approve or 2 to reject, or tell me what to do instead (then this won't run).",
+    toolApprovalReplyOnlyText: 'Reply 1 to approve or 2 to reject.',
+    toolApprovalTitledApproved: (title) => `✅ Approved: ${title}. Continuing…`,
+    toolApprovalTitledRejected: (title) => `❌ Rejected: ${title}. Letting the agent know…`,
     toolApprovalWaitingForOwner: "⏸ Waiting for the owner's approval.",
     toolApprovalWaitingForYou: '⏸ Waiting for your approval',
     toolsCallingHeader: (count, time) => `> total **${count}** tools calling ${time}\n\n`,
@@ -444,9 +461,15 @@ const SYSTEM_STRINGS: Partial<Record<BotReplyLocale, SystemStrings>> = {
     toolApprovalApprove: '批准',
     toolApprovalApproved: '✅ 已批准，继续执行…',
     toolApprovalGone: '这个请求已经不在等待了。',
+    toolApprovalMoreWaiting: (count) => `之后还有 ${count} 项等你确认。`,
     toolApprovalOpenApp: '请在 Biber App 里批准或拒绝。',
+    toolApprovalRedirected: (title) => `好的，不做「${title}」，已把你的话转告助理。`,
     toolApprovalReject: '拒绝',
     toolApprovalRejected: '❌ 已拒绝，正在告诉 Agent…',
+    toolApprovalReplyHint: '回复 1 批准，2 拒绝，或直接告诉我该怎么做（这次操作就不做了）。',
+    toolApprovalReplyOnlyText: '回复 1 批准，2 拒绝。',
+    toolApprovalTitledApproved: (title) => `✅ 已批准：${title}，继续执行…`,
+    toolApprovalTitledRejected: (title) => `❌ 已拒绝：${title}，正在告诉助理…`,
     toolApprovalWaitingForOwner: '⏸ 正在等机器人主人批准。',
     toolApprovalWaitingForYou: '⏸ 等你批准',
     toolsCallingHeader: (count, time) => `> 共 **${count}** 次工具调用 ${time}\n\n`,
@@ -737,30 +760,67 @@ export interface ApprovalRequestItem {
 }
 
 /**
+ * How the person in a chat answers a request: tap buttons the platform shows (`buttons`), reply
+ * "1" / "2" in the chat itself (`reply`, the shared bots without buttons), or open the app (`app`,
+ * an agent's own bot channel).
+ */
+export type ApprovalAnswerMode = 'app' | 'buttons' | 'reply';
+
+/**
  * The message a chat shows while a run waits for approval: what the agent wants to do, and how to
  * answer. A sender who is not the owner only learns that it waits, not what for.
+ *
+ * Answered by reply, the chat asks about one call at a time, the oldest first, since "1" and "2"
+ * are the answers: the others are only counted, and each is asked once the one before is answered.
  */
 export function renderApprovalRequest(
   {
-    hasButtons,
+    answerBy,
     isOwner,
     items,
-  }: { hasButtons: boolean; isOwner: boolean; items: ApprovalRequestItem[] },
+  }: { answerBy: ApprovalAnswerMode; isOwner: boolean; items: ApprovalRequestItem[] },
   lng?: BotReplyLocale,
 ): string {
   const strings = getSystemStrings(lng);
   if (!isOwner) return strings.toolApprovalWaitingForOwner;
 
-  const numbered = items.length > 1;
-  const blocks = items.map((item, index) =>
-    [numbered ? `${index + 1}. ${item.title}` : item.title, ...item.details].join('\n'),
-  );
+  const block = (item: ApprovalRequestItem, label = item.title) =>
+    [label, ...item.details].join('\n');
 
+  if (answerBy === 'reply') {
+    const [first, ...rest] = items;
+    return [
+      strings.toolApprovalWaitingForYou,
+      ...(first ? [block(first)] : []),
+      strings.toolApprovalReplyHint,
+      ...(rest.length > 0 ? [strings.toolApprovalMoreWaiting(rest.length)] : []),
+    ].join('\n\n');
+  }
+
+  const numbered = items.length > 1;
   return [
     strings.toolApprovalWaitingForYou,
-    ...blocks,
-    ...(hasButtons ? [] : [strings.toolApprovalOpenApp]),
+    ...items.map((item, index) =>
+      block(item, numbered ? `${index + 1}. ${item.title}` : undefined),
+    ),
+    ...(answerBy === 'app' ? [strings.toolApprovalOpenApp] : []),
   ].join('\n\n');
+}
+
+/** What a chat says back once a reply answered a request; names the call so a slip shows. */
+export function renderApprovalAnswered(
+  {
+    decision,
+    redirected,
+    title,
+  }: { decision: 'approved' | 'rejected'; redirected?: boolean; title: string },
+  lng?: BotReplyLocale,
+): string {
+  const strings = getSystemStrings(lng);
+  if (decision === 'approved') return strings.toolApprovalTitledApproved(title);
+  return redirected
+    ? strings.toolApprovalRedirected(title)
+    : strings.toolApprovalTitledRejected(title);
 }
 
 export type ApprovalReplyKey =
@@ -769,7 +829,8 @@ export type ApprovalReplyKey =
   | 'toolApprovalApproved'
   | 'toolApprovalGone'
   | 'toolApprovalReject'
-  | 'toolApprovalRejected';
+  | 'toolApprovalRejected'
+  | 'toolApprovalReplyOnlyText';
 
 export function renderApprovalReply(key: ApprovalReplyKey, lng?: BotReplyLocale): string {
   return getSystemStrings(lng)[key];

@@ -561,9 +561,11 @@ export class BotCallbackService {
    */
   /**
    * A run paused for approval: show what it waits for. The owner gets the calls (without message
-   * content or credentials) and, where the platform has tap buttons, Approve / Reject; otherwise a
-   * pointer to the app. Anyone else only learns that it waits. Calls already answered elsewhere
-   * before this arrived are left out, and with none left nothing is posted.
+   * content or credentials) and how to answer: Approve / Reject buttons where the platform has them,
+   * a "reply 1 or 2" line in the other shared-bot chats (the reply is read by `MessengerRouter`),
+   * and a pointer to the app in an agent's own bot channel. Anyone else only learns that it waits.
+   * Calls already answered elsewhere before this arrived are left out, and with none left nothing is
+   * posted.
    */
   private async handleApprovalRequest(
     body: BotCallbackBody,
@@ -583,7 +585,7 @@ export class BotCallbackService {
     const isOwner = body.isOwner === true;
 
     if (!isOwner) {
-      const text = renderApprovalRequest({ hasButtons: false, isOwner, items: [] }, replyLocale);
+      const text = renderApprovalRequest({ answerBy: 'app', isOwner, items: [] }, replyLocale);
       await this.deliverFirstChunk(messenger, progressMessageId, text, canEdit);
       return;
     }
@@ -601,10 +603,10 @@ export class BotCallbackService {
         identifier: call.identifier,
       }),
     );
-    const hasButtons = !!binder?.sendApprovalRequest;
-    const text = renderApprovalRequest({ hasButtons, isOwner, items }, replyLocale);
+    const answerBy = binder?.sendApprovalRequest ? 'buttons' : binder ? 'reply' : 'app';
+    const text = renderApprovalRequest({ answerBy, isOwner, items }, replyLocale);
 
-    if (hasButtons) {
+    if (answerBy === 'buttons') {
       await binder!.sendApprovalRequest!(body.platformThreadId.split(':')[1], {
         approvals: pending.map((call) => ({ toolMessageId: call.id })),
         labels: {
@@ -620,6 +622,7 @@ export class BotCallbackService {
     await this.deliverFirstChunk(messenger, progressMessageId, text, canEdit);
   }
 
+  /** The calls this conversation waits on, oldest first: the order a chat asks about them. */
   private async pendingCallsInTopic(body: BotCallbackBody) {
     if (!body.topicId || !body.userId) return [];
 
@@ -627,8 +630,8 @@ export class BotCallbackService {
       this.db,
       body.userId,
       body.workspaceId,
-    ).listPendingInterventions();
-    return pending.filter((call) => call.topicId === body.topicId);
+    ).listPendingInterventions({ topicId: body.topicId });
+    return pending.reverse();
   }
 
   private async deliverFirstChunk(

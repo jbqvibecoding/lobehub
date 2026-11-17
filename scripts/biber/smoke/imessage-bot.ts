@@ -1,8 +1,9 @@
 /**
  * The shared iMessage line (through Linq), against a running server: a delivery with a bad
  * signature is refused, a group chat and a text message (SMS) are ignored, a new number is sent the link that connects
- * their account, they connect it and are told so, and a message gets the agent's reply. Every
- * delivery is signed as Linq signs it (Standard Webhooks).
+ * their account, they connect it and are told so, and a message gets the agent's reply. An action
+ * that needs approval is answered by replying: "1" approves it, and any other reply refuses it and
+ * is passed on to the agent. Every delivery is signed as Linq signs it (Standard Webhooks).
  *
  *   bunx tsx scripts/biber/smoke/imessage-bot.ts
  *
@@ -85,6 +86,8 @@ const main = async () => {
     event_type: 'message.received',
   });
   const sentText = (pattern: RegExp) => linq.sent.find((message) => pattern.test(message.text));
+  const countSent = (pattern: RegExp) =>
+    linq.sent.filter((message) => pattern.test(message.text)).length;
 
   try {
     await step('a delivery with a bad signature is refused', async () => {
@@ -127,7 +130,14 @@ const main = async () => {
     const client = new SmokeClient(BASE_URL);
     await client.signUp(`imessage-${Date.now()}@biber.test`, 'Smoke-pass-12345', 'iMessage smoke');
     const { agentId } = await client.mutation<{ agentId: string }>('lambda', 'agent.createAgent', {
-      config: { model: 'gpt-4o-mini', provider: 'openai', systemRole: '', title: 'iMessage agent' },
+      config: {
+        agencyConfig: { executionTarget: 'sandbox' },
+        model: 'gpt-4o-mini',
+        plugins: ['lobe-cloud-sandbox'],
+        provider: 'openai',
+        systemRole: '',
+        title: 'iMessage agent',
+      },
     });
 
     await step('connecting the account confirms by iMessage', async () => {
@@ -141,6 +151,35 @@ const main = async () => {
     await step('a message gets the agent’s reply by iMessage', async () => {
       await deliver(received('hello there'));
       await waitFor('the reply', async () => sentText(/Hello from the fake model/), 90_000);
+    });
+
+    const PROMPT = /Reply 1 to approve or 2 to reject/;
+
+    await step('an action that needs approval asks for 1 or 2 by iMessage', async () => {
+      await deliver(received('Please run code that adds one and one.'));
+      await waitFor('the approval request', async () => sentText(PROMPT), 90_000);
+    });
+
+    await step('replying 1 approves it and the reply arrives', async () => {
+      await deliver(received('1'));
+      await waitFor('the answer', async () => sentText(/^✅ Approved: /), 15_000);
+      await waitFor(
+        'the reply after the approved action',
+        async () => sentText(/The code ran/),
+        90_000,
+      );
+    });
+
+    await step('replying anything else refuses it and tells the agent', async () => {
+      await deliver(received('Please run code that adds two and two.'));
+      await waitFor(
+        'a second approval request',
+        async () => countSent(PROMPT) >= 2 || undefined,
+        90_000,
+      );
+      await deliver(received("Don't run it, just tell me the answer"));
+      await waitFor('the answer', async () => sentText(/passed your message on/), 15_000);
+      await waitFor('the agent’s reply', async () => sentText(/left the code alone/), 90_000);
     });
   } finally {
     linq.close();

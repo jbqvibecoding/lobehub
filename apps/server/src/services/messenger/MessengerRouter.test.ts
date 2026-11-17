@@ -131,6 +131,13 @@ vi.mock('@/server/services/toolApproval', () => ({
   ToolApprovalError: MockToolApprovalError,
 }));
 
+const mockListPendingInterventions = vi.fn();
+vi.mock('@/database/models/message', () => ({
+  MessageModel: class {
+    listPendingInterventions = (...args: any[]) => mockListPendingInterventions(...args);
+  },
+}));
+
 vi.mock('@/database/models/messengerAccountLink', () => ({
   MessengerAccountLinkModel: {
     findByPlatformUser: (...args: any[]) => mockFindLink(...args),
@@ -151,6 +158,15 @@ vi.mock('@/server/services/aiAgent', () => ({
   AiAgentService: class {},
 }));
 vi.mock('@/server/services/bot/replyTemplate', () => ({
+  renderApprovalAnswered: ({
+    decision,
+    redirected,
+    title,
+  }: {
+    decision: string;
+    redirected?: boolean;
+    title: string;
+  }) => `${decision}${redirected ? ' (redirected)' : ''}: ${title}`,
   renderApprovalReply: (key: string) => key,
   renderInlineError: (msg: string) => msg,
 }));
@@ -478,7 +494,11 @@ describe('MessengerRouter.getWebhookHandler', () => {
 
       const res = await new MessengerRouter().getWebhookHandler('imessage')(
         imessageRequest({
-          data: { chat: { id: 'chat-1', is_group: false }, direction: 'inbound' },
+          data: {
+            chat: { id: 'chat-1', is_group: false },
+            direction: 'inbound',
+            sender_handle: { service: 'iMessage' },
+          },
           event_type: 'message.received',
         }),
       );
@@ -1398,5 +1418,119 @@ describe('MessengerRouter approval buttons', () => {
 
     expect(mockAnswerToolApproval).not.toHaveBeenCalled();
     expect(ack.mock.calls[0][1]).toEqual({ toast: 'Not linked. Send /start first.' });
+  });
+});
+
+describe('MessengerRouter approval by reply', () => {
+  const pendingEmail = {
+    apiName: 'send_email',
+    arguments: '{"to":"ana@example.com"}',
+    id: 'msg_tool_older',
+    identifier: 'gmail-mcp',
+    topicId: 'topic-1',
+  };
+  const send = async (text: string, state: any = { topicId: 'topic-1' }) => {
+    const handler = mockChatBot.onSubscribedMessage.mock.calls[0][0] as (
+      thread: any,
+      msg: any,
+    ) => Promise<void>;
+    await handler({ ...fakeDmThread(), state: Promise.resolve(state) }, fakeMessage({ text }));
+  };
+
+  beforeEach(async () => {
+    await loadSlackBot();
+    mockFindLink.mockResolvedValue({
+      activeAgentId: 'agt_main',
+      id: 'link_1',
+      platformUserId: 'U_ALICE',
+      tenantId: 'T_ACME',
+      userId: 'user_alice',
+      workspaceId: null,
+    });
+    mockAnswerToolApproval.mockReset();
+    mockAnswerToolApproval.mockResolvedValue({ operationId: 'op-resumed' });
+    mockListPendingInterventions.mockReset();
+    // Newest first, as the model returns them
+    mockListPendingInterventions.mockResolvedValue([
+      { ...pendingEmail, apiName: 'delete_file', id: 'msg_tool_newer', identifier: 'drive' },
+      pendingEmail,
+    ]);
+  });
+
+  it('approves the oldest waiting call on "1" and names it in the chat', async () => {
+    await send(' 1. ');
+
+    expect(mockListPendingInterventions).toHaveBeenCalledWith({ topicId: 'topic-1' });
+    expect(mockAnswerToolApproval).toHaveBeenCalledWith(expect.anything(), {
+      decision: 'approved',
+      reason: undefined,
+      toolMessageId: 'msg_tool_older',
+      userId: 'user_alice',
+      via: 'slack',
+      workspaceId: undefined,
+    });
+    expect(mockSlackBinder.sendDmText).toHaveBeenCalledWith(
+      'D_DM',
+      'approved: Send email · gmail-mcp',
+    );
+    expect(mockHandleSubscribed).not.toHaveBeenCalled();
+  });
+
+  it.each(['2', '２', '拒绝', 'No!'])('rejects on "%s"', async (text) => {
+    await send(text);
+
+    expect(mockAnswerToolApproval.mock.calls[0][1]).toMatchObject({
+      decision: 'rejected',
+      reason: undefined,
+    });
+  });
+
+  it('refuses the call and passes anything else on to the agent', async () => {
+    await send('Don’t email her, text her instead');
+
+    expect(mockAnswerToolApproval.mock.calls[0][1]).toMatchObject({
+      decision: 'rejected',
+      reason: 'Don’t email her, text her instead',
+      toolMessageId: 'msg_tool_older',
+    });
+    expect(mockSlackBinder.sendDmText).toHaveBeenCalledWith(
+      'D_DM',
+      'rejected (redirected): Send email · gmail-mcp',
+    );
+    expect(mockHandleSubscribed).not.toHaveBeenCalled();
+  });
+
+  it('asks again when the message has nothing to read', async () => {
+    await send('');
+
+    expect(mockAnswerToolApproval).not.toHaveBeenCalled();
+    expect(mockSlackBinder.sendDmText).toHaveBeenCalledWith('D_DM', 'toolApprovalReplyOnlyText');
+  });
+
+  it('says so when the call was answered elsewhere first', async () => {
+    mockAnswerToolApproval.mockRejectedValue(
+      new MockToolApprovalError('CONFLICT', 'This tool call was already answered'),
+    );
+
+    await send('1');
+
+    expect(mockSlackBinder.sendDmText).toHaveBeenCalledWith('D_DM', 'toolApprovalAlreadyAnswered');
+    expect(mockHandleSubscribed).not.toHaveBeenCalled();
+  });
+
+  it('goes to the agent as usual when nothing waits in this chat', async () => {
+    mockListPendingInterventions.mockResolvedValue([]);
+
+    await send('1');
+
+    expect(mockAnswerToolApproval).not.toHaveBeenCalled();
+    expect(mockHandleSubscribed).toHaveBeenCalledTimes(1);
+  });
+
+  it('goes to the agent as usual in a chat that has no conversation yet', async () => {
+    await send('1', {});
+
+    expect(mockListPendingInterventions).not.toHaveBeenCalled();
+    expect(mockHandleSubscribed).toHaveBeenCalledTimes(1);
   });
 });

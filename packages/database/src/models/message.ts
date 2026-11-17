@@ -2426,9 +2426,13 @@ export class MessageModel {
   /**
    * Tool calls still waiting for the user's yes or no, newest first, with the conversation each
    * belongs to. The mobile app lists these; answering one resumes its run through `execAgent`'s
-   * `resumeApproval`.
+   * `resumeApproval`. `topicId` narrows the list to one conversation, e.g. the chat a reply came
+   * from.
    */
-  listPendingInterventions = async (limit = 50) => {
+  listPendingInterventions = async ({
+    limit = 50,
+    topicId,
+  }: { limit?: number; topicId?: string } = {}) => {
     const rows = await this.db
       .select({
         agentId: messages.agentId,
@@ -2448,6 +2452,7 @@ export class MessageModel {
       .where(
         and(
           sql`${messagePlugins.intervention}->>'status' = 'pending'`,
+          topicId ? eq(messages.topicId, topicId) : undefined,
           this.ownership(),
           this.pluginsOwnership(),
         ),

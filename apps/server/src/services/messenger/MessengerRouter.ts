@@ -11,6 +11,7 @@ import debug from 'debug';
 import type { MessengerPlatform } from '@/config/messenger';
 import { getServerDB } from '@/database/core/db-adaptor';
 import { AgentModel } from '@/database/models/agent';
+import { MessageModel } from '@/database/models/message';
 import { MessengerAccountLinkModel } from '@/database/models/messengerAccountLink';
 import { WorkspaceModel } from '@/database/models/workspace';
 import type { MessengerAccountLinkItem } from '@/database/schemas';
@@ -24,13 +25,16 @@ import { submitBotFeedback } from '@/server/services/bot/feedbackSubmit';
 import type { PlatformClient } from '@/server/services/bot/platforms';
 import { getBotReplyLocale } from '@/server/services/bot/platforms/const';
 import {
+  renderApprovalAnswered,
   renderApprovalReply,
   renderCommandReply,
   renderFeedbackSubmitted,
   renderInlineError,
 } from '@/server/services/bot/replyTemplate';
 import { answerToolApproval, ToolApprovalError } from '@/server/services/toolApproval';
+import { describeApprovalCall } from '@/server/services/toolApproval/describe';
 
+import { readApprovalReply } from './approvalReply';
 import { getInstallationStore } from './installations';
 import type { InstallationCredentials } from './installations/types';
 import { messengerPlatformRegistry } from './platforms';
@@ -570,6 +574,20 @@ export class MessengerRouter {
           } else {
             await binder.sendDmText(chatId, staleScopeText);
           }
+          return;
+        }
+
+        // A run in this chat waits for the sender's answer: the message is that answer
+        if (
+          await this.answerApprovalByReply({
+            link,
+            message,
+            platform,
+            reply: (text) => binder.sendDmText(chatId, text),
+            serverDB,
+            thread,
+          })
+        ) {
           return;
         }
 
@@ -1464,6 +1482,81 @@ export class MessengerRouter {
         text: 'Pick an agent to receive your messages:',
       },
     });
+  }
+
+  /**
+   * A message in a chat whose run waits for the sender's approval answers the oldest call waiting
+   * there, the one the chat asked about: "1" approves, "2" rejects, and anything else refuses it
+   * and passes the words on to the agent, so it can do what was asked instead. The sender's own
+   * account bounds the lookup, so someone else's message in a shared chat never answers it.
+   * Returns false when nothing waits here; the message then goes to the agent as usual.
+   */
+  private async answerApprovalByReply({
+    link,
+    message,
+    platform,
+    reply,
+    serverDB,
+    thread,
+  }: {
+    link: MessengerAccountLinkItem;
+    message: Message;
+    platform: MessengerPlatform;
+    reply: (text: string) => Promise<void>;
+    serverDB: LobeChatDatabase;
+    thread: any;
+  }): Promise<boolean> {
+    const topicId: string | undefined = (await thread.state)?.topicId;
+    if (!topicId) return false;
+
+    const workspaceId = link.workspaceId ?? undefined;
+    const pending = await new MessageModel(
+      serverDB,
+      link.userId,
+      workspaceId,
+    ).listPendingInterventions({ topicId });
+    const call = pending.at(-1);
+    if (!call) return false;
+
+    const lng = getBotReplyLocale(platform);
+    const answer = readApprovalReply(message.text);
+    log('answerApprovalByReply: %s answers %s in topic=%s', answer, call.id, topicId);
+
+    if (answer === 'unclear') {
+      await reply(renderApprovalReply('toolApprovalReplyOnlyText', lng));
+      return true;
+    }
+
+    const decision = answer === 'approved' ? 'approved' : 'rejected';
+    try {
+      await answerToolApproval(serverDB, {
+        decision,
+        reason: answer === 'other' ? message.text.trim() : undefined,
+        toolMessageId: call.id,
+        userId: link.userId,
+        via: platform,
+        workspaceId,
+      });
+    } catch (error) {
+      if (!(error instanceof ToolApprovalError)) throw error;
+
+      log('answerApprovalByReply: %s refused (%s)', call.id, error.code);
+      await reply(
+        renderApprovalReply(
+          error.code === 'CONFLICT' ? 'toolApprovalAlreadyAnswered' : 'toolApprovalGone',
+          lng,
+        ),
+      );
+      return true;
+    }
+
+    const { title } = describeApprovalCall({
+      apiName: call.apiName ?? 'tool',
+      arguments: call.arguments,
+      identifier: call.identifier,
+    });
+    await reply(renderApprovalAnswered({ decision, redirected: answer === 'other', title }, lng));
+    return true;
   }
 
   /**

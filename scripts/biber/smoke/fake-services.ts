@@ -44,8 +44,13 @@ export const decideReply = (
   request: Pick<ModelRequest, 'messages' | 'tools'>,
 ): { text: string } | { toolCall: { arguments: string; name: string } } => {
   const lastUser = request.messages.findLastIndex((m) => m.role === 'user');
-  const toolAnswered = request.messages.slice(lastUser + 1).some((m) => m.role === 'tool');
+  const toolResults = request.messages.slice(lastUser + 1).filter((m) => m.role === 'tool');
+  const toolAnswered = toolResults.length > 0;
   const askedToRunCode = /run code/i.test(textOf(request.messages[lastUser]?.content));
+  // A refused call comes back as "User reject this tool calling …"
+  if (toolResults.some((m) => /user reject/i.test(textOf(m.content)))) {
+    return { text: 'Understood, I left the code alone.' };
+  }
 
   if (!toolAnswered && askedToRunCode && request.tools.includes(CODE_TOOL)) {
     return {

@@ -17,6 +17,7 @@ const toolMessage = (
   owner: string,
   status: 'approved' | 'pending' | 'rejected',
   createdAt: string,
+  topicId = owner === userId ? 'topic-1' : 'topic-other',
 ) => ({
   message: {
     agentId: owner === userId ? 'agent-1' : 'agent-other',
@@ -24,7 +25,7 @@ const toolMessage = (
     createdAt: new Date(createdAt),
     id,
     role: 'tool',
-    topicId: owner === userId ? 'topic-1' : 'topic-other',
+    topicId,
     userId: owner,
   },
   plugin: {
@@ -50,6 +51,7 @@ beforeEach(async () => {
     ]);
     await trx.insert(topics).values([
       { agentId: 'agent-1', id: 'topic-1', userId },
+      { agentId: 'agent-1', id: 'topic-2', userId },
       { agentId: 'agent-other', id: 'topic-other', userId: otherUserId },
     ]);
 
@@ -59,6 +61,7 @@ beforeEach(async () => {
       toolMessage('approved', userId, 'approved', '2026-11-05T12:00:00Z'),
       toolMessage('rejected', userId, 'rejected', '2026-11-05T12:30:00Z'),
       toolMessage('someone-elses', otherUserId, 'pending', '2026-11-05T13:00:00Z'),
+      toolMessage('other-chat', userId, 'pending', '2026-11-05T09:00:00Z', 'topic-2'),
     ];
     await trx.insert(messages).values(rows.map((row) => row.message));
     await trx.insert(messagePlugins).values(rows.map((row) => row.plugin));
@@ -69,7 +72,11 @@ describe('MessageModel.listPendingInterventions', () => {
   it("lists only the user's own pending tool calls, newest first, with their conversation", async () => {
     const pending = await messageModel.listPendingInterventions();
 
-    expect(pending.map((item) => item.id)).toEqual(['newer-pending', 'older-pending']);
+    expect(pending.map((item) => item.id)).toEqual([
+      'newer-pending',
+      'older-pending',
+      'other-chat',
+    ]);
     expect(pending[0]).toMatchObject({
       agentId: 'agent-1',
       apiName: 'send_email',
@@ -82,7 +89,18 @@ describe('MessageModel.listPendingInterventions', () => {
   });
 
   it('stops at the limit', async () => {
-    expect(await messageModel.listPendingInterventions(1)).toHaveLength(1);
+    expect(await messageModel.listPendingInterventions({ limit: 1 })).toHaveLength(1);
+  });
+
+  it('narrows to one conversation', async () => {
+    expect(
+      (await messageModel.listPendingInterventions({ topicId: 'topic-1' })).map((item) => item.id),
+    ).toEqual(['newer-pending', 'older-pending']);
+    expect(
+      (await messageModel.listPendingInterventions({ topicId: 'topic-other' })).map(
+        (item) => item.id,
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -94,9 +112,9 @@ describe('MessageModel.claimPendingIntervention', () => {
     ]);
 
     expect([first, second].sort()).toEqual([false, true]);
-    expect((await messageModel.listPendingInterventions()).map((item) => item.id)).toEqual([
-      'older-pending',
-    ]);
+    expect(
+      (await messageModel.listPendingInterventions({ topicId: 'topic-1' })).map((item) => item.id),
+    ).toEqual(['older-pending']);
   });
 
   it('does not answer tool calls that are settled or belong to someone else', async () => {

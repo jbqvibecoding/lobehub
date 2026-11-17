@@ -4,6 +4,7 @@ import type { RenderStepParams } from '../replyTemplate';
 import {
   formatTokens,
   renderAgentError,
+  renderApprovalAnswered,
   renderApprovalRequest,
   renderCommandReply,
   renderDmRejected,
@@ -801,7 +802,7 @@ describe('renderApprovalRequest', () => {
     expect(
       renderApprovalRequest(
         {
-          hasButtons: true,
+          answerBy: 'buttons',
           isOwner: true,
           items: [
             { details: ['To: ana@example.com'], title: 'Send email · gmail-mcp' },
@@ -813,5 +814,43 @@ describe('renderApprovalRequest', () => {
     ).toBe(
       '⏸ 等你批准\n\n1. Send email · gmail-mcp\nTo: ana@example.com\n\n2. Delete file · drive',
     );
+  });
+
+  it('asks about the first call only when the answer is a reply, and counts the rest', () => {
+    expect(
+      renderApprovalRequest(
+        {
+          answerBy: 'reply',
+          isOwner: true,
+          items: [
+            { details: ['To: ana@example.com'], title: 'Send email · gmail-mcp' },
+            { details: [], title: 'Delete file · drive' },
+            { details: [], title: 'Pay invoice · stripe' },
+          ],
+        },
+        'zh-CN',
+      ),
+    ).toBe(
+      [
+        '⏸ 等你批准',
+        'Send email · gmail-mcp\nTo: ana@example.com',
+        '回复 1 批准，2 拒绝，或直接告诉我该怎么做（这次操作就不做了）。',
+        '之后还有 2 项等你确认。',
+      ].join('\n\n'),
+    );
+  });
+});
+
+describe('renderApprovalAnswered', () => {
+  it('names the call it answered', () => {
+    expect(renderApprovalAnswered({ decision: 'approved', title: 'Send email · gmail' })).toBe(
+      '✅ Approved: Send email · gmail. Continuing…',
+    );
+    expect(
+      renderApprovalAnswered(
+        { decision: 'rejected', redirected: true, title: 'Send email · gmail' },
+        'zh-CN',
+      ),
+    ).toBe('好的，不做「Send email · gmail」，已把你的话转告助理。');
   });
 });

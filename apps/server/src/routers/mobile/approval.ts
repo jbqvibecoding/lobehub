@@ -27,7 +27,9 @@ const approvalProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts)
 export const approvalRouter = router({
   listPending: approvalProcedure
     .input(z.object({ limit: z.number().int().min(1).max(100).optional() }).optional())
-    .query(async ({ ctx, input }) => ctx.messageModel.listPendingInterventions(input?.limit)),
+    .query(async ({ ctx, input }) =>
+      ctx.messageModel.listPendingInterventions({ limit: input?.limit }),
+    ),
 
   respond: approvalProcedure
     .use(withScopedPermission('message:create'))

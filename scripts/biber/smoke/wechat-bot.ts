@@ -1,7 +1,9 @@
 /**
  * The shared WeChat Official Account bot, against a running server: WeChat checks the server URL,
  * a new follower is sent the link that connects their account, they connect it, and a message they
- * send gets the agent's reply. Every delivery is encrypted and signed as WeChat does it in safe mode.
+ * send gets the agent's reply. An action that needs approval is answered in the chat: "1" approves
+ * it, and any other reply refuses it and is passed on to the agent. Every delivery is encrypted and
+ * signed as WeChat does it in safe mode.
  *
  *   bunx tsx scripts/biber/smoke/wechat-bot.ts
  *
@@ -80,6 +82,19 @@ const main = async () => {
   const model = await startFakeModel(Number(process.env.SMOKE_MODEL_PORT ?? 4010));
   const openId = `oSmoke${Date.now()}`;
   const sentTo = (text: RegExp) => wechat.sent.find((m) => m.to === openId && text.test(m.content));
+  const countSent = (text: RegExp) =>
+    wechat.sent.filter((m) => m.to === openId && text.test(m.content)).length;
+  const say = async (content: string) => {
+    const { text } = await deliver({
+      Content: content,
+      CreateTime: String(Math.floor(Date.now() / 1000)),
+      FromUserName: openId,
+      MsgId: String(Date.now()),
+      MsgType: 'text',
+      ToUserName: 'gh_biber',
+    });
+    if (text !== 'success') throw new Error(`webhook answered ${text}`);
+  };
 
   try {
     await step("WeChat's server URL check is answered", async () => {
@@ -122,7 +137,14 @@ const main = async () => {
     const client = new SmokeClient(BASE_URL);
     await client.signUp(`wechat-${Date.now()}@biber.test`, 'Smoke-pass-12345', 'WeChat smoke');
     const { agentId } = await client.mutation<{ agentId: string }>('lambda', 'agent.createAgent', {
-      config: { model: 'gpt-4o-mini', provider: 'openai', systemRole: '', title: 'WeChat agent' },
+      config: {
+        agencyConfig: { executionTarget: 'sandbox' },
+        model: 'gpt-4o-mini',
+        plugins: ['lobe-cloud-sandbox'],
+        provider: 'openai',
+        systemRole: '',
+        title: 'WeChat agent',
+      },
     });
 
     await step('connecting the account confirms in WeChat', async () => {
@@ -134,16 +156,37 @@ const main = async () => {
     });
 
     await step('a message gets the agent’s reply in WeChat', async () => {
-      const { text } = await deliver({
-        Content: '你好',
-        CreateTime: String(Math.floor(Date.now() / 1000)),
-        FromUserName: openId,
-        MsgId: String(Date.now()),
-        MsgType: 'text',
-        ToUserName: 'gh_biber',
-      });
-      if (text !== 'success') throw new Error(`webhook answered ${text}`);
+      await say('你好');
       await waitFor('the reply', async () => sentTo(/Hello from the fake model/), 90_000);
+    });
+
+    const PROMPT = /回复 1 批准，2 拒绝/;
+
+    await step('an action that needs approval asks for 1 or 2 in WeChat', async () => {
+      await say('Please run code that adds one and one.');
+      await waitFor('the approval request', async () => sentTo(PROMPT), 90_000);
+    });
+
+    await step('replying 1 approves it and the reply arrives', async () => {
+      await say('1');
+      await waitFor('the answer', async () => sentTo(/已批准：/), 15_000);
+      await waitFor(
+        'the reply after the approved action',
+        async () => sentTo(/The code ran/),
+        90_000,
+      );
+    });
+
+    await step('replying anything else refuses it and tells the agent', async () => {
+      await say('Please run code that adds two and two.');
+      await waitFor(
+        'a second approval request',
+        async () => countSent(PROMPT) >= 2 || undefined,
+        90_000,
+      );
+      await say('先别运行，直接告诉我答案');
+      await waitFor('the answer', async () => sentTo(/已把你的话转告助理/), 15_000);
+      await waitFor('the agent’s reply', async () => sentTo(/left the code alone/), 90_000);
     });
   } finally {
     wechat.close();
