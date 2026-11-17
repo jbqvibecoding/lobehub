@@ -375,6 +375,10 @@ export const startFakeLinqApi = async (port: number) => {
 };
 
 export interface LarkSent {
+  /** An interactive message's card, parsed */
+  card?: any;
+  /** `text`, `interactive`, …; edits keep the type they were sent with */
+  msgType?: string;
   /** The tenant whose token the request carried */
   tenant?: string;
   text: string;
@@ -430,7 +434,8 @@ export const startFakeLarkApi = async (port: number) => {
     });
 
     if (req.method === 'POST' && path === '/im/v1/messages') {
-      sent.push({ tenant, text: messageText(), to: body.receive_id });
+      const card = body.msg_type === 'interactive' ? JSON.parse(body.content) : undefined;
+      sent.push({ card, msgType: body.msg_type, tenant, text: messageText(), to: body.receive_id });
       json(sentMessage());
       return;
     }

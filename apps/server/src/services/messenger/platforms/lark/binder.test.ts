@@ -11,6 +11,7 @@ vi.mock('@/envs/app', () => ({ appEnv: { APP_URL: 'https://app.example.com' } })
 vi.mock('@/config/messenger', () => ({ getLarkFamilyConfig: vi.fn() }));
 vi.mock('../../linkTokenStore', () => ({ issueLinkToken: vi.fn() }));
 vi.mock('./tenant', () => ({ larkTenantApi: vi.fn() }));
+vi.mock('./tokens', () => ({ getLarkTenantAccessToken: vi.fn(async () => 'tenant-token') }));
 vi.mock('../../installations', () => ({ getInstallationStore: vi.fn() }));
 vi.mock('@/server/services/bot/platforms/feishu/client', () => ({
   createLarkStoreAppClient: vi.fn(() => ({ id: 'lark-client' })),
@@ -83,5 +84,97 @@ describe('MessengerLarkBinder', () => {
     expect(await new MessengerLarkBinder('lark').createClient()).toBeNull();
     vi.mocked(getLarkFamilyConfig).mockResolvedValueOnce(null);
     expect(await new MessengerLarkBinder('lark', creds).createClient()).toBeNull();
+  });
+});
+
+describe('MessengerLarkBinder approvals', () => {
+  const tapBody = (value: object, overrides: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      event: {
+        action: { tag: 'button', value },
+        context: { open_chat_id: 'oc_dm', open_message_id: 'om_card' },
+        operator: { open_id: 'ou_alice' },
+        token: 'c-tap-1',
+      },
+      header: { event_type: 'card.action.trigger', tenant_key: 'tenant-a', token: 'verify-token' },
+      schema: '2.0',
+      ...overrides,
+    });
+  const post = (body: string) =>
+    new Request('https://app.example.com/api/agent/messenger/webhooks/lark', {
+      body,
+      method: 'POST',
+    });
+
+  it('sends the request as a card with Approve / Reject buttons, using the tenant token', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(Response.json({ code: 0, data: { message_id: 'om_1' } }));
+
+    await new MessengerLarkBinder('lark', creds).sendApprovalRequest('oc_dm', {
+      approvals: [{ toolMessageId: 'tool_1' }],
+      labels: { approve: 'Approve', reject: 'Reject' },
+      text: '⏸ Waiting for your approval\n\nSend email · gmail',
+    });
+
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://open.larksuite.com/open-apis/im/v1/messages?receive_id_type=chat_id');
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer tenant-token');
+    const sent = JSON.parse(init.body as string);
+    expect(sent).toMatchObject({ msg_type: 'interactive', receive_id: 'oc_dm' });
+    const card = JSON.parse(sent.content);
+    expect(card.elements[0].text).toEqual({
+      content: '⏸ Waiting for your approval\n\nSend email · gmail',
+      tag: 'plain_text',
+    });
+    expect(card.elements[1].actions.map((b: any) => [b.text.content, b.value.action])).toEqual([
+      ['Approve', 'messenger:approve:tool_1'],
+      ['Reject', 'messenger:reject:tool_1'],
+    ]);
+    fetchSpy.mockRestore();
+  });
+
+  it('reads a tap on one of its buttons from an authenticated delivery', async () => {
+    const action = await new MessengerLarkBinder('lark', creds).extractCallbackAction(
+      post(tapBody({ action: 'messenger:approve:tool_1' })),
+    );
+
+    expect(action).toEqual({
+      callbackId: 'c-tap-1',
+      chatId: 'oc_dm',
+      data: 'messenger:approve:tool_1',
+      fromUserId: 'ou_alice',
+    });
+  });
+
+  it('ignores taps with a wrong token, and buttons that are not its own', async () => {
+    const binder = new MessengerLarkBinder('lark', creds);
+    const forged = tapBody(
+      { action: 'messenger:approve:tool_1' },
+      {
+        header: { event_type: 'card.action.trigger', tenant_key: 'tenant-a', token: 'nope' },
+      },
+    );
+
+    expect(await binder.extractCallbackAction(post(forged))).toBeNull();
+    expect(await binder.extractCallbackAction(post(tapBody({ action: 'other' })))).toBeNull();
+  });
+
+  it('answers a tap in the reply: a toast, and the card replaced by its outcome', async () => {
+    const reply = await new MessengerLarkBinder('lark', creds).acknowledgeCallback(
+      { callbackId: 'c', chatId: 'oc_dm', data: 'messenger:approve:tool_1', fromUserId: 'ou' },
+      { replaceText: 'Approved.', toast: 'Approved.' },
+    );
+
+    expect(await reply.json()).toEqual({
+      card: {
+        data: {
+          config: { update_multi: true },
+          elements: [{ tag: 'div', text: { content: 'Approved.', tag: 'plain_text' } }],
+        },
+        type: 'raw',
+      },
+      toast: { content: 'Approved.', type: 'info' },
+    });
   });
 });

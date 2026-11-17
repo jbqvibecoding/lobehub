@@ -9,7 +9,14 @@ import { createLarkStoreAppClient } from '@/server/services/bot/platforms/feishu
 import { getInstallationStore } from '../../installations';
 import type { InstallationCredentials } from '../../installations/types';
 import { issueLinkToken } from '../../linkTokenStore';
-import type { MessengerPlatformBinder, UnlinkedMessageContext } from '../../types';
+import type {
+  CallbackAcknowledgement,
+  InboundCallbackAction,
+  MessengerPlatformBinder,
+  UnlinkedMessageContext,
+} from '../../types';
+import { buildAnsweredCard, buildApprovalCard, readCardAction, sendLarkCard } from './approvalCard';
+import { readLarkEvent } from './events';
 import { larkTenantApi } from './tenant';
 import { getLarkTenantAccessToken } from './tokens';
 
@@ -124,6 +131,43 @@ export class MessengerLarkBinder implements MessengerPlatformBinder {
       params.platformUserId,
       `Linked. Your ${BRANDING_NAME} account is now connected.${tail}`,
     );
+  }
+
+  /**
+   * Answers a tap within Lark's three seconds: the toast shows above the card, and the card is
+   * replaced by its outcome (no buttons left) through the callback's own reply.
+   */
+  async acknowledgeCallback(
+    _action: InboundCallbackAction,
+    ack: CallbackAcknowledgement,
+  ): Promise<Response> {
+    return Response.json({
+      ...(ack.replaceText && { card: { data: buildAnsweredCard(ack.replaceText), type: 'raw' } }),
+      ...(ack.toast && { toast: { content: ack.toast, type: 'info' } }),
+    });
+  }
+
+  /** A tap on one of our card buttons, from an authenticated delivery; null for anything else. */
+  async extractCallbackAction(req: Request): Promise<InboundCallbackAction | null> {
+    const config = await getLarkFamilyConfig(this.platform);
+    if (!config) return null;
+    const read = readLarkEvent(req.headers, await req.text(), config);
+    return read.ok ? readCardAction(read.body) : null;
+  }
+
+  /** A paused run's request as a card with Approve / Reject buttons. */
+  async sendApprovalRequest(
+    chatId: string,
+    params: {
+      approvals: { toolMessageId: string }[];
+      labels: { approve: string; reject: string };
+      messageId?: string;
+      text: string;
+    },
+  ): Promise<void> {
+    const config = await getLarkFamilyConfig(this.platform);
+    if (!config || !this.creds) return;
+    await sendLarkCard(config, this.creds.tenantId, chatId, buildApprovalCard(params));
   }
 
   /** Lark has no ephemeral text, so a private reply to a group mention goes to the person's DM. */

@@ -322,8 +322,9 @@ export class MessengerRouter {
         try {
           const action = await bot.binder.extractCallbackAction(reconstructRequest(req, rawBody));
           if (action) {
-            await this.handleCallbackAction(bot.binder, creds, action);
-            return new Response('OK', { status: 200 });
+            // Some platforms take the answer in the reply itself (Lark: toast and updated card)
+            const reply = await this.handleCallbackAction(bot.binder, creds, action);
+            return reply ?? new Response('OK', { status: 200 });
           }
         } catch (error) {
           log('extractCallbackAction failed for %s: %O', platform, error);
@@ -1420,11 +1421,23 @@ export class MessengerRouter {
     binder: MessengerPlatformBinder,
     creds: InstallationCredentials,
     action: InboundCallbackAction,
-  ): Promise<void> {
+  ): Promise<Response | undefined> {
     if (!binder.acknowledgeCallback) return;
 
-    const ack = binder.acknowledgeCallback.bind(binder, action);
+    // A binder may answer the tap in the webhook's own reply; the last such reply wins
+    let reply: Response | undefined;
+    const ack = async (acknowledgement: CallbackAcknowledgement) => {
+      reply = (await binder.acknowledgeCallback!(action, acknowledgement)) ?? reply;
+    };
+    await this.dispatchCallbackAction(creds, action, ack);
+    return reply;
+  }
 
+  private async dispatchCallbackAction(
+    creds: InstallationCredentials,
+    action: InboundCallbackAction,
+    ack: (acknowledgement: CallbackAcknowledgement) => Promise<void>,
+  ): Promise<void> {
     const scopeMatch = action.data.match(/^messenger:scope:(.+)$/);
     if (scopeMatch) {
       await this.handleScopeCallback(creds, action, scopeMatch[1], ack);

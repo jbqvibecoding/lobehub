@@ -198,7 +198,13 @@ export class BotCallbackService {
 
       if (body.reason === 'waiting_for_human') {
         // The run paused for the user; it resumes as a new run once they answer.
-        await this.handleApprovalRequest(body, { binder, canEdit, messenger, replyLocale });
+        await this.handleApprovalRequest(body, {
+          binder,
+          canEdit,
+          client,
+          messenger,
+          replyLocale,
+        });
       } else {
         await this.handleCompletion(
           body,
@@ -572,11 +578,13 @@ export class BotCallbackService {
     {
       binder,
       canEdit,
+      client,
       messenger,
       replyLocale,
     }: {
       binder?: MessengerPlatformBinder;
       canEdit: boolean;
+      client: PlatformClient;
       messenger: PlatformMessenger;
       replyLocale: BotReplyLocale;
     },
@@ -607,7 +615,8 @@ export class BotCallbackService {
     const text = renderApprovalRequest({ answerBy, isOwner, items }, replyLocale);
 
     if (answerBy === 'buttons') {
-      await binder!.sendApprovalRequest!(body.platformThreadId.split(':')[1], {
+      // The platform's client knows its thread ids (`telegram:<chat>`, `feishu:p2p:<chat>`)
+      await binder!.sendApprovalRequest!(client.extractChatId(body.platformThreadId), {
         approvals: pending.map((call) => ({ toolMessageId: call.id })),
         labels: {
           approve: renderApprovalReply('toolApprovalApprove', replyLocale),

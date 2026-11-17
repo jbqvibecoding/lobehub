@@ -3,7 +3,9 @@
  * when an encrypt key is set: the setup challenge is answered, a delivery with the wrong token is
  * refused, a company installs the app, one of its people is sent the link that connects their
  * account, they connect it, and a message gets the agent's reply, all sent with that company's
- * own tenant token.
+ * own tenant token. An action that needs approval arrives as a card with Approve / Reject buttons;
+ * a forged tap is refused, and tapping Approve replaces the card with its outcome and resumes the
+ * run. `SMOKE_LARK_PLATFORM=feishu` runs the same against the Feishu app.
  *
  *   bunx tsx scripts/biber/smoke/lark-bot.ts
  *
@@ -162,7 +164,14 @@ const main = async () => {
     const client = new SmokeClient(BASE_URL);
     await client.signUp(`lark-${Date.now()}@biber.test`, 'Smoke-pass-12345', 'Lark smoke');
     const { agentId } = await client.mutation<{ agentId: string }>('lambda', 'agent.createAgent', {
-      config: { model: 'gpt-4o-mini', provider: 'openai', systemRole: '', title: 'Lark agent' },
+      config: {
+        agencyConfig: { executionTarget: 'sandbox' },
+        model: 'gpt-4o-mini',
+        plugins: ['lobe-cloud-sandbox'],
+        provider: 'openai',
+        systemRole: '',
+        title: 'Lark agent',
+      },
     });
 
     await step('connecting the account confirms in Lark', async () => {
@@ -187,6 +196,66 @@ const main = async () => {
       );
       if (reply.tenant !== tenantKey) throw new Error(`sent as tenant ${reply.tenant}`);
     });
+
+    const approve = await step(
+      'an action that needs approval arrives as a card with buttons',
+      async () => {
+        await deliver(received('Please run code that adds one and one.'));
+        const card = await waitFor(
+          'the approval card',
+          async () => lark.sent.find((m) => m.msgType === 'interactive' && m.to === chatId)?.card,
+          90_000,
+        );
+        const buttons = card.elements.flatMap((element: any) => element.actions ?? []);
+        const value = buttons.find((b: any) => b.value?.action?.startsWith('messenger:approve:'))
+          ?.value.action;
+        if (!value) throw new Error(`no Approve button: ${JSON.stringify(card)}`);
+        return value as string;
+      },
+    );
+
+    /** A tap on a card button, as Lark's `card.action.trigger` callback delivers it */
+    const tap = (action: string, token = app.token) => ({
+      event: {
+        action: { tag: 'button', value: { action } },
+        context: { open_chat_id: chatId, open_message_id: 'om_card' },
+        host: 'im_message',
+        operator: { open_id: openId, tenant_key: tenantKey },
+        token: `c-${randomUUID()}`,
+      },
+      header: {
+        app_id: app.appId,
+        create_time: String(Date.now()),
+        event_id: randomUUID(),
+        event_type: 'card.action.trigger',
+        tenant_key: tenantKey,
+        token,
+      },
+      schema: '2.0',
+    });
+
+    await step('a tap with the wrong verification token is refused', async () => {
+      const { status } = await deliver(tap(approve, 'wrong'));
+      if (status !== 401) throw new Error(`HTTP ${status}`);
+    });
+
+    await step(
+      'tapping Approve replaces the card with its outcome and the run carries on',
+      async () => {
+        const { status, text } = await deliver(tap(approve));
+        if (status !== 200) throw new Error(`HTTP ${status}: ${text}`);
+        const reply = JSON.parse(text);
+        const outcome = JSON.stringify(reply.card?.data ?? {});
+        if (!reply.toast || reply.card?.type !== 'raw' || outcome.includes('"button"')) {
+          throw new Error(`unexpected reply to the tap: ${text}`);
+        }
+        await waitFor(
+          'the reply after the approved action',
+          async () => sentText(/The code ran/),
+          90_000,
+        );
+      },
+    );
   } finally {
     lark.close();
     model.close();

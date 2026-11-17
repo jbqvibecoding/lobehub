@@ -1411,6 +1411,24 @@ describe('MessengerRouter approval buttons', () => {
     });
   });
 
+  it("hands back the binder's own reply to the tap, where the platform takes the answer there", async () => {
+    const binder = {
+      acknowledgeCallback: vi.fn(async (_action, ack) => Response.json({ toast: ack.toast })),
+    };
+
+    const reply = await (new MessengerRouter() as any).handleCallbackAction(
+      binder,
+      { platform: 'lark', tenantId: 'tenant-a' },
+      tap('messenger:approve:msg_tool_1'),
+    );
+
+    expect(mockAnswerToolApproval.mock.calls[0][1]).toMatchObject({
+      decision: 'approved',
+      via: 'lark',
+    });
+    expect(await reply.json()).toEqual({ toast: 'toolApprovalApproved' });
+  });
+
   it('does nothing for a sender who is not linked', async () => {
     mockFindLink.mockResolvedValue(null);
 

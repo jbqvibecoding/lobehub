@@ -250,7 +250,7 @@ describe('BotCallbackService', () => {
     mockMessengerBinderCreateClient.mockImplementation(async () => ({
       applicationId: 'mock-messenger-app',
       createAdapter: () => ({}),
-      extractChatId: (id: string) => id,
+      extractChatId: (id: string) => id.split(':').at(-1)!,
       getMessenger: mockGetMessenger,
       parseMessageId: (id: string) => id,
     }));

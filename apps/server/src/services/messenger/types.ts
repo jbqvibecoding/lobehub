@@ -76,7 +76,7 @@ export interface MessengerPlatformBinder {
   acknowledgeCallback?: (
     action: InboundCallbackAction,
     ack: CallbackAcknowledgement,
-  ) => Promise<void>;
+  ) => Promise<Response | void>;
 
   /** Construct the underlying platform client. Returns null if config is missing.
    *  Async because the credential lookup (`SystemBotProviderModel`) hits the DB. */

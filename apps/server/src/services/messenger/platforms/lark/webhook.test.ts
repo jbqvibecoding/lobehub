@@ -118,4 +118,14 @@ describe('larkWebhookGate', () => {
 
     expect(res).toBeNull();
   });
+
+  it('passes card button taps on to the install lookup and the binder', async () => {
+    const res = await deliver({
+      event: { action: { value: { action: 'messenger:approve:tool_1' } } },
+      header: { event_type: 'card.action.trigger', tenant_key: 'tenant-a', token: 'verify-token' },
+      schema: '2.0',
+    });
+
+    expect(res).toBeNull();
+  });
 });
