@@ -22,7 +22,7 @@ const useForegroundRefetch = () => {
 
 const Navigator = () => {
   const { data: session, isPending } = authClient.useSession();
-  useNotificationRouting();
+  useNotificationRouting(isPending ? undefined : !!session);
 
   // Nothing is decided until the stored session has loaded, so a cold start never flashes sign-in
   if (isPending) return null;

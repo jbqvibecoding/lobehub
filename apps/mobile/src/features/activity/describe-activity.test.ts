@@ -44,6 +44,18 @@ describe('describeActivity', () => {
     });
   });
 
+  it('names the chat an approval was answered in, and a request nobody answered', () => {
+    expect(
+      describeActivity(event({ eventType: 'approved', payload: { via: 'wechat' } })).where,
+    ).toBe('in WeChat');
+    expect(
+      describeActivity(event({ eventType: 'rejected', payload: { via: 'timeout' } })).where,
+    ).toBe('no answer within a day');
+    expect(
+      describeActivity(event({ eventType: 'approved', payload: { via: 'somewhere-new' } })).where,
+    ).toBeUndefined();
+  });
+
   it('explains blocks and failures', () => {
     expect(
       describeActivity(event({ eventType: 'blocked', payload: { errorCode: 'disabled_by_user' } }))

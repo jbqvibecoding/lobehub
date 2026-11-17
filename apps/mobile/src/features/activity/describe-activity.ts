@@ -33,7 +33,19 @@ const BLOCK_REASONS: Record<string, StringKey> = {
   disabled_by_user: 'activityBlockedByUser',
 };
 
-const WHERE: Record<string, StringKey> = { chat: 'answeredInApp', mobile: 'answeredOnPhone' };
+/** Where an answer came from (`via`): the app, the phone, a chat platform, or nobody in time. */
+const WHERE: Record<string, StringKey> = {
+  chat: 'answeredInApp',
+  discord: 'answeredInDiscord',
+  feishu: 'answeredInFeishu',
+  imessage: 'answeredInImessage',
+  lark: 'answeredInLark',
+  mobile: 'answeredOnPhone',
+  slack: 'answeredInSlack',
+  telegram: 'answeredInTelegram',
+  timeout: 'answeredByTimeout',
+  wechat: 'answeredInWechat',
+};
 
 /** One row of the activity list: what the agent did, what became of it, and why. */
 export const describeActivity = (event: ActivityEvent): ActivitySummary => {

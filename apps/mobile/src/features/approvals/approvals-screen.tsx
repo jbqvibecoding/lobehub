@@ -10,12 +10,14 @@ import {
   View,
 } from 'react-native';
 
+import { syncNotificationTray } from '@/features/push/notification-answer';
 import { registerForPush } from '@/features/push/register-for-push';
 import { t } from '@/i18n/strings';
 import { api } from '@/lib/api';
 import { type Palette, useColors } from '@/theme/colors';
 
 import { ApprovalCard } from './approval-card';
+import { useApprovalNotice } from './approval-notice';
 import { usePendingApprovals, useRespondToApproval } from './use-approvals';
 
 export const ApprovalsScreen = () => {
@@ -23,11 +25,16 @@ export const ApprovalsScreen = () => {
   const styles = createStyles(colors);
   const { data, error, isFetching, isLoading, refetch } = usePendingApprovals(api);
   const respond = useRespondToApproval(api);
+  const notice = useApprovalNotice();
 
   useEffect(() => {
     // Without a push token the list still works; it just does not ring
     registerForPush(api).catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (data) syncNotificationTray(data).catch(() => undefined);
+  }, [data]);
 
   const emptyState = () => {
     if (data) return <Text style={styles.message}>{t('approvalsEmpty')}</Text>;
@@ -55,6 +62,11 @@ export const ApprovalsScreen = () => {
         ListEmptyComponent={emptyState}
         ListHeaderComponent={
           <>
+            {notice ? (
+              <Text accessibilityLiveRegion="polite" role="status" style={styles.notice}>
+                {notice}
+              </Text>
+            ) : null}
             {error && data ? (
               <Text style={styles.inlineError}>{t('approvalsRefreshError')}</Text>
             ) : null}
@@ -92,6 +104,7 @@ const createStyles = (colors: Palette) =>
       marginTop: 48,
       textAlign: 'center',
     },
+    notice: { color: colors.label, fontSize: 15, fontWeight: '600', marginBottom: 12 },
     screen: { backgroundColor: colors.background, flex: 1 },
     separator: { height: 12 },
   });
