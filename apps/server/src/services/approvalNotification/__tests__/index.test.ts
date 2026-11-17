@@ -3,10 +3,11 @@ import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NotificationModel } from '@/database/models/notification';
+import { agents, messagePlugins, messages, topics } from '@/database/schemas';
 import { notificationDeliveries } from '@/database/schemas/notification';
 import { users } from '@/database/schemas/user';
 
-import type { PushDeliveryResult } from '../../push/types';
+import type { PushDeliveryContext, PushDeliveryResult } from '../../push/types';
 import { notifyPendingApprovals } from '../index';
 
 vi.mock('@/database/server', () => ({ serverDB: {} }));
@@ -19,7 +20,9 @@ const pendingTools = [
   { apiName: 'createPaymentLink', id: 'call-2', identifier: 'stripe-mcp' },
 ];
 
-const pushReturning = (result: PushDeliveryResult) => ({ deliver: vi.fn(async () => result) });
+const pushReturning = (result: PushDeliveryResult) => ({
+  deliver: vi.fn(async (_ctx: PushDeliveryContext) => result),
+});
 
 beforeEach(async () => {
   await db.delete(users);
@@ -43,6 +46,8 @@ describe('notifyPendingApprovals', () => {
     ]);
 
     expect(push.deliver).toHaveBeenCalledTimes(1);
+    // Several calls: no buttons, tapping opens the list
+    expect(push.deliver.mock.calls[0][0]).not.toHaveProperty('categoryId');
     expect(push.deliver).toHaveBeenCalledWith(
       expect.objectContaining({
         content: 'Send email · gmail-mcp, and 1 more',
@@ -56,6 +61,42 @@ describe('notifyPendingApprovals', () => {
     expect(deliveries).toEqual([
       expect.objectContaining({ channel: 'push', providerMessageId: '[]', status: 'sent' }),
     ]);
+  });
+
+  it('puts Approve / Reject on the push when the pause waits on a single call', async () => {
+    await db.insert(agents).values({ id: 'agent-1', title: 'Assistant', userId });
+    await db.insert(topics).values({ agentId: 'agent-1', id: 'topic-1', userId });
+    await db.insert(messages).values({
+      agentId: 'agent-1',
+      content: '',
+      id: 'tool-msg-1',
+      role: 'tool',
+      topicId: 'topic-1',
+      userId,
+    });
+    await db.insert(messagePlugins).values({
+      apiName: 'send_email',
+      id: 'tool-msg-1',
+      identifier: 'gmail-mcp',
+      intervention: { status: 'pending' },
+      toolCallId: 'call-1',
+      userId,
+    });
+    const push = pushReturning({ providerMessageId: '[]', status: 'sent' });
+
+    await notifyPendingApprovals(
+      db,
+      { agentId: 'agent-1', pendingTools: [pendingTools[0]], topicId: 'topic-1', userId },
+      push,
+    );
+
+    expect(push.deliver).toHaveBeenCalledWith(
+      expect.objectContaining({
+        categoryId: 'approval',
+        content: 'Send email · gmail-mcp',
+        data: { toolMessageId: 'tool-msg-1' },
+      }),
+    );
   });
 
   it('does not notify again when the same pause is retried or resumed', async () => {

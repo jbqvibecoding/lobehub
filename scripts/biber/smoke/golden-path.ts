@@ -97,11 +97,14 @@ const main = async () => {
         }
       });
 
-      await step('the phone is told it is needed', () =>
-        waitFor('a push to the phone', async () =>
-          fakes.push.sent.find((message) => message.to === pushToken),
-        ),
-      );
+      await step('the phone is told it is needed, with Approve / Reject on the push', async () => {
+        const message = await waitFor('a push to the phone', async () =>
+          fakes.push.sent.find((sent) => sent.to === pushToken),
+        );
+        if (message.categoryId !== 'approval' || message.data?.toolMessageId !== pending.id) {
+          throw new Error(`the push has no buttons for ${pending.id}: ${JSON.stringify(message)}`);
+        }
+      });
     }
 
     const toolMessageId = pending.id ?? pending.toolMessageId ?? pending.messageId;

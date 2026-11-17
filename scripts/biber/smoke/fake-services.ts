@@ -21,6 +21,9 @@ export interface ModelRequest {
 
 export interface PushRequest {
   body: string;
+  /** The notification category that gives it buttons, when it has any */
+  categoryId?: string;
+  data?: Record<string, string>;
   title: string;
   to: string;
 }

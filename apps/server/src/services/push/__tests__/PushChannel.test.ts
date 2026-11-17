@@ -99,6 +99,25 @@ describe('PushChannel', () => {
     });
   });
 
+  it('gives the notification its buttons and the fields the app reads on a tap', async () => {
+    mockListByUserId.mockResolvedValueOnce([
+      { deviceId: 'iphone', expoToken: 'ExponentPushToken[A]' },
+    ]);
+    const expo = makeExpoMock();
+    expo.sendPushNotificationsAsync.mockResolvedValueOnce([{ id: 'ticket-1', status: 'ok' }]);
+
+    await new PushChannel(expo as any).deliver({
+      ...ctx,
+      categoryId: 'approval',
+      data: { toolMessageId: 'tool-msg-1' },
+    });
+
+    expect(expo.sendPushNotificationsAsync.mock.calls[0][0][0]).toMatchObject({
+      categoryId: 'approval',
+      data: { notificationId: 'notif-1', toolMessageId: 'tool-msg-1', url: '/image?topic=t1' },
+    });
+  });
+
   it('drops send-time errors but still returns sent if at least one ticket succeeded', async () => {
     mockListByUserId.mockResolvedValueOnce([
       { deviceId: 'a', expoToken: 'ExponentPushToken[A]' },

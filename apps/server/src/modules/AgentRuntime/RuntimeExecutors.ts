@@ -117,6 +117,7 @@ const tellUserTheRunWaits = async (
       pendingTools: instruction.pendingToolsCalling,
       topicId: ctx.topicId ?? state.metadata?.topicId,
       userId: ctx.userId,
+      workspaceId: ctx.workspaceId,
     });
   } catch (error) {
     log('notifying op=%s of a pending approval failed: %O', ctx.operationId, error);

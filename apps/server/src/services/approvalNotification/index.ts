@@ -1,6 +1,7 @@
 import type { ChatToolPayload } from '@lobechat/types';
 import debug from 'debug';
 
+import { MessageModel } from '@/database/models/message';
 import { NotificationModel } from '@/database/models/notification';
 import type { LobeChatDatabase } from '@/database/type';
 
@@ -18,9 +19,16 @@ type PendingTool = Pick<ChatToolPayload, 'apiName' | 'id' | 'identifier'>;
 export const toolApprovalDedupeKey = (toolCallId: string) => `tool-approval:${toolCallId}`;
 
 /**
+ * The phone's notification category for a single waiting call: Approve and Reject buttons, which
+ * answer the call named by the push's `data.toolMessageId`.
+ */
+export const APPROVAL_PUSH_CATEGORY = 'approval';
+
+/**
  * Tells the user that a run paused for them: an inbox row per pending call, and one push to their
  * phones for the whole pause. The push names the actions, never their arguments, because it
- * passes through Expo, APNs and FCM.
+ * passes through Expo, APNs and FCM. When the pause waits on a single call, the push carries
+ * Approve and Reject buttons for it; with several, tapping it opens the list.
  */
 export const notifyPendingApprovals = async (
   db: LobeChatDatabase,
@@ -29,7 +37,14 @@ export const notifyPendingApprovals = async (
     pendingTools,
     topicId,
     userId,
-  }: { agentId?: string; pendingTools: PendingTool[]; topicId?: string; userId: string },
+    workspaceId,
+  }: {
+    agentId?: string;
+    pendingTools: PendingTool[];
+    topicId?: string;
+    userId: string;
+    workspaceId?: string;
+  },
   push: Pick<PushChannel, 'deliver'> = new PushChannel(),
 ) => {
   const model = new NotificationModel(db, userId);
@@ -55,8 +70,13 @@ export const notifyPendingApprovals = async (
 
   const notificationId = created[0].id;
   const tools = created.map(({ tool }) => tool);
+  const toolMessageId =
+    tools.length === 1 && topicId
+      ? await findToolMessageId(db, { toolCallId: tools[0].id, topicId, userId, workspaceId })
+      : undefined;
   const result = await push.deliver({
     actionUrl,
+    ...(toolMessageId && { categoryId: APPROVAL_PUSH_CATEGORY, data: { toolMessageId } }),
     content: TEXT.en.summary(tools),
     notificationId,
     title: TEXT.en.title,
@@ -97,3 +117,19 @@ const TEXT = {
 };
 
 const describeTool = (tool: PendingTool) => describeApprovalCall(tool).title;
+
+/** The tool message the phone answers, for a call the runtime knows by its call id. */
+const findToolMessageId = async (
+  db: LobeChatDatabase,
+  {
+    toolCallId,
+    topicId,
+    userId,
+    workspaceId,
+  }: { toolCallId: string; topicId: string; userId: string; workspaceId?: string },
+) => {
+  const pending = await new MessageModel(db, userId, workspaceId).listPendingInterventions({
+    topicId,
+  });
+  return pending.find((call) => call.toolCallId === toolCallId)?.id;
+};

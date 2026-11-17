@@ -136,8 +136,10 @@ export class PushChannel {
 
       return {
         body: text.content,
+        ...(ctx.categoryId && { categoryId: ctx.categoryId }),
         channelId: DEFAULT_PUSH_CHANNEL_ID,
         data: {
+          ...ctx.data,
           notificationId: ctx.notificationId,
           url: ctx.actionUrl,
         },

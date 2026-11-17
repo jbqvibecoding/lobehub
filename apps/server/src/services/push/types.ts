@@ -12,8 +12,15 @@
 export interface PushDeliveryContext {
   /** URL to navigate to when user taps the notification (sent as `data.url`) */
   actionUrl?: string;
+  /**
+   * The phone's notification category, which gives the notification its action buttons (Expo
+   * only; maker channels have none). The app registers each category it knows.
+   */
+  categoryId?: string;
   /** Notification body text */
   content: string;
+  /** More fields for the app to read when the notification or one of its buttons is tapped */
+  data?: Record<string, string>;
   /** Underlying notifications.id — sent as `data.notificationId` for tracing */
   notificationId: string;
   /** Notification title */
