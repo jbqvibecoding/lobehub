@@ -65,4 +65,33 @@ describe('assertRegionDeployment', () => {
   it('refuses an unknown region', () => {
     expect(() => assertRegionDeployment({ APP_REGION: 'mars' })).toThrow('Invalid APP_REGION');
   });
+
+  it('keeps overseas model providers out of the mainland edition', () => {
+    const problems = regionDeploymentProblems({
+      APP_REGION: 'cn',
+      DEEPSEEK_API_KEY: 'sk-ds',
+      DEFAULT_AGENT_CONFIG: 'provider=openai;model=gpt-4o',
+      NODE_ENV: 'production',
+      OPENAI_API_KEY: 'sk-oa',
+    });
+
+    expect(problems).toEqual([
+      expect.stringContaining('OPENAI_API_KEY is set'),
+      expect.stringContaining('DEFAULT_AGENT_CONFIG makes openai the default provider'),
+    ]);
+    expect(
+      regionDeploymentProblems({
+        APP_REGION: 'cn',
+        DEFAULT_AGENT_CONFIG: 'provider=deepseek;model=deepseek-chat',
+        NODE_ENV: 'production',
+      }),
+    ).toEqual([]);
+    expect(
+      regionDeploymentProblems({
+        APP_REGION: 'global',
+        NODE_ENV: 'production',
+        OPENAI_API_KEY: 'x',
+      }),
+    ).toEqual([]);
+  });
 });

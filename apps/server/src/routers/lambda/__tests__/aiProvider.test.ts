@@ -2,7 +2,7 @@
 import type * as BusinessConst from '@lobechat/business-const';
 import { OFFICIAL_PROVIDER_DISABLE_ERROR } from '@lobechat/business-const';
 import { RequestTrigger } from '@lobechat/types';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AiProviderModel } from '@/database/models/aiProvider';
 import { AiInfraRepos } from '@/database/repositories/aiInfra';
@@ -13,6 +13,8 @@ import { type AiProviderDetailItem, type AiProviderRuntimeState } from '@/types/
 
 import { aiProviderRouter } from '../aiProvider';
 
+const region = vi.hoisted(() => ({ APP_REGION: 'global' as string }));
+vi.mock('@/envs/region', () => ({ regionEnv: region }));
 vi.mock('@/server/globalConfig');
 vi.mock('@/server/modules/KeyVaultsEncrypt');
 vi.mock('@/database/repositories/aiInfra');
@@ -166,6 +168,54 @@ describe('aiProviderRouter', () => {
 
       expect(result).toEqual(mockRuntimeState);
       expect(mockGetState).toHaveBeenCalledWith(KeyVaultsGateKeeper.getUserKeyVaults);
+    });
+  });
+
+  describe('in the mainland edition', () => {
+    beforeEach(() => {
+      region.APP_REGION = 'cn';
+    });
+    afterEach(() => {
+      region.APP_REGION = 'global';
+    });
+
+    it('lists only the model providers it offers, with their models', async () => {
+      vi.mocked(AiInfraRepos).prototype.getAiProviderList = vi
+        .fn()
+        .mockResolvedValue([{ id: 'openai' }, { id: 'deepseek' }]);
+      vi.mocked(AiInfraRepos).prototype.getAiProviderRuntimeState = vi.fn().mockResolvedValue({
+        enabledAiModels: [
+          { id: 'gpt-4o', providerId: 'openai' },
+          { id: 'deepseek-chat', providerId: 'deepseek' },
+        ],
+        enabledAiProviders: [{ id: 'openai' }, { id: 'deepseek' }],
+        enabledChatAiProviders: [{ id: 'openai' }, { id: 'deepseek' }],
+        enabledImageAiProviders: [{ id: 'openai' }],
+        enabledVideoAiProviders: [],
+        runtimeConfig: { deepseek: {}, openai: {} },
+      });
+      const caller = aiProviderRouter.createCaller(createMockContext());
+
+      expect(await caller.getAiProviderList()).toEqual([{ id: 'deepseek' }]);
+      expect(await caller.getAiProviderRuntimeState({})).toEqual({
+        enabledAiModels: [{ id: 'deepseek-chat', providerId: 'deepseek' }],
+        enabledAiProviders: [{ id: 'deepseek' }],
+        enabledChatAiProviders: [{ id: 'deepseek' }],
+        enabledImageAiProviders: [],
+        enabledVideoAiProviders: [],
+        runtimeConfig: { deepseek: {} },
+      });
+    });
+
+    it('refuses custom providers', async () => {
+      const mockCreate = vi.fn();
+      vi.mocked(AiProviderModel).prototype.create = mockCreate;
+      const caller = aiProviderRouter.createCaller(createMockContext());
+
+      await expect(
+        caller.createAiProvider({ id: 'my-endpoint', name: 'Mine', source: 'custom' }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      expect(mockCreate).not.toHaveBeenCalled();
     });
   });
 

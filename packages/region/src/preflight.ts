@@ -1,4 +1,18 @@
+import { isModelProviderAvailable } from './availability';
 import { isMainlandRegion, resolveAppRegion } from './region';
+
+/** Platform keys for overseas model providers, which the mainland edition does not offer. */
+const OVERSEAS_MODEL_KEYS = [
+  'ANTHROPIC_API_KEY',
+  'AZURE_API_KEY',
+  'GOOGLE_API_KEY',
+  'GROQ_API_KEY',
+  'MISTRAL_API_KEY',
+  'OPENAI_API_KEY',
+  'OPENROUTER_API_KEY',
+  'PERPLEXITY_API_KEY',
+  'XAI_API_KEY',
+];
 
 type DeploymentEnv = Record<string, string | undefined>;
 
@@ -27,6 +41,21 @@ export const regionDeploymentProblems = (env: DeploymentEnv): string[] => {
   if (env.STRIPE_SECRET_KEY?.trim()) {
     problems.push(
       'STRIPE_SECRET_KEY is set, but Stripe bills the Global edition only. The mainland edition is paid through WeChat Pay and Alipay; remove the Stripe keys.',
+    );
+  }
+
+  for (const key of OVERSEAS_MODEL_KEYS) {
+    if (env[key]?.trim()) {
+      problems.push(
+        `${key} is set, but the mainland edition offers only model providers serving from mainland China (see MAINLAND_MODEL_PROVIDERS in @lobechat/region). Remove it.`,
+      );
+    }
+  }
+
+  const defaultProvider = env.DEFAULT_AGENT_CONFIG?.match(/provider=([^;]+)/)?.[1]?.trim();
+  if (defaultProvider && !isModelProviderAvailable(region, defaultProvider)) {
+    problems.push(
+      `DEFAULT_AGENT_CONFIG makes ${defaultProvider} the default provider, which the mainland edition does not offer. Pick one from MAINLAND_MODEL_PROVIDERS, e.g. provider=deepseek.`,
     );
   }
 

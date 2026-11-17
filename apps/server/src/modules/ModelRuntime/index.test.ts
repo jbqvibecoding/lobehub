@@ -37,6 +37,9 @@ interface InspectableBedrockRuntime {
   region: string;
 }
 
+const region = vi.hoisted(() => ({ APP_REGION: 'global' as string }));
+vi.mock('@/envs/region', () => ({ regionEnv: region }));
+
 // 模拟依赖项
 vi.mock('@/envs/llm', () => ({
   getLLMConfig: vi.fn(() => ({
@@ -560,6 +563,25 @@ describe('initModelRuntimeWithUserPayload method', () => {
  * This function builds ClientSecretPayload based on runtimeProvider (sdkType)
  * to ensure provider-specific fields are correctly forwarded
  */
+describe('model providers by edition', () => {
+  it('refuses providers the mainland edition does not offer, before any request', () => {
+    region.APP_REGION = 'cn';
+    try {
+      expect(() => initModelRuntimeWithUserPayload('openai', { apiKey: 'k' })).toThrow(
+        expect.objectContaining({ errorType: 'LocationNotSupportError' }),
+      );
+      expect(() => initModelRuntimeWithUserPayload('my-custom-endpoint', {})).toThrow(
+        expect.objectContaining({ errorType: 'LocationNotSupportError' }),
+      );
+      expect(initModelRuntimeWithUserPayload('deepseek', { apiKey: 'k' })).toBeInstanceOf(
+        ModelRuntime,
+      );
+    } finally {
+      region.APP_REGION = 'global';
+    }
+  });
+});
+
 describe('buildPayloadFromKeyVaults', () => {
   describe('should build payload with correct fields based on runtimeProvider', () => {
     it('OpenAI compatible: returns apiKey, baseURL and runtimeProvider', () => {

@@ -14,7 +14,12 @@
 | `CRON_SECRET`               | 定时任务调用内部地址时带的密钥，见第 5 节 "后台运行的审批过期" |
 
 国内版启动时会拒绝这些配置：Stripe 密钥、`SANDBOX_PROVIDER=market`、
-`AGENT_RUNTIME_MODE=queue` 但没有境内的 `QSTASH_URL`。规则在 `packages/region/src/preflight.ts`。
+`AGENT_RUNTIME_MODE=queue` 但没有境内的 `QSTASH_URL`、境外模型厂商的密钥（`OPENAI_API_KEY`、`ANTHROPIC_API_KEY` 等），
+以及把境外厂商设为默认的 `DEFAULT_AGENT_CONFIG`。规则在 `packages/region/src/preflight.ts`。
+
+国内版只提供境内厂商的模型（DeepSeek、通义千问、智谱、Kimi、豆包等，清单是 `@lobechat/region` 的
+`MAINLAND_MODEL_PROVIDERS`），平台密钥用这些厂商的，例如 `DEEPSEEK_API_KEY`。默认模型已经是 DeepSeek。
+系统助手（起标题、记忆提取等）和文件向量化用到的模型也要配成境内厂商，否则这些功能会因为模型不可用而失败。
 
 ## 2. 付款
 
@@ -191,7 +196,8 @@ curl -fsS -H "Authorization: Bearer $CRON_SECRET" < APP_URL > /api/agent/approva
 2. 服务端的环境变量：
    - 国际版：`OPENAI_API_KEY` 设任意值，`OPENAI_PROXY_URL=http://127.0.0.1:4010/v1`，
      `EXPO_BASE_URL=http://127.0.0.1:4020`。
-   - 中国大陆版：`ALIYUN_SMS_*` 设任意值，并设 `ALIYUN_SMS_ENDPOINT=http://127.0.0.1:4030`；
+   - 中国大陆版：`DEEPSEEK_API_KEY` 设任意值，`DEEPSEEK_PROXY_URL=http://127.0.0.1:4010/v1`（国内版不提供 OpenAI）；
+     `ALIYUN_SMS_*` 设任意值，并设 `ALIYUN_SMS_ENDPOINT=http://127.0.0.1:4030`；
      `ALIPAY_PUBLIC_KEY` 设成一把本地 RSA 密钥的公钥。
 3. 运行：
    - `bunx tsx scripts/biber/smoke/golden-path.ts`，用 `SMOKE_BASE_URL` 指向服务端。

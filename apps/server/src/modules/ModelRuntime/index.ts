@@ -1,11 +1,14 @@
 import { type GoogleGenAIOptions } from '@google/genai';
 import {
+  AgentRuntimeError,
   mergeModelRuntimeHooks,
   ModelRuntime,
   type ModelRuntimeHooks,
 } from '@lobechat/model-runtime';
 import { LobeVertexAI } from '@lobechat/model-runtime/vertexai';
+import { isModelProviderAvailable } from '@lobechat/region';
 import {
+  AgentRuntimeErrorType,
   type AWSBedrockKeyVault,
   type AzureOpenAIKeyVault,
   type ClientSecretPayload,
@@ -24,6 +27,7 @@ import { getBusinessModelRuntimeHooks } from '@/business/server/model-runtime';
 import { AiProviderModel } from '@/database/models/aiProvider';
 import { type LobeChatDatabase } from '@/database/type';
 import { getLLMConfig } from '@/envs/llm';
+import { regionEnv } from '@/envs/region';
 import { createLLMGenerationTracingHook } from '@/server/services/llmGenerationTracing/hook';
 import { ensureFreshOAuthToken } from '@/server/services/oauthDeviceFlow/refresh';
 
@@ -384,6 +388,20 @@ const buildVertexOptions = (
 };
 
 /**
+ * The mainland edition offers only model providers serving from mainland China
+ * (`MAINLAND_MODEL_PROVIDERS` in `@lobechat/region`). Every server-side model call starts here, so
+ * a provider the edition does not offer (an overseas one, or a custom endpoint) is refused before
+ * any request leaves, whatever the agent or the user's settings say.
+ */
+const assertProviderOffered = (provider: string) => {
+  if (isModelProviderAvailable(regionEnv.APP_REGION, provider)) return;
+  throw AgentRuntimeError.createError(AgentRuntimeErrorType.LocationNotSupportError, {
+    message: `The model provider "${provider}" is not offered in this edition.`,
+    provider,
+  });
+};
+
+/**
  * Initializes the agent runtime with the user payload in backend
  * @param provider - The provider name.
  * @param payload - The JWT payload.
@@ -396,6 +414,7 @@ export const initModelRuntimeWithUserPayload = (
   params: any = {},
   hooks?: ModelRuntimeHooks,
 ) => {
+  assertProviderOffered(provider);
   const runtimeProvider = payload.runtimeProvider ?? provider;
 
   if (runtimeProvider === ModelProvider.VertexAI) {
@@ -439,6 +458,8 @@ export const initModelRuntimeFromDB = async (
   provider: string,
   workspaceId?: string,
 ): Promise<ModelRuntime> => {
+  assertProviderOffered(provider);
+
   // 1. Get user's provider configuration from database
   const aiProviderModel = new AiProviderModel(db, userId, workspaceId);
 

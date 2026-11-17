@@ -1,4 +1,5 @@
 import { isOfficialProvider, OFFICIAL_PROVIDER_DISABLE_ERROR } from '@lobechat/business-const';
+import { isModelProviderAvailable } from '@lobechat/region';
 import { RequestTrigger } from '@lobechat/types';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
@@ -8,6 +9,7 @@ import { wsCompatProcedure } from '@/business/server/trpc-middlewares/workspaceA
 import { AiProviderModel } from '@/database/models/aiProvider';
 import { UserModel } from '@/database/models/user';
 import { AiInfraRepos } from '@/database/repositories/aiInfra';
+import { regionEnv } from '@/envs/region';
 import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { getServerGlobalConfig } from '@/server/globalConfig';
@@ -20,6 +22,24 @@ import {
   UpdateAiProviderSchema,
 } from '@/types/aiProvider';
 import { type ProviderConfig } from '@/types/user/settings';
+
+/**
+ * The mainland edition lists only the model providers it offers (`MAINLAND_MODEL_PROVIDERS`), so
+ * settings and model pickers never show one a call would be refused for.
+ */
+const offered = (provider: string) => isModelProviderAvailable(regionEnv.APP_REGION, provider);
+
+const offeredRuntimeState = (state: AiProviderRuntimeState): AiProviderRuntimeState => ({
+  ...state,
+  enabledAiModels: state.enabledAiModels.filter((model) => offered(model.providerId)),
+  enabledAiProviders: state.enabledAiProviders.filter((provider) => offered(provider.id)),
+  enabledChatAiProviders: state.enabledChatAiProviders.filter((provider) => offered(provider.id)),
+  enabledImageAiProviders: state.enabledImageAiProviders.filter((provider) => offered(provider.id)),
+  enabledVideoAiProviders: state.enabledVideoAiProviders.filter((provider) => offered(provider.id)),
+  runtimeConfig: Object.fromEntries(
+    Object.entries(state.runtimeConfig).filter(([provider]) => offered(provider)),
+  ),
+});
 
 const aiProviderProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) => {
   const { ctx } = opts;
@@ -105,6 +125,12 @@ export const aiProviderRouter = router({
     .use(withScopedPermission('ai_provider:create'))
     .input(CreateAiProviderSchema)
     .mutation(async ({ input, ctx }) => {
+      if (!offered(input.id)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Custom model providers are not offered in this edition',
+        });
+      }
       try {
         const data = await ctx.aiProviderModel.create(input, ctx.gateKeeper.encrypt);
         return data?.id;
@@ -128,13 +154,15 @@ export const aiProviderRouter = router({
     }),
 
   getAiProviderList: aiProviderProcedure.query(async ({ ctx }) => {
-    return await ctx.aiInfraRepos.getAiProviderList();
+    return (await ctx.aiInfraRepos.getAiProviderList()).filter((provider) => offered(provider.id));
   }),
 
   getAiProviderRuntimeState: aiProviderProcedure
     .input(z.object({ isLogin: z.boolean().optional() }))
     .query(async ({ ctx }): Promise<AiProviderRuntimeState> => {
-      return ctx.aiInfraRepos.getAiProviderRuntimeState(KeyVaultsGateKeeper.getUserKeyVaults);
+      return offeredRuntimeState(
+        await ctx.aiInfraRepos.getAiProviderRuntimeState(KeyVaultsGateKeeper.getUserKeyVaults),
+      );
     }),
 
   removeAiProvider: aiProviderProcedure

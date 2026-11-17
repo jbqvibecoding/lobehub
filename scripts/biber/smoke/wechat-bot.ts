@@ -12,7 +12,8 @@
  *   echo '{"appSecret":"smoke","token":"<SMOKE_WECHAT_TOKEN>","encodingAESKey":"<SMOKE_WECHAT_AES_KEY>"}' |
  *     bunx tsx scripts/biber/ops.ts bot set wechat --application-id <SMOKE_WECHAT_APP_ID> \
  *       --settings '{"apiBaseUrl":"http://127.0.0.1:4040"}'
- * The server's OPENAI_PROXY_URL must point at this script's fake model (port 4010).
+ * The server's DEEPSEEK_PROXY_URL must point at this script's fake model (port 4010), with
+ * DEEPSEEK_API_KEY set to any value: the mainland edition does not offer OpenAI.
  */
 import { randomBytes } from 'node:crypto';
 
@@ -140,9 +141,10 @@ const main = async () => {
     const { agentId } = await client.mutation<{ agentId: string }>('lambda', 'agent.createAgent', {
       config: {
         agencyConfig: { executionTarget: 'sandbox' },
-        model: 'gpt-4o-mini',
+        // The mainland edition offers only providers serving from mainland China
+        model: process.env.SMOKE_MODEL ?? 'deepseek-v4-flash',
         plugins: ['lobe-cloud-sandbox'],
-        provider: 'openai',
+        provider: process.env.SMOKE_MODEL_PROVIDER ?? 'deepseek',
         systemRole: '',
         title: 'WeChat agent',
       },

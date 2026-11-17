@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { isModelProviderAvailable } from './availability';
 import { isMainlandRegion, regionalIdentifier, requireAppRegion, resolveAppRegion } from './region';
 
 describe('resolveAppRegion', () => {
@@ -42,5 +43,22 @@ describe('region identity', () => {
     expect(regionalIdentifier('com.example.app', 'global')).toBe('com.example.app');
     expect(regionalIdentifier('com.example.app', 'cn')).toBe('com.example.app.cn');
     expect(regionalIdentifier('example', 'dev', '-')).toBe('example-dev');
+  });
+});
+
+describe('isModelProviderAvailable', () => {
+  it('offers every provider in the Global edition', () => {
+    expect(isModelProviderAvailable('global', 'openai')).toBe(true);
+    expect(isModelProviderAvailable('global', 'my-custom-endpoint')).toBe(true);
+  });
+
+  it('offers only providers serving from mainland China in the mainland edition', () => {
+    for (const region of ['cn', 'dev'] as const) {
+      expect(isModelProviderAvailable(region, 'deepseek')).toBe(true);
+      expect(isModelProviderAvailable(region, 'qwen')).toBe(true);
+      expect(isModelProviderAvailable(region, 'openai')).toBe(false);
+      expect(isModelProviderAvailable(region, 'openrouter')).toBe(false);
+      expect(isModelProviderAvailable(region, 'my-custom-endpoint')).toBe(false);
+    }
   });
 });

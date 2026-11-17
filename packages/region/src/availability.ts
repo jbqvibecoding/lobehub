@@ -40,3 +40,48 @@ export const isPaymentProviderAvailable = (region: AppRegion, provider: string):
   (isMainlandRegion(region) ? MAINLAND_PAYMENT_PROVIDERS : GLOBAL_PAYMENT_PROVIDERS).includes(
     provider,
   );
+
+/**
+ * Model providers the mainland edition offers: vendors serving their models from mainland China.
+ * The edition provides a generative AI service there, so prompts and replies stay with providers
+ * that operate inside mainland China; overseas providers (OpenAI, Anthropic, Google, …), gateways
+ * that relay to them, and custom OpenAI-compatible endpoints a user could point anywhere are not
+ * offered. Global offers every provider.
+ */
+export const MAINLAND_MODEL_PROVIDERS: readonly string[] = [
+  'ai360',
+  'antgroup',
+  'baichuan',
+  'bailianCodingPlan',
+  'deepseek',
+  'giteeai',
+  'glmCodingPlan',
+  'hunyuan',
+  'infiniai',
+  'internlm',
+  'kimiCodingPlan',
+  'longcat',
+  'minimax',
+  'minimaxCodingPlan',
+  'modelscope',
+  'moonshot',
+  'ppio',
+  'qiniu',
+  'qwen',
+  'sensenova',
+  'siliconcloud',
+  'spark',
+  'stepfun',
+  'streamlake',
+  'taichu',
+  'tencentcloud',
+  'volcengine',
+  'volcengineCodingPlan',
+  'wenxin',
+  'xiaomimimo',
+  'zeroone',
+  'zhipu',
+];
+
+export const isModelProviderAvailable = (region: AppRegion, providerId: string): boolean =>
+  !isMainlandRegion(region) || MAINLAND_MODEL_PROVIDERS.includes(providerId);
