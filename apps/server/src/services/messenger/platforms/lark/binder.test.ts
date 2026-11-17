@@ -178,3 +178,20 @@ describe('MessengerLarkBinder approvals', () => {
     });
   });
 });
+
+describe('MessengerLarkBinder language', () => {
+  it('invites a Feishu user in Chinese and a Lark user in English', async () => {
+    vi.mocked(getLarkFamilyConfig).mockResolvedValue({ ...config, platform: 'feishu' });
+    await new MessengerLarkBinder('feishu', { ...creds, platform: 'feishu' }).handleUnlinkedMessage(
+      { authorUserId: 'ou_alice', chatId: 'oc_dm' },
+    );
+    expect(api.sendMessageToUser.mock.calls[0][1]).toMatch(/^欢迎使用 Biber！[\s\S]*飞书账号/);
+
+    vi.mocked(getLarkFamilyConfig).mockResolvedValue(config);
+    await new MessengerLarkBinder('lark', creds).handleUnlinkedMessage({
+      authorUserId: 'ou_bob',
+      chatId: 'oc_dm',
+    });
+    expect(api.sendMessageToUser.mock.calls[1][1]).toMatch(/^Welcome to Biber!/);
+  });
+});

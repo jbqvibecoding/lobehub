@@ -23,7 +23,6 @@ import { AgentBridgeService } from '@/server/services/bot/AgentBridgeService';
 import { buildBotContext } from '@/server/services/bot/buildBotContext';
 import { submitBotFeedback } from '@/server/services/bot/feedbackSubmit';
 import type { PlatformClient } from '@/server/services/bot/platforms';
-import { getBotReplyLocale } from '@/server/services/bot/platforms/const';
 import {
   renderApprovalAnswered,
   renderApprovalReply,
@@ -38,6 +37,7 @@ import { readApprovalReply } from './approvalReply';
 import { getInstallationStore } from './installations';
 import type { InstallationCredentials } from './installations/types';
 import { messengerPlatformRegistry } from './platforms';
+import { messengerReplies, messengerReplyLocale } from './replies';
 import type {
   AgentPickerEntry,
   CallbackAcknowledgement,
@@ -132,16 +132,6 @@ interface MessengerCommand {
     required?: boolean;
   }>;
 }
-
-const HELP_TEXT = [
-  'Commands:',
-  '• /start — bind (or rebind) your Biber account',
-  '• /switch — switch the active scope (personal or a workspace)',
-  '• /agents — list your agents and switch the active one',
-  '• /new — start a new conversation',
-  '• /stop — stop the current execution',
-  '• /feedback <message> — send feedback to the Biber team (no AI reply)',
-].join('\n');
 
 /**
  * Pull the Discord interaction id + token off a chat-sdk slash event so
@@ -446,6 +436,7 @@ export class MessengerRouter {
   ): void {
     const platform = creds.platform;
     const tenantId = creds.tenantId;
+    const replies = messengerReplies(platform);
 
     const handle = async (
       thread: any,
@@ -540,7 +531,7 @@ export class MessengerRouter {
         // In a channel, route the prompt ephemerally so the entire channel
         // doesn't see the system message.
         if (!link.activeAgentId) {
-          const noAgentText = 'No active agent selected. Send /agents to pick one.';
+          const noAgentText = replies.noActiveAgent;
           if (isChannelMention && binder.replyEphemeral) {
             const threadTs = String(thread.id).split(':')[2];
             await binder.replyEphemeral({
@@ -562,8 +553,7 @@ export class MessengerRouter {
           link.workspaceId &&
           !(await userIsWorkspaceMember(serverDB, link.userId, link.workspaceId))
         ) {
-          const staleScopeText =
-            'Your active workspace is no longer available. Send /switch to choose another scope.';
+          const staleScopeText = replies.scopeUnavailable;
           if (isChannelMention && binder.replyEphemeral) {
             const threadTs = String(thread.id).split(':')[2];
             await binder.replyEphemeral({
@@ -604,7 +594,9 @@ export class MessengerRouter {
       } catch (error) {
         log('handle: handler error: %O', error);
         try {
-          await thread.post(renderInlineError('Something went wrong'));
+          await thread.post(
+            renderInlineError(replies.somethingWentWrong, messengerReplyLocale(platform)),
+          );
         } catch {
           /* ignore */
         }
@@ -704,9 +696,7 @@ export class MessengerRouter {
             .getState()
             .setIfNotExists(mentionRequiredAnnouncedKey(thread.id), '1', PARTICIPANTS_TTL_MS);
           if (fresh) {
-            await thread.post(
-              "Multiple people are talking in this thread now. From here on I'll only respond when you @mention me.",
-            );
+            await thread.post(replies.multipleHumans);
           }
         } catch (error) {
           log('onSubscribedMessage: mention-mode announcement failed: %O', error);
@@ -811,9 +801,7 @@ export class MessengerRouter {
           // active agent and the conversation hangs at "typing…" with no
           // reply. Treat `/start` as the unbound-only onboarding command.
           if (ctx.link) {
-            await ctx.reply(
-              'Your account is already linked to Biber. Send /agents to switch the active agent, or /new to start a fresh conversation.',
-            );
+            await ctx.reply(messengerReplies(ctx.platform).alreadyLinked);
             return;
           }
           // The verify-im URL is one-shot and account-binding; it must reach
@@ -845,7 +833,7 @@ export class MessengerRouter {
           // For the Slack ephemeral path the prompt is already inline, a
           // second "check your DM" would be misleading.
           if (!ctx.isDM && !canEphemeralInChannel) {
-            await ctx.reply('Check your DM with Biber for the link button.');
+            await ctx.reply(messengerReplies(ctx.platform).checkDmForLink);
           }
         },
         name: 'start',
@@ -877,14 +865,14 @@ export class MessengerRouter {
         description: 'Start a new conversation',
         handler: async (ctx) => {
           if (!ctx.link) {
-            await ctx.reply('You need to /start to bind your account first.');
+            await ctx.reply(messengerReplies(ctx.platform).notLinked);
             return;
           }
           if (!ctx.thread) {
             // Slash dispatch has no chat-sdk Thread; setState lives on the
             // thread instance, so direct the user back to the DM where the
             // text path can pick the command up.
-            await ctx.reply('Open your direct message with the Biber bot and send `/new` there.');
+            await ctx.reply(messengerReplies(ctx.platform).useDirectMessage('/new'));
             return;
           }
           // Drop the cached topicId so the next message starts a fresh topic.
@@ -894,7 +882,7 @@ export class MessengerRouter {
           } catch (error) {
             log('command /new: setState failed: %O', error);
           }
-          await ctx.reply('Started a new conversation. Your next message begins a fresh topic.');
+          await ctx.reply(messengerReplies(ctx.platform).newConversation);
         },
         name: 'new',
       },
@@ -902,16 +890,16 @@ export class MessengerRouter {
         description: 'Stop the current execution',
         handler: async (ctx) => {
           if (!ctx.link) {
-            await ctx.reply('You need to /start to bind your account first.');
+            await ctx.reply(messengerReplies(ctx.platform).notLinked);
             return;
           }
           if (!ctx.thread) {
-            await ctx.reply('Open your direct message with the Biber bot and send `/stop` there.');
+            await ctx.reply(messengerReplies(ctx.platform).useDirectMessage('/stop'));
             return;
           }
           const isActive = AgentBridgeService.isThreadActive(ctx.thread.id);
           if (!isActive) {
-            await ctx.reply('No active execution to stop.');
+            await ctx.reply(messengerReplies(ctx.platform).nothingToStop);
             return;
           }
           const operationId = AgentBridgeService.getActiveOperationId(ctx.thread.id);
@@ -923,14 +911,14 @@ export class MessengerRouter {
               const result = await aiAgentService.interruptTask({ operationId });
               if (!result.success) {
                 log('command /stop: runtime interrupt rejected for op=%s', operationId);
-                await ctx.reply('Unable to stop the current execution.');
+                await ctx.reply(messengerReplies(ctx.platform).unableToStop);
                 return;
               }
               AgentBridgeService.clearActiveThread(ctx.thread.id);
               log('command /stop: interrupted op=%s', operationId);
             } catch (error) {
               log('command /stop: interruptTask failed: %O', error);
-              await ctx.reply('Unable to stop the current execution.');
+              await ctx.reply(messengerReplies(ctx.platform).unableToStop);
               return;
             }
           } else {
@@ -939,7 +927,7 @@ export class MessengerRouter {
             AgentBridgeService.requestStop(ctx.thread.id);
             log('command /stop: queued deferred stop for thread=%s', ctx.thread.id);
           }
-          await ctx.reply('Stop requested.');
+          await ctx.reply(messengerReplies(ctx.platform).stopRequested);
         },
         name: 'stop',
       },
@@ -960,12 +948,14 @@ export class MessengerRouter {
           // an unbound user has no email/identity to attach. Mirror the
           // `/new` / `/stop` "you need to /start" guard for consistency.
           if (!ctx.link) {
-            await ctx.reply('You need to /start to bind your account first.');
+            await ctx.reply(messengerReplies(ctx.platform).notLinked);
             return;
           }
           const body = ctx.args.trim();
           if (!body) {
-            await ctx.reply(renderCommandReply('cmdFeedbackUsage'));
+            await ctx.reply(
+              renderCommandReply('cmdFeedbackUsage', messengerReplyLocale(ctx.platform)),
+            );
             return;
           }
           const result = await submitBotFeedback(ctx.serverDB, {
@@ -975,17 +965,21 @@ export class MessengerRouter {
             userId: ctx.link.userId,
           });
           if (!result.success) {
-            await ctx.reply(renderCommandReply('cmdFeedbackError'));
+            await ctx.reply(
+              renderCommandReply('cmdFeedbackError', messengerReplyLocale(ctx.platform)),
+            );
             return;
           }
-          await ctx.reply(renderFeedbackSubmitted(result.issueUrl));
+          await ctx.reply(
+            renderFeedbackSubmitted(result.issueUrl, messengerReplyLocale(ctx.platform)),
+          );
         },
         name: 'feedback',
       },
       {
         description: 'Show usage',
         handler: async (ctx) => {
-          await ctx.reply(HELP_TEXT);
+          await ctx.reply(messengerReplies(ctx.platform).help);
         },
         name: 'help',
       },
@@ -1030,7 +1024,7 @@ export class MessengerRouter {
 
     const command = this.commands.find((c) => c.name === cmdName);
     if (!command) {
-      await reply(`Unknown command: /${cmdName}`);
+      await reply(messengerReplies(creds.platform).unknownCommand(cmdName));
       return;
     }
 
@@ -1104,7 +1098,7 @@ export class MessengerRouter {
     } catch (error) {
       log('handleSlashCommand: handler error for /%s: %O', cmdName, error);
       try {
-        await reply('Something went wrong.');
+        await reply(messengerReplies(creds.platform).somethingWentWrong);
       } catch {
         /* ignore */
       }
@@ -1119,15 +1113,16 @@ export class MessengerRouter {
    */
   private async runAgentsCommand(ctx: MessengerCommandContext): Promise<void> {
     const { binder, chatId, link, serverDB } = ctx;
+    const replies = messengerReplies(ctx.platform);
 
     if (!link) {
-      await ctx.reply('You need to /start to bind your account first.');
+      await ctx.reply(replies.notLinked);
       return;
     }
 
     const userAgents = await this.fetchUserAgents(serverDB, link.userId, link.workspaceId);
     if (userAgents.length === 0) {
-      await ctx.reply('You have no agents yet. Create one in Biber, then come back to /agents.');
+      await ctx.reply(replies.noAgentsYet);
       return;
     }
 
@@ -1137,18 +1132,16 @@ export class MessengerRouter {
     if (args && !binder.sendAgentPicker) {
       const index = Number.parseInt(args, 10);
       if (!Number.isInteger(index) || index < 1 || index > userAgents.length) {
-        await ctx.reply(`Usage: /agents <n>, where n is between 1 and ${userAgents.length}.`);
+        await ctx.reply(replies.agentsUsage(userAgents.length));
         return;
       }
       const target = userAgents[index - 1];
       if (link.activeAgentId === target.id) {
-        await ctx.reply(`${target.title} is already the active agent.`);
+        await ctx.reply(replies.agentAlreadyActive(target.title));
         return;
       }
       await MessengerAccountLinkModel.setActiveAgentById(serverDB, link.id, target.id);
-      await ctx.reply(
-        `Switched active agent to: ${target.title}. Your next message will go there.`,
-      );
+      await ctx.reply(replies.agentSwitched(target.title));
       return;
     }
 
@@ -1164,19 +1157,17 @@ export class MessengerRouter {
         // complete the deferred reply via the follow-up webhook. Without
         // this, Discord keeps "Thinking..." until it times out.
         interaction: ctx.interaction,
-        text: 'Tap an agent to make it the active one:',
+        text: replies.agentPickerPrompt,
       });
       return;
     }
 
     // Final fallback: numbered list + usage hint for `/agents <n>`.
     const lines = userAgents.map((agent, i) => {
-      const marker = link.activeAgentId === agent.id ? ' (active)' : '';
+      const marker = link.activeAgentId === agent.id ? replies.listActiveMarker : '';
       return `${i + 1}. ${agent.title}${marker}`;
     });
-    await ctx.reply(
-      `Your agents:\n${lines.join('\n')}\n\nReply with /agents <n> to switch the active agent.`,
-    );
+    await ctx.reply(replies.agentsList(lines.join('\n')));
   }
 
   /**
@@ -1192,12 +1183,13 @@ export class MessengerRouter {
    */
   private async runSwitchCommand(ctx: MessengerCommandContext): Promise<void> {
     const { binder, chatId, link, serverDB } = ctx;
+    const replies = messengerReplies(ctx.platform);
     if (!link) {
-      await ctx.reply('You need to /start to bind your account first.');
+      await ctx.reply(replies.notLinked);
       return;
     }
 
-    const scopes = await this.fetchUserScopes(serverDB, link.userId);
+    const scopes = await this.fetchUserScopes(serverDB, link.userId, replies.personalScope);
 
     // Text-fallback path: `/switch 2` switches without needing the keyboard,
     // for platforms (or clients) where tap-buttons aren't available.
@@ -1205,16 +1197,16 @@ export class MessengerRouter {
     if (arg && !binder.sendAgentPicker) {
       const index = Number.parseInt(arg, 10);
       if (!Number.isInteger(index) || index < 1 || index > scopes.length) {
-        await ctx.reply(`Usage: /switch <n>, where n is between 1 and ${scopes.length}.`);
+        await ctx.reply(replies.switchUsage(scopes.length));
         return;
       }
       const target = scopes[index - 1];
       if ((link.workspaceId ?? null) === target.id) {
-        await ctx.reply(`You're already in ${target.name}.`);
+        await ctx.reply(replies.alreadyInScope(target.name));
         return;
       }
       const defaultAgent = await this.applyScopeSwitch(serverDB, link.id, link.userId, target);
-      await ctx.reply(this.scopeSwitchedText(target.name, defaultAgent?.title));
+      await ctx.reply(replies.scopeSwitched(target.name, defaultAgent?.title));
       return;
     }
 
@@ -1228,17 +1220,17 @@ export class MessengerRouter {
         // Discord-only: forward the slash interaction so the binder can
         // complete the deferred reply via the follow-up webhook.
         interaction: ctx.interaction,
-        text: 'Tap a scope to switch:',
+        text: replies.scopePickerPrompt,
       });
       return;
     }
 
     // Final fallback: numbered list + usage hint for `/switch <n>`.
     const lines = scopes.map((scope, i) => {
-      const marker = (link.workspaceId ?? null) === scope.id ? ' (current)' : '';
+      const marker = (link.workspaceId ?? null) === scope.id ? replies.listCurrentMarker : '';
       return `${i + 1}. ${scope.name}${marker}`;
     });
-    await ctx.reply(`Scopes:\n${lines.join('\n')}\n\nReply with /switch <n> to switch scope.`);
+    await ctx.reply(replies.scopesList(lines.join('\n')));
   }
 
   /**
@@ -1248,11 +1240,13 @@ export class MessengerRouter {
   private async fetchUserScopes(
     serverDB: LobeChatDatabase,
     userId: string,
+    personalName: string,
   ): Promise<{ id: string | null; name: string }[]> {
-    if (!(await isWorkspaceFeatureEnabledForUser(userId))) return [{ id: null, name: 'Personal' }];
+    const personal = { id: null, name: personalName };
+    if (!(await isWorkspaceFeatureEnabledForUser(userId))) return [personal];
 
     const workspaces = await new WorkspaceModel(serverDB, userId).listUserWorkspaces();
-    return [{ id: null, name: 'Personal' }, ...workspaces.map((w) => ({ id: w.id, name: w.name }))];
+    return [personal, ...workspaces.map((w) => ({ id: w.id, name: w.name }))];
   }
 
   /**
@@ -1276,12 +1270,6 @@ export class MessengerRouter {
       defaultAgent?.id ?? null,
     );
     return defaultAgent;
-  }
-
-  private scopeSwitchedText(scopeName: string, defaultAgentTitle?: string): string {
-    return defaultAgentTitle
-      ? `Switched to ${scopeName}. Now chatting with ${defaultAgentTitle}. Send /agents to change.`
-      : `Switched to ${scopeName}. No agents here yet — create one in Biber, then /agents.`;
   }
 
   private toScopeEntries(
@@ -1458,7 +1446,7 @@ export class MessengerRouter {
 
     const switchMatch = action.data.match(/^messenger:switch:(.+)$/);
     if (!switchMatch) {
-      await ack({ toast: 'Unknown action.' });
+      await ack({ toast: messengerReplies(creds.platform).unknownAction });
       return;
     }
 
@@ -1471,14 +1459,14 @@ export class MessengerRouter {
       creds.tenantId,
     );
     if (!link) {
-      await ack({ toast: 'Not linked. Send /start first.' });
+      await ack({ toast: messengerReplies(creds.platform).notLinkedToast });
       return;
     }
 
     const userAgents = await this.fetchUserAgents(serverDB, link.userId, link.workspaceId);
     const target = userAgents.find((agent) => agent.id === targetAgentId);
     if (!target) {
-      await ack({ toast: 'Agent not found.' });
+      await ack({ toast: messengerReplies(creds.platform).agentNotFound });
       return;
     }
 
@@ -1489,10 +1477,10 @@ export class MessengerRouter {
 
     await MessengerAccountLinkModel.setActiveAgentById(serverDB, link.id, targetAgentId);
     await ack({
-      toast: `Switched to ${target.title}.`,
+      toast: messengerReplies(creds.platform).agentSwitchedToast(target.title),
       updatedPicker: {
         entries: this.toPickerEntries(userAgents, targetAgentId),
-        text: 'Pick an agent to receive your messages:',
+        text: messengerReplies(creds.platform).agentPickerPrompt,
       },
     });
   }
@@ -1531,7 +1519,7 @@ export class MessengerRouter {
     const call = pending.at(-1);
     if (!call) return false;
 
-    const lng = getBotReplyLocale(platform);
+    const lng = messengerReplyLocale(platform);
     const answer = readApprovalReply(message.text);
     log('answerApprovalByReply: %s answers %s in topic=%s', answer, call.id, topicId);
 
@@ -1586,7 +1574,7 @@ export class MessengerRouter {
     toolMessageId: string,
     ack: (ack: CallbackAcknowledgement) => Promise<void>,
   ): Promise<void> {
-    const lng = getBotReplyLocale(creds.platform);
+    const lng = messengerReplyLocale(creds.platform);
     const serverDB = await getServerDB();
     const link = await MessengerAccountLinkModel.findByPlatformUser(
       serverDB,
@@ -1595,7 +1583,7 @@ export class MessengerRouter {
       creds.tenantId,
     );
     if (!link) {
-      await ack({ toast: 'Not linked. Send /start first.' });
+      await ack({ toast: messengerReplies(creds.platform).notLinkedToast });
       return;
     }
 
@@ -1647,30 +1635,34 @@ export class MessengerRouter {
       creds.tenantId,
     );
     if (!link) {
-      await ack({ toast: 'Not linked. Send /start first.' });
+      await ack({ toast: messengerReplies(creds.platform).notLinkedToast });
       return;
     }
 
     const targetScopeId = scopeToken === PERSONAL_SCOPE_ID ? null : scopeToken;
-    const scopes = await this.fetchUserScopes(serverDB, link.userId);
+    const scopes = await this.fetchUserScopes(
+      serverDB,
+      link.userId,
+      messengerReplies(creds.platform).personalScope,
+    );
     const target = scopes.find((scope) => scope.id === targetScopeId);
     if (!target) {
-      await ack({ toast: 'Scope not found.' });
+      await ack({ toast: messengerReplies(creds.platform).scopeNotFound });
       return;
     }
 
     if ((link.workspaceId ?? null) === target.id) {
-      await ack({ toast: `You're already in ${target.name}.` });
+      await ack({ toast: messengerReplies(creds.platform).alreadyInScope(target.name) });
       return;
     }
 
     const defaultAgent = await this.applyScopeSwitch(serverDB, link.id, link.userId, target);
     await ack({
-      toast: this.scopeSwitchedText(target.name, defaultAgent?.title),
+      toast: messengerReplies(creds.platform).scopeSwitched(target.name, defaultAgent?.title),
       updatedPicker: {
         action: 'scope',
         entries: this.toScopeEntries(scopes, target.id),
-        text: 'Tap a scope to switch:',
+        text: messengerReplies(creds.platform).scopePickerPrompt,
       },
     });
   }

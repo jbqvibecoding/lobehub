@@ -1,4 +1,3 @@
-import { BRANDING_NAME } from '@lobechat/business-const';
 import debug from 'debug';
 
 import { getLarkFamilyConfig, type MessengerLarkConfig } from '@/config/messenger';
@@ -9,6 +8,7 @@ import { createLarkStoreAppClient } from '@/server/services/bot/platforms/feishu
 import { getInstallationStore } from '../../installations';
 import type { InstallationCredentials } from '../../installations/types';
 import { issueLinkToken } from '../../linkTokenStore';
+import { messengerReplies } from '../../replies';
 import type {
   CallbackAcknowledgement,
   InboundCallbackAction,
@@ -24,7 +24,8 @@ const log = debug('lobe-server:messenger:lark');
 
 type LarkPlatform = MessengerLarkConfig['platform'];
 
-const PLATFORM_NAMES: Record<LarkPlatform, string> = { feishu: 'Feishu', lark: 'Lark' };
+/** How the platform is named in its own replies: Feishu speaks Chinese in both editions. */
+const PLATFORM_NAMES: Record<LarkPlatform, string> = { feishu: '飞书', lark: 'Lark' };
 
 export const buildLarkVerifyUrl = (params: {
   appUrl: string;
@@ -90,7 +91,7 @@ export class MessengerLarkBinder implements MessengerPlatformBinder {
       log('handleUnlinkedMessage: failed to issue link token: %O', error);
       await this.sendPrivately(
         ctx.authorUserId,
-        `${BRANDING_NAME} is temporarily unavailable. Please try again in a moment.`,
+        messengerReplies(this.platform).temporarilyUnavailable,
       );
       return;
     }
@@ -103,7 +104,7 @@ export class MessengerLarkBinder implements MessengerPlatformBinder {
     });
     await this.sendPrivately(
       ctx.authorUserId,
-      `Welcome to ${BRANDING_NAME}!\n\nTo continue, link your ${PLATFORM_NAMES[this.platform]} account to ${BRANDING_NAME}. The link expires in 30 minutes:\n\n${verifyUrl}\n\nAfter linking, send /agents anytime to see your agents and switch between them.`,
+      messengerReplies(this.platform).linkInvite(PLATFORM_NAMES[this.platform], verifyUrl),
     );
   }
 
@@ -124,12 +125,9 @@ export class MessengerLarkBinder implements MessengerPlatformBinder {
       return;
     }
 
-    const tail = params.activeAgentName
-      ? `\n\nActive agent: ${params.activeAgentName}\n\nSend your first message now, or /agents anytime to switch.`
-      : '\n\nSend /agents to see your agents and pick one.';
     await new MessengerLarkBinder(this.platform, creds).sendPrivately(
       params.platformUserId,
-      `Linked. Your ${BRANDING_NAME} account is now connected.${tail}`,
+      messengerReplies(this.platform).linked(params.activeAgentName),
     );
   }
 
