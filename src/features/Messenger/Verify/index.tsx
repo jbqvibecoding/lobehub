@@ -15,7 +15,7 @@ import { messengerService } from '@/services/messenger';
 import { isMessengerPlatform } from '../constants';
 import { getMessengerErrorMessage } from '../i18n';
 import Body from './Body';
-import { Heading, IconRow, styles } from './Body/shared';
+import { AwaitingCodeCard, Heading, IconRow, styles } from './Body/shared';
 
 const MessengerVerifyPage = memo(() => {
   const { t } = useTranslation('messenger');
@@ -125,6 +125,13 @@ const MessengerVerifyPage = memo(() => {
             title={t('verify.error.title')}
           />
         </Flexbox>
+      );
+    }
+
+    // WeChat: confirmed here, but the code has not come from WeChat yet
+    if (consumedToken?.awaitingCode) {
+      return (
+        <AwaitingCodeCard platformLabel={platform === 'wechat' ? t('verify.wechat') : platform} />
       );
     }
 

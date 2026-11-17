@@ -152,11 +152,20 @@ export default {
     'This Biber account is already linked to {{platform}} account {{account}}. To link a different {{platform}} account, disconnect the current one first in Settings → Messenger.',
   'verify.confirm.relink.manage': 'Open Messenger settings',
   'verify.confirm.relink.title': 'Another {{platform}} account is already linked',
+  'verify.awaitingCode.codeLabel': 'Code to send',
+  'verify.awaitingCode.description':
+    'Send this code to Biber in {{platform}} within {{minutes}} minutes. The link takes effect once it arrives.',
+  'verify.awaitingCode.lost':
+    'Send the code this page showed to Biber in {{platform}}. If you did not note it, wait 10 minutes, then send Biber any message to start again.',
+  'verify.awaitingCode.title': 'One last step in {{platform}}',
+  'verify.awaitingCode.warning':
+    'Send it only from your own account. Never tell this code to anyone: whoever sends it gets access to your Biber assistant.',
   'verify.confirm.title': 'Confirm linking',
   'verify.confirm.workspace': 'Workspace: {{workspace}}',
   'verify.error.alreadyConsumed':
     'This link has already been used to connect an account. Sign in to that Biber account to manage the connection, or return to the bot and send /start again to issue a new link.',
   'verify.error.alreadyConsumedTitle': 'This link is already used',
+  'verify.wechat': 'WeChat',
   'verify.error.alreadyLinkedToOther':
     'This account is already linked to a different Biber account. Sign in to that account first.',
   'verify.error.expired': 'This link has expired. Please return to the bot and send /start again.',

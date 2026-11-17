@@ -99,6 +99,11 @@
   "messenger.unlinkFailed": "断开失败。",
   "messenger.unlinkSuccess": "已断开。",
   "messenger.unlinkTitle": "断开账号",
+  "verify.awaitingCode.codeLabel": "要发送的数字",
+  "verify.awaitingCode.description": "请在 {{minutes}} 分钟内，在{{platform}}里把这串数字发给 Biber。收到后绑定才会生效。",
+  "verify.awaitingCode.lost": "请在{{platform}}里把刚才页面上显示的数字发给 Biber。没记下来的话，等 10 分钟后给 Biber 发任意消息，重新开始。",
+  "verify.awaitingCode.title": "最后一步：在{{platform}}里确认",
+  "verify.awaitingCode.warning": "只从你自己的账号发送，不要把这串数字告诉任何人：谁发出它，谁就能使用你的 Biber 助理。",
   "verify.confirm.conflict.description": "此 {{platform}} 账号已绑定到 Biber 账号 {{email}}。请登录该账号管理绑定，或先在该账号下解绑后再试。",
   "verify.confirm.conflict.switchAccount": "切换其他账号登录",
   "verify.confirm.conflict.title": "该账号已被绑定",
@@ -127,5 +132,6 @@
   "verify.signInRequired": "请登录 Biber 以确认绑定。",
   "verify.success.description": "你的账号已连接到 {{platform}}。打开 {{platform}} 并发送你的第一条消息。",
   "verify.success.openBot": "在 {{platform}} 中打开",
-  "verify.success.title": "绑定成功！"
+  "verify.success.title": "绑定成功！",
+  "verify.wechat": "微信"
 }

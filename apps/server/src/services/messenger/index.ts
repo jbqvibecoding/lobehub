@@ -14,4 +14,5 @@ export { MessengerSlackBinder } from './platforms/slack';
 export { MessengerTelegramBinder } from './platforms/telegram';
 export { MessengerWechatBinder } from './platforms/wechat';
 export { wechatFollowQrUrl } from './platforms/wechat/followQr';
+export { startWechatLinkCode, WECHAT_LINK_CODE_TTL_SECONDS } from './platforms/wechat/linkCode';
 export type { MessengerPlatformBinder } from './types';

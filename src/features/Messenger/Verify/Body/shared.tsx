@@ -153,7 +153,8 @@ export interface ConfirmCardProps {
     title: string;
   };
   infoRows: InfoRow[];
-  onSuccess: () => void;
+  /** `awaitingCode`: the link waits for this code to be sent from the platform (WeChat). */
+  onSuccess: (result: { awaitingCode?: { code: string; expiresInMinutes: number } }) => void;
   platform: MessengerPlatform;
   randomId: string;
   /** Current user's avatar, used to label the "personal" scope option. */
@@ -229,8 +230,11 @@ export const ConfirmCard = memo<ConfirmCardProps>(
       if (!selectedAgentId) return;
       setConfirming(true);
       try {
-        await messengerService.confirmLink({ initialAgentId: selectedAgentId, randomId });
-        onSuccess();
+        const result = await messengerService.confirmLink({
+          initialAgentId: selectedAgentId,
+          randomId,
+        });
+        onSuccess('awaitingCode' in result ? { awaitingCode: result.awaitingCode } : {});
       } catch (error) {
         message.error(getMessengerErrorMessage(error, t, 'verify.error.generic'));
       } finally {
@@ -355,6 +359,52 @@ export const SuccessCard = memo<SuccessCardProps>(({ openBotUrl, platformLabel }
   );
 });
 SuccessCard.displayName = 'MessengerVerifySuccessCard';
+
+export interface AwaitingCodeCardProps {
+  /** Shown right after the confirm; after a refresh the code is no longer known. */
+  code?: string;
+  expiresInMinutes?: number;
+  platformLabel: string;
+}
+
+/**
+ * The confirm went through on the web; the link takes effect once this code is sent from the
+ * platform account being linked (WeChat), which proves the same person is on both ends.
+ */
+export const AwaitingCodeCard = memo<AwaitingCodeCardProps>(
+  ({ code, expiresInMinutes = 10, platformLabel }) => {
+    const { t } = useTranslation('messenger');
+
+    return (
+      <Flexbox align="center" className={styles.card} gap={24}>
+        <Heading
+          title={t('verify.awaitingCode.title', { platform: platformLabel })}
+          subtitle={
+            code
+              ? t('verify.awaitingCode.description', {
+                  minutes: expiresInMinutes,
+                  platform: platformLabel,
+                })
+              : t('verify.awaitingCode.lost', { platform: platformLabel })
+          }
+        />
+        {code && (
+          <Text
+            aria-label={t('verify.awaitingCode.codeLabel')}
+            as="p"
+            style={{ fontSize: 40, fontWeight: 700, letterSpacing: 8, margin: 0 }}
+          >
+            {code}
+          </Text>
+        )}
+        <Text align="center" type="secondary">
+          {t('verify.awaitingCode.warning')}
+        </Text>
+      </Flexbox>
+    );
+  },
+);
+AwaitingCodeCard.displayName = 'MessengerVerifyAwaitingCodeCard';
 
 export interface PeekedToken {
   linkedToEmail?: string | null;

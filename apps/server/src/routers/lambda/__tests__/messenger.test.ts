@@ -21,8 +21,12 @@ const {
   mockPeekConsumedLinkToken,
   mockPeekLinkToken,
   mockSlackAuthTest,
+  mockStartWechatLinkCode,
+  mockAskForLinkCode,
   mockUpsertForPlatform,
 } = vi.hoisted(() => ({
+  mockAskForLinkCode: vi.fn(async () => undefined),
+  mockStartWechatLinkCode: vi.fn(),
   mockConsumeLinkToken: vi.fn(),
   mockFindByPlatform: vi.fn(),
   mockFindByPlatformUser: vi.fn(),
@@ -94,8 +98,13 @@ vi.mock('@/server/services/messenger', () => ({
   MessengerTelegramBinder: vi.fn().mockImplementation(() => ({
     notifyLinkSuccess: mockNotifyTelegramLinkSuccess,
   })),
+  MessengerWechatBinder: vi.fn().mockImplementation(() => ({
+    askForLinkCode: mockAskForLinkCode,
+  })),
   peekConsumedLinkToken: mockPeekConsumedLinkToken,
   peekLinkToken: mockPeekLinkToken,
+  startWechatLinkCode: mockStartWechatLinkCode,
+  WECHAT_LINK_CODE_TTL_SECONDS: 600,
 }));
 
 vi.mock('@/server/services/bot/platforms/slack/api', () => ({
@@ -240,6 +249,7 @@ describe('messengerRouter.peekLinkToken', () => {
     const result = await caller.peekLinkToken({ randomId: 'rand-1234' });
 
     expect(result).toEqual({
+      awaitingCode: false,
       platform: 'slack',
       status: 'consumed',
       tenantId: 'T_LOBE',
@@ -382,7 +392,7 @@ describe('messengerRouter.confirmLink', () => {
     const result = await caller.confirmLink({ initialAgentId: 'agent-1', randomId: 'rand-1234' });
 
     expect(result).toEqual({ data: { id: 'link-1' }, success: true });
-    expect(mockConsumeLinkToken).toHaveBeenCalledWith('rand-1234');
+    expect(mockConsumeLinkToken).toHaveBeenCalledWith('rand-1234', { awaitingCode: false });
     expect(mockUpsertForPlatform).toHaveBeenCalledWith({
       activeAgentId: 'agent-1',
       platform: 'telegram',
@@ -391,6 +401,36 @@ describe('messengerRouter.confirmLink', () => {
       tenantId: '',
       workspaceId: null,
     });
+  });
+
+  it('holds a WeChat link until the code shown here is sent from that WeChat', async () => {
+    const selectBuilder = createSelectBuilder([
+      { id: 'agent-1', title: 'Biber', userId: 'user-1', workspaceId: null },
+    ]);
+    mockGetServerDB.mockResolvedValue({ select: vi.fn(() => selectBuilder) });
+    const linkPayload = { platform: 'wechat', platformUserId: 'o_wechat', tenantId: '' };
+    mockPeekLinkToken.mockResolvedValue(linkPayload);
+    mockFindByPlatformUser.mockResolvedValue(undefined);
+    mockFindByPlatform.mockResolvedValue(undefined);
+    mockConsumeLinkToken.mockResolvedValue(linkPayload);
+    mockStartWechatLinkCode.mockResolvedValue('042917');
+
+    const caller = createCaller(await createContextInner({ userId: 'user-1' }));
+    const result = await caller.confirmLink({ initialAgentId: 'agent-1', randomId: 'rand-1234' });
+
+    expect(result).toEqual({
+      awaitingCode: { code: '042917', expiresInMinutes: 10 },
+      success: true,
+    });
+    expect(mockConsumeLinkToken).toHaveBeenCalledWith('rand-1234', { awaitingCode: true });
+    expect(mockStartWechatLinkCode).toHaveBeenCalledWith('o_wechat', {
+      activeAgentId: 'agent-1',
+      activeAgentName: 'Biber',
+      userId: 'user-1',
+      workspaceId: null,
+    });
+    expect(mockAskForLinkCode).toHaveBeenCalledWith('o_wechat');
+    expect(mockUpsertForPlatform).not.toHaveBeenCalled();
   });
 
   it('blocks binding a workspace agent when workspace feature is disabled', async () => {

@@ -1,7 +1,8 @@
 /**
  * The shared WeChat Official Account bot, against a running server: WeChat checks the server URL,
- * a new follower is sent the link that connects their account, they connect it, and a message they
- * send gets the agent's reply. An action that needs approval is answered in the chat: "1" approves
+ * a new follower is sent the link that connects their account, they confirm it on the web and send
+ * the code the page shows from WeChat (the same code from another WeChat links nothing), and a
+ * message they send gets the agent's reply. An action that needs approval is answered in the chat: "1" approves
  * it, and any other reply refuses it and is passed on to the agent. Every delivery is encrypted and
  * signed as WeChat does it in safe mode.
  *
@@ -147,11 +148,38 @@ const main = async () => {
       },
     });
 
-    await step('connecting the account confirms in WeChat', async () => {
-      await client.mutation('lambda', 'messenger.confirmLink', {
-        initialAgentId: agentId,
-        randomId: link.searchParams.get('random_id'),
+    const code = await step('confirming on the web shows a code to send from WeChat', async () => {
+      const result = await client.mutation<{ awaitingCode?: { code: string } }>(
+        'lambda',
+        'messenger.confirmLink',
+        { initialAgentId: agentId, randomId: link.searchParams.get('random_id') },
+      );
+      if (!result.awaitingCode?.code) throw new Error(`no code: ${JSON.stringify(result)}`);
+      await waitFor('the request for the code', async () => sentTo(/网页上已确认/), 15_000);
+      return result.awaitingCode.code;
+    });
+
+    await step('the same code from another WeChat links nothing', async () => {
+      const other = `oOther${Date.now()}`;
+      const { text } = await deliver({
+        Content: code,
+        CreateTime: String(Math.floor(Date.now() / 1000)),
+        FromUserName: other,
+        MsgId: String(Date.now()),
+        MsgType: 'text',
+        ToUserName: 'gh_biber',
       });
+      if (text !== 'success') throw new Error(`webhook answered ${text}`);
+      // A stranger is simply asked to link their own account
+      await waitFor(
+        'a link for the other WeChat',
+        async () => wechat.sent.find((m) => m.to === other && /verify-im/.test(m.content)),
+        15_000,
+      );
+    });
+
+    await step('sending the code from this WeChat links it', async () => {
+      await say(code);
       await waitFor('the confirmation', async () => sentTo(/绑定成功/), 15_000);
     });
 

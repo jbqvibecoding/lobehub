@@ -99,6 +99,11 @@
   "messenger.unlinkFailed": "Failed to disconnect.",
   "messenger.unlinkSuccess": "Disconnected.",
   "messenger.unlinkTitle": "Disconnect account",
+  "verify.awaitingCode.codeLabel": "Code to send",
+  "verify.awaitingCode.description": "Send this code to Biber in {{platform}} within {{minutes}} minutes. The link takes effect once it arrives.",
+  "verify.awaitingCode.lost": "Send the code this page showed to Biber in {{platform}}. If you did not note it, wait 10 minutes, then send Biber any message to start again.",
+  "verify.awaitingCode.title": "One last step in {{platform}}",
+  "verify.awaitingCode.warning": "Send it only from your own account. Never tell this code to anyone: whoever sends it gets access to your Biber assistant.",
   "verify.confirm.conflict.description": "This {{platform}} account is already linked to Biber account {{email}}. Sign in to that account to manage the link, or unlink there before retrying.",
   "verify.confirm.conflict.switchAccount": "Sign in with another account",
   "verify.confirm.conflict.title": "This account is already linked",
@@ -127,5 +132,6 @@
   "verify.signInRequired": "Please sign in to Biber to confirm the link.",
   "verify.success.description": "Your account is now connected to {{platform}}. Open {{platform}} and send your first message.",
   "verify.success.openBot": "Open in {{platform}}",
-  "verify.success.title": "Linked successfully!"
+  "verify.success.title": "Linked successfully!",
+  "verify.wechat": "WeChat"
 }

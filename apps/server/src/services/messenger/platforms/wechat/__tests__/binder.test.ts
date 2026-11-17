@@ -5,6 +5,7 @@ import { MessengerAccountLinkModel } from '@/database/models/messengerAccountLin
 
 import { issueLinkToken } from '../../../linkTokenStore';
 import { MessengerWechatBinder } from '../binder';
+import { answerWechatLinkCode } from '../linkCode';
 import { SECRETS } from './fixtures';
 
 const { sendText } = vi.hoisted(() => ({ sendText: vi.fn() }));
@@ -19,6 +20,10 @@ vi.mock('@/database/models/messengerAccountLink', () => ({
 }));
 vi.mock('../../../linkTokenStore', () => ({ issueLinkToken: vi.fn() }));
 vi.mock('../api', () => ({ createWechatMpApi: () => ({ sendText }) }));
+vi.mock('../linkCode', () => ({
+  answerWechatLinkCode: vi.fn(async () => ({ status: 'none' })),
+  WECHAT_LINK_CODE_TTL_SECONDS: 600,
+}));
 
 beforeEach(() => {
   vi.mocked(issueLinkToken).mockResolvedValue('rand-1');
@@ -69,5 +74,44 @@ describe('MessengerWechatBinder', () => {
     });
 
     expect(sendText).toHaveBeenCalledWith('oAlice', expect.stringContaining('当前助理：日程助理'));
+  });
+
+  describe('a follower whose link waits for its code', () => {
+    const message = (text: string) => ({
+      authorUserId: 'oAlice',
+      chatId: 'oAlice',
+      message: { text } as any,
+    });
+
+    it('confirms the link when the code arrives', async () => {
+      vi.mocked(answerWechatLinkCode).mockResolvedValueOnce({
+        activeAgentName: 'Biber',
+        status: 'linked',
+      });
+
+      await new MessengerWechatBinder().handleUnlinkedMessage(message('042917'));
+
+      expect(answerWechatLinkCode).toHaveBeenCalledWith('oAlice', '042917');
+      expect(sendText).toHaveBeenCalledWith('oAlice', expect.stringContaining('绑定成功'));
+      expect(sendText).toHaveBeenCalledWith('oAlice', expect.stringContaining('当前助理：Biber'));
+      expect(issueLinkToken).not.toHaveBeenCalled();
+    });
+
+    it('asks for the code instead of sending a new link', async () => {
+      vi.mocked(answerWechatLinkCode).mockResolvedValueOnce({ status: 'waiting' });
+
+      await new MessengerWechatBinder().handleUnlinkedMessage(message('hi'));
+
+      expect(sendText).toHaveBeenCalledWith('oAlice', expect.stringContaining('6 位数字'));
+      expect(issueLinkToken).not.toHaveBeenCalled();
+    });
+
+    it('says how many tries are left after a wrong code', async () => {
+      vi.mocked(answerWechatLinkCode).mockResolvedValueOnce({ attemptsLeft: 3, status: 'wrong' });
+
+      await new MessengerWechatBinder().handleUnlinkedMessage(message('123456'));
+
+      expect(sendText).toHaveBeenCalledWith('oAlice', expect.stringContaining('还能试 3 次'));
+    });
   });
 });

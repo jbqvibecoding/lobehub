@@ -52,6 +52,8 @@ const consumedKey = (token: LinkToken): string => `messenger:link-token-consumed
 const CONSUMED_MARKER_TTL_SECONDS = 24 * 60 * 60;
 
 export interface ConsumedLinkTokenMarker {
+  /** The confirm went through, but the link waits for a code sent from the platform (WeChat). */
+  awaitingCode?: boolean;
   consumedAt: number;
   platform: MessengerPlatform;
   tenantId?: string;
@@ -113,7 +115,10 @@ export const peekLinkToken = async (token: LinkToken): Promise<LinkTokenPayload 
   }
 };
 
-export const consumeLinkToken = async (token: LinkToken): Promise<LinkTokenPayload | null> => {
+export const consumeLinkToken = async (
+  token: LinkToken,
+  { awaitingCode }: { awaitingCode?: boolean } = {},
+): Promise<LinkTokenPayload | null> => {
   const redis = getAgentRuntimeRedisClient();
   if (!redis) return null;
 
@@ -132,6 +137,7 @@ export const consumeLinkToken = async (token: LinkToken): Promise<LinkTokenPaylo
   await redis.del(reuseKey(payload.platform, payload.platformUserId));
 
   const marker: ConsumedLinkTokenMarker = {
+    ...(awaitingCode && { awaitingCode }),
     consumedAt: Date.now(),
     platform: payload.platform,
     tenantId: payload.tenantId,

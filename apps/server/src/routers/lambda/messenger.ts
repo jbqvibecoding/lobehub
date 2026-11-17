@@ -43,6 +43,8 @@ import {
   MessengerWechatBinder,
   peekConsumedLinkToken,
   peekLinkToken,
+  startWechatLinkCode,
+  WECHAT_LINK_CODE_TTL_SECONDS,
   wechatFollowQrUrl,
 } from '@/server/services/messenger';
 
@@ -284,6 +286,8 @@ export const messengerRouter = router({
         const consumed = await peekConsumedLinkToken(input.randomId);
         if (consumed) {
           return {
+            // WeChat: confirmed on the web, still waiting for the code from WeChat
+            awaitingCode: consumed.awaitingCode ?? false,
             platform: consumed.platform,
             status: 'consumed' as const,
             tenantId: consumed.tenantId,
@@ -395,9 +399,13 @@ export const messengerRouter = router({
         input.initialAgentId,
       );
 
+      // WeChat cannot show whose account is being linked, so its link takes effect only once the
+      // code shown here is sent from that WeChat (decision 6)
+      const confirmByCode = peeked.platform === 'wechat';
+
       // Now safe to consume — token is single-use; do this last so any error
       // above leaves the token available for retry.
-      const payload = await consumeLinkToken(input.randomId);
+      const payload = await consumeLinkToken(input.randomId, { awaitingCode: confirmByCode });
       if (!payload) {
         // Lost a race with another consumer (or the token expired during the
         // checks above). Treat the same as the initial peek-miss.
@@ -405,6 +413,22 @@ export const messengerRouter = router({
           code: 'NOT_FOUND',
           message: 'verify.error.expired',
         });
+      }
+
+      if (confirmByCode) {
+        const code = await startWechatLinkCode(payload.platformUserId, {
+          activeAgentId: input.initialAgentId,
+          activeAgentName: agentScope.title ?? undefined,
+          userId: ctx.userId,
+          workspaceId: agentScope.workspaceId,
+        });
+        void new MessengerWechatBinder()
+          .askForLinkCode(payload.platformUserId)
+          .catch(() => undefined);
+        return {
+          awaitingCode: { code, expiresInMinutes: WECHAT_LINK_CODE_TTL_SECONDS / 60 },
+          success: true,
+        };
       }
 
       let link;

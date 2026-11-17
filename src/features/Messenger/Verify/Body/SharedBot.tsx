@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import { type SharedBotPlatform, sharedBotUrl } from '../../constants';
 import {
+  AwaitingCodeCard,
   ConfirmCard,
   type ExistingLink,
   type InfoRow,
@@ -42,6 +43,10 @@ const SharedBotBody = memo<SharedBotBodyProps>(
   }) => {
     const { t } = useTranslation('messenger');
     const [done, setDone] = useState(false);
+    const [awaitingCode, setAwaitingCode] = useState<{
+      code: string;
+      expiresInMinutes: number;
+    } | null>(null);
 
     const platformLabel =
       platformMeta?.name ??
@@ -59,6 +64,16 @@ const SharedBotBody = memo<SharedBotBodyProps>(
       return `ID ${id}`;
     };
     const rebindBlocked = isSingleAccountRebindBlocked(existingLink, tokenData);
+
+    if (awaitingCode) {
+      return (
+        <AwaitingCodeCard
+          code={awaitingCode.code}
+          expiresInMinutes={awaitingCode.expiresInMinutes}
+          platformLabel={platformLabel}
+        />
+      );
+    }
 
     if (shouldShowSingleAccountSuccess(existingLink, tokenData, done)) {
       return (
@@ -110,7 +125,10 @@ const SharedBotBody = memo<SharedBotBodyProps>(
                 }
               : undefined
         }
-        onSuccess={() => setDone(true)}
+        onSuccess={(result) => {
+          if (result.awaitingCode) setAwaitingCode(result.awaitingCode);
+          else setDone(true);
+        }}
       />
     );
   },
