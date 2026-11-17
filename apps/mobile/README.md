@@ -16,8 +16,13 @@ it. The agent runs on the server and on agent computers, never on the phone.
   month's credits is used. On iPhone it sells the paid plans through the App Store (see below),
   with restore and subscription management. Sign out is here too.
 - **Push**: the server notifies the phone when something needs the user. Tapping the notification
-  opens the approvals list. In the mainland edition, Android phones get notifications through
-  their maker's own push service (see below), since they have no Google services.
+  opens the approvals list. When a run waits on a single call, the notification also has Approve
+  and Reject: both open the app, which answers at once (approving still asks for Face ID) and says
+  how it went above the list. Both buttons open the app because an iPhone does not wake a
+  swiped-away app for a button that stays in the background. Notifications of calls answered
+  elsewhere leave the tray, and the badge shows what still waits. In the mainland edition, Android
+  phones get notifications through their maker's own push service (see below), since they have no
+  Google services; those have no buttons.
 - **Sign-in**: better-auth with the Expo client; the session cookie stays in the device keychain.
   The mainland edition signs in with a code texted to a mainland China mobile number.
 
