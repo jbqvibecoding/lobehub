@@ -34,6 +34,7 @@ import { uploadRouter } from '../lambda/upload';
 import { userRouter } from '../lambda/user';
 import { activityRouter } from './activity';
 import { approvalRouter } from './approval';
+import { chatRouter } from './chat';
 
 export const mobileRouter = router({
   activity: activityRouter,
@@ -43,6 +44,7 @@ export const mobileRouter = router({
   aiAgent: aiAgentRouter,
   aiChat: aiChatRouter,
   brief: briefRouter,
+  chat: chatRouter,
   aiModel: aiModelRouter,
   aiProvider: aiProviderRouter,
   approval: approvalRouter,
