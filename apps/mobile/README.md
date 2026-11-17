@@ -11,6 +11,9 @@ it. The agent runs on the server and on agent computers, never on the phone.
   (`chat.history`), with a way to stop it. A call that needs approval is answered right in the
   conversation, with Face ID as on the approvals list. A message that fails to send stays in the
   box.
+- **Routines**: at the top of Tasks, routines Biber can run on a schedule (a daily morning brief,
+  a weekday evening wrap-up, a Friday weekly review), each turned on with a switch. Turning one
+  on gives Biber a scheduled task in the phone's time zone; turning it off keeps the task.
 - **Tasks**: the user's tasks grouped like the web board (needs you, in progress, not started,
   done). A task's page shows why it stopped, its subtasks and its history (runs and their
   outcome, agents' reports, comments), and starts it again with Run now.

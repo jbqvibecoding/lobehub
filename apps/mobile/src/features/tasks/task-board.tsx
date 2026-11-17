@@ -14,6 +14,7 @@ import type { ApiClient } from '@/lib/api-client';
 import { type Palette, useColors } from '@/theme/colors';
 
 import { groupTitle, taskTitle } from './describe-task';
+import { StarterRoutines } from './starter-routines';
 import { TaskStatusLabel } from './task-status';
 import { useTaskBoard } from './use-tasks';
 
@@ -50,7 +51,10 @@ export const TaskBoard = ({ api }: { api: ApiClient }) => {
       keyExtractor={(task) => task.id}
       ListEmptyComponent={emptyState}
       ListHeaderComponent={
-        error && data ? <Text style={styles.inlineError}>{t('tasksRefreshError')}</Text> : undefined
+        <>
+          <StarterRoutines api={api} />
+          {error && data ? <Text style={styles.inlineError}>{t('tasksRefreshError')}</Text> : null}
+        </>
       }
       refreshControl={
         <RefreshControl

@@ -35,6 +35,7 @@ import { userRouter } from '../lambda/user';
 import { activityRouter } from './activity';
 import { approvalRouter } from './approval';
 import { chatRouter } from './chat';
+import { routinesRouter } from './routines';
 
 export const mobileRouter = router({
   activity: activityRouter,
@@ -61,6 +62,7 @@ export const mobileRouter = router({
   message: messageRouter,
   plugin: pluginRouter,
   pushToken: pushTokenRouter,
+  routines: routinesRouter,
   session: sessionRouter,
   sessionGroup: sessionGroupRouter,
   subscription: mobileSubscriptionRouter,

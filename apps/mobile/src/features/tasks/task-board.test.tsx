@@ -19,7 +19,9 @@ const task = (id: string, status: string, name: string, error?: string) => ({
 });
 
 const renderBoard = async (responses: (TaskGroup[] | Error)[]) => {
-  const query = jest.fn(async () => {
+  const query = jest.fn(async (path: string) => {
+    // The routines card above the board has its own request
+    if (path === 'routines.list') return [];
     const next = responses.shift();
     if (!next || next instanceof Error) throw next ?? new Error('no response');
     return { data: next, success: true };

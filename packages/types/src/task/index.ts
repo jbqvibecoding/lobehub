@@ -205,6 +205,8 @@ export interface TaskContext {
   lifecycle?: TaskLifecycleAudit;
   origin?: TaskOriginContext;
   scheduler?: TaskSchedulerContext;
+  /** Biber: the starter routine this task was created from (e.g. `morning-brief`). */
+  starterRoutine?: string;
 }
 
 // ── Task list item (shared between router response and client) ──
