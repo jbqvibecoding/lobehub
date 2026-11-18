@@ -80,11 +80,16 @@ export class PushChannel {
       if (!sender) continue;
       const text = textFor(ctx, group[0].locale);
       try {
-        const { invalidTokens } = await sender.send(
+        const { failedTokens = [], invalidTokens } = await sender.send(
           group.map((t) => t.expoToken),
-          { body: text.content, title: text.title },
+          {
+            body: text.content,
+            categoryId: ctx.categoryId,
+            data: { ...ctx.data, notificationId: ctx.notificationId, url: ctx.actionUrl },
+            title: text.title,
+          },
         );
-        accepted += group.length - invalidTokens.length;
+        accepted += group.length - invalidTokens.length - failedTokens.length;
         if (invalidTokens.length > 0) {
           log(
             '%s reported %d gone tokens for userId=%s',

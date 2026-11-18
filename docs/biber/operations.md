@@ -115,15 +115,20 @@ bunx tsx scripts/biber/ops.ts bot list
 
 ## 5. 手机推送
 
-| 通道                                     | 服务端设置                     | 手机构建时的设置           |
-| ---------------------------------------- | ------------------------------ | -------------------------- |
-| Expo（iOS、有 Google 服务的安卓）        | 无                             | `EAS_PROJECT_ID`           |
-| 华为、荣耀、小米、OPPO、vivo（国内安卓） | `.env.example` 里的 `*_PUSH_*` | 见 `apps/mobile/README.md` |
+| 通道                                     | 服务端设置                                                            | 手机构建时的设置           |
+| ---------------------------------------- | --------------------------------------------------------------------- | -------------------------- |
+| Expo（iOS、有 Google 服务的安卓）        | 无                                                                    | `EAS_PROJECT_ID`           |
+| 华为、荣耀、小米、OPPO、vivo（国内安卓） | `.env.example` 里的 `*_PUSH_*`                                        | 见 `apps/mobile/README.md` |
+| APNs 直连（国内版 iPhone）               | `APNS_KEY_ID`、`APNS_TEAM_ID`、`APNS_PRIVATE_KEY`、`APNS_ENVIRONMENT` | 无（国内版构建自动登记）   |
 
 向各厂商申请 "需要用户处理的通知" 对应的消息分类，否则会被限量或延迟。
 
-运行只在等一个调用时，Expo 推送带通知分类 `approval`（"批准 / 拒绝" 按钮），`data.toolMessageId` 是要回答的调用；
-手机应用启动时注册这个分类。厂商通道没有按钮。
+国内版 iPhone 不走 Expo（它的服务器在境外），直接登记 APNs 的设备令牌，由服务端用团队的 `.p8` 密钥签名后发给苹果。
+`APNS_ENVIRONMENT` 要和构建对应：App Store 和 TestFlight 用 `production`（默认），开发构建用 `sandbox`；
+弄反了苹果会把所有令牌判为无效，服务端随之删掉，手机下次打开应用时会重新登记。
+
+运行只在等一个调用时，Expo 和 APNs 推送带通知分类 `approval`（"批准 / 拒绝" 按钮），`data.toolMessageId` 是要回答的调用；
+手机应用启动时注册这个分类。安卓厂商通道没有按钮。
 
 ### 后台运行的审批过期
 
@@ -178,6 +183,7 @@ curl -fsS -H "Authorization: Bearer $CRON_SECRET" < APP_URL > /api/agent/approva
 | 阿里云内容安全      | 签名、拦截提问、隐藏回复用本地替身走通过（`wechat-bot.ts`）；没有连过真实服务，两个服务名需在控制台确认            |
 | 厂商推送服务端      | 请求格式参考的是公开的第三方 SDK；荣耀的接口地址和格式没有对照官方文档确认                                         |
 | 厂商推送手机端      | Kotlin 原生代码没有编译过                                                                                          |
+| APNs 直连           | 签名、按钮和数据、失效令牌清理用本地 HTTP/2 替身走通过（`apns.ts`）；没有连过真实的 APNs，也没有在真机上收过       |
 | 云电脑              | 本机真 agent-computer（真 Chromium）走通过查看、接管、点击输入、交还和网络策略；没有在 Docker 部署的完整链路里跑过 |
 | Telegram            | 收发、绑定、按钮审批用本地替身走通过（`telegram-bot.ts`）；没有连过真实机器人                                      |
 | 飞书、Lark 审批卡片 | 发卡片、收点击、在回调里换卡片用本地替身走通过；卡片格式没有在真实客户端里看过                                     |
@@ -199,6 +205,7 @@ curl -fsS -H "Authorization: Bearer $CRON_SECRET" < APP_URL > /api/agent/approva
 | `background-approval.ts` | 国际版     | 任务运行到运行代码时暂停，手机收到推送 → 等待期间任务保持运行中 → 手机批准后运行恢复，任务结算 → 不说明审批方式的 API 调用同样暂停 → 不带 cron 密钥调过期接口被拒 → 等了一天的请求被拒绝，运行继续                                                                                                                                    |
 | `phone-chat.ts`          | 国际版     | 手机上和 Biber 新开对话收到回复 → 对话出现在列表里 → 和会运行代码的 Agent 对话时停下等回答 → 在对话里批准后运行恢复并回复 → 别人读不到这段对话                                                                                                                                                                                        |
 | `computer.ts`            | 国际版     | 新账号的云电脑是关着的，查看不会开机 → 开机后看到画面 → 没接管时点击被拒 → Bot 求助的原因显示出来 → 接管就是接下这个请求 → 点击、文字、按键到达浏览器 → 交还给 Biber → 没求助时接管，以本人名义发请求 → 别的账号只看得到自己的电脑                                                                                                    |
+| `apns.ts`                | 中国大陆版 | iPhone 登记 APNs 设备令牌 → 运行暂停等审批 → 手机经 APNs 收到推送，带团队密钥签的 ES256 令牌和国内版的 bundle id → 推送带 "批准 / 拒绝" 按钮、要回答的调用、中文标题 → 苹果说已失效的令牌被删掉，下一条推送不再发给它                                                                                                                 |
 | `routines.ts`            | 国际版     | 新账号看到三个例行任务都没开 → 打开晨报后给 Biber 建了按手机时区运行的计划任务 → 手动运行一次并结算 → 关掉后不再按计划运行，任务保留                                                                                                                                                                                                  |
 
 准备：
@@ -214,6 +221,8 @@ curl -fsS -H "Authorization: Bearer $CRON_SECRET" < APP_URL > /api/agent/approva
      `ALIPAY_PUBLIC_KEY` 设成一把本地 RSA 密钥的公钥。
 3. 运行：
    - `bunx tsx scripts/biber/smoke/golden-path.ts`，用 `SMOKE_BASE_URL` 指向服务端。
+   - `SMOKE_APNS_KEY=<一把 P-256 私钥的 PEM 文件> bunx tsx scripts/biber/smoke/apns.ts`：国内版服务端设
+     `APNS_KEY_ID=SMOKEKEY01`、`APNS_TEAM_ID=SMOKETEAM1`、`APNS_PRIVATE_KEY` 为同一把私钥、`APNS_ENDPOINT=http://127.0.0.1:4110`。
    - `computer.ts` 要求服务端设 `SANDBOX_PROVIDER=openbot`、`OPENBOT_SUPERVISOR_URL=http://127.0.0.1:4300`、
      `OPENBOT_SUPERVISOR_TOKEN=smoke-supervisor` 和 `OPENBOT_COMPUTER_TOKEN=smoke-computer`，脚本自己起 supervisor 和电脑的替身。
    - `background-approval.ts` 还要求服务端设 `CRON_SECRET`，并在运行时带上同样的 `SMOKE_CRON_SECRET`。

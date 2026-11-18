@@ -18,6 +18,7 @@ jest.mock('expo-secure-store', () => ({
 }));
 jest.mock('expo-notifications', () => ({
   AndroidImportance: { HIGH: 4 },
+  getDevicePushTokenAsync: jest.fn(async () => ({ data: 'a1b2c3', type: 'ios' })),
   getExpoPushTokenAsync: jest.fn(async () => ({ data: 'ExponentPushToken[abc]' })),
   getPermissionsAsync: jest.fn(async () => ({ status: 'granted' })),
   requestPermissionsAsync: jest.fn(),
@@ -37,6 +38,31 @@ beforeEach(() => {
 });
 
 describe('registerForPush', () => {
+  it("registers a mainland iPhone's own APNs token, without an EAS project", async () => {
+    Platform.OS = 'ios';
+    build({ region: 'cn' });
+
+    expect(await registerForPush(api as any)).toBe('registered');
+    expect(api.mutation).toHaveBeenCalledWith(
+      'pushToken.register',
+      expect.objectContaining({ expoToken: 'a1b2c3', platform: 'ios', provider: 'apns' }),
+    );
+    expect(Notifications.getExpoPushTokenAsync).not.toHaveBeenCalled();
+  });
+
+  it('keeps an iPhone of the international edition on Expo', async () => {
+    Platform.OS = 'ios';
+    build({ eas: { projectId: 'p1' }, region: 'global' });
+
+    await registerForPush(api as any);
+
+    expect(Notifications.getDevicePushTokenAsync).not.toHaveBeenCalled();
+    expect(api.mutation).toHaveBeenCalledWith(
+      'pushToken.register',
+      expect.objectContaining({ expoToken: 'ExponentPushToken[abc]', provider: 'expo' }),
+    );
+  });
+
   it("registers the phone maker's token on a mainland Android phone", async () => {
     build({ eas: { projectId: 'p1' }, region: 'cn' });
     jest.mocked(isVendorPushAvailable).mockReturnValue(true);

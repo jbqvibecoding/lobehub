@@ -8,8 +8,9 @@
  * Point the server at them with OPENAI_PROXY_URL=http://127.0.0.1:<model>/v1 and
  * EXPO_BASE_URL=http://127.0.0.1:<push>.
  */
-import { createHmac } from 'node:crypto';
+import { createHmac, createPublicKey, verify } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer as createHttp2Server } from 'node:http2';
 import { deflateSync } from 'node:zlib';
 
 export const CODE_TOOL = 'lobe-cloud-sandbox____executeCode';
@@ -700,4 +701,63 @@ export const startFakeOpenBot = async ({
     policies,
     running,
   };
+};
+
+/**
+ * Apple's push service (APNs), over HTTP/2 without TLS: records each notification with whether its
+ * provider token is an ES256 JWT signed by the key whose public half is given, and answers 410
+ * Unregistered for device tokens that start with `gone`.
+ *
+ * Point the server at it with APNS_ENDPOINT=http://127.0.0.1:<port>.
+ */
+export const startFakeApns = async (port: number, publicKeyPem: string) => {
+  const sent: {
+    headers: Record<string, string>;
+    payload: any;
+    providerToken: { claims: any; header: any; signed: boolean };
+    token: string;
+  }[] = [];
+  const publicKey = createPublicKey(publicKeyPem);
+  const server = createHttp2Server((request, response) => {
+    let text = '';
+    request.on('data', (chunk) => (text += chunk));
+    request.on('end', () => {
+      const headers = request.headers as Record<string, string>;
+      const [header = '', claims = '', signature = ''] = (headers.authorization ?? '')
+        .replace(/^bearer /, '')
+        .split('.');
+      const decode = (part: string) => {
+        try {
+          return JSON.parse(Buffer.from(part, 'base64url').toString());
+        } catch {
+          return undefined;
+        }
+      };
+      const token = (headers[':path'] ?? '').split('/').pop() ?? '';
+      sent.push({
+        headers,
+        payload: JSON.parse(text || '{}'),
+        providerToken: {
+          claims: decode(claims),
+          header: decode(header),
+          signed: verify(
+            'sha256',
+            Buffer.from(`${header}.${claims}`),
+            { dsaEncoding: 'ieee-p1363', key: publicKey },
+            Buffer.from(signature, 'base64url'),
+          ),
+        },
+        token,
+      });
+      if (token.startsWith('gone')) {
+        response.writeHead(410, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ reason: 'Unregistered', timestamp: Date.now() }));
+        return;
+      }
+      response.writeHead(200);
+      response.end();
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+  return { close: () => server.close(), sent };
 };

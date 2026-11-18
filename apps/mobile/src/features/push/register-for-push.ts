@@ -27,6 +27,22 @@ const installationId = async () => {
 
 export type PushRegistration = 'denied' | 'registered' | 'unavailable';
 
+const isMainland = () => Constants.expoConfig?.extra?.region === 'cn';
+
+/**
+ * On the mainland iPhone app, the phone's own APNs device token: its notifications go to Apple
+ * directly rather than through Expo's servers abroad. Null elsewhere, or when iOS gives none.
+ */
+const apnsToken = async () => {
+  if (Platform.OS !== 'ios' || !isMainland()) return null;
+  try {
+    const { data } = await Notifications.getDevicePushTokenAsync();
+    return typeof data === 'string' && data ? { provider: 'apns' as const, token: data } : null;
+  } catch {
+    return null;
+  }
+};
+
 /** How long to wait for a phone maker's push service to issue a token. */
 const VENDOR_TOKEN_TIMEOUT_MS = 20_000;
 
@@ -36,7 +52,7 @@ const VENDOR_TOKEN_TIMEOUT_MS = 20_000;
  * notifications travel through. Null elsewhere, or when the maker does not answer.
  */
 const vendorPushToken = async () => {
-  if (Platform.OS !== 'android' || Constants.expoConfig?.extra?.region !== 'cn') return null;
+  if (Platform.OS !== 'android' || !isMainland()) return null;
   if (!isVendorPushAvailable()) return null;
 
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -54,8 +70,8 @@ const vendorPushToken = async () => {
 
 /**
  * Lets the server reach this phone when something needs the user. Simulators, and builds with
- * neither a phone maker's push service nor an EAS project id, cannot get a push token, so they
- * report `unavailable` instead of failing.
+ * neither a direct push service (APNs on a mainland iPhone, a phone maker's on a mainland Android
+ * phone) nor an EAS project id, cannot get a push token, so they report `unavailable` instead.
  */
 export const registerForPush = async (api: ApiClient): Promise<PushRegistration> => {
   if (!Device.isDevice || (Platform.OS !== 'ios' && Platform.OS !== 'android')) {
@@ -63,8 +79,10 @@ export const registerForPush = async (api: ApiClient): Promise<PushRegistration>
   }
 
   const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
-  const mayUseVendor = isVendorPushAvailable() && Constants.expoConfig?.extra?.region === 'cn';
-  if (!projectId && !mayUseVendor) return 'unavailable';
+  const mayGoDirect =
+    isMainland() &&
+    (Platform.OS === 'ios' || (Platform.OS === 'android' && isVendorPushAvailable()));
+  if (!projectId && !mayGoDirect) return 'unavailable';
 
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
@@ -77,9 +95,9 @@ export const registerForPush = async (api: ApiClient): Promise<PushRegistration>
   if (status !== 'granted') ({ status } = await Notifications.requestPermissionsAsync());
   if (status !== 'granted') return 'denied';
 
-  const vendor = await vendorPushToken();
-  if (!vendor && !projectId) return 'unavailable';
-  const { provider, token } = vendor ?? {
+  const direct = (await apnsToken()) ?? (await vendorPushToken());
+  if (!direct && !projectId) return 'unavailable';
+  const { provider, token } = direct ?? {
     provider: 'expo' as const,
     token: (await Notifications.getExpoPushTokenAsync({ projectId })).data,
   };

@@ -1,9 +1,10 @@
 import type { PushTokenProvider } from '@/database/schemas';
 
-/** A phone maker's push service. */
+/** A phone maker's push service (Apple's included). */
 export type VendorPushProvider = Exclude<PushTokenProvider, 'expo'>;
 
 export const VENDOR_PUSH_PROVIDERS = [
+  'apns',
   'honor',
   'huawei',
   'oppo',
@@ -17,10 +18,18 @@ export const isVendorPushProvider = (provider: string): provider is VendorPushPr
 /** What every vendor notification carries. Tapping it opens the app. */
 export interface VendorNotification {
   body: string;
+  /**
+   * The notification's buttons and the fields the app reads on a tap. Only APNs carries these;
+   * the Android makers' services drop them.
+   */
+  categoryId?: string;
+  data?: Record<string, string | undefined>;
   title: string;
 }
 
 export interface VendorSendResult {
+  /** Tokens the vendor refused this time but may take later (throttled, unavailable) */
+  failedTokens?: string[];
   /** Tokens the vendor no longer knows (app uninstalled, data cleared); they should be forgotten */
   invalidTokens: string[];
 }

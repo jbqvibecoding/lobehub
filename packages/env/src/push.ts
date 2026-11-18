@@ -4,11 +4,17 @@ import { z } from 'zod';
 /**
  * Android phones in mainland China have no Google services, so notifications reach them through
  * the phone maker's own push service. Each maker's channel is off while its keys are unset; the
- * phone then falls back to Expo, which only reaches phones with Google services.
+ * phone then falls back to Expo, which only reaches phones with Google services. The mainland
+ * iPhone app sends to Apple (APNs) directly rather than through Expo's servers abroad.
  */
 export const getPushConfig = () => {
   return createEnv({
     runtimeEnv: {
+      APNS_ENDPOINT: process.env.APNS_ENDPOINT,
+      APNS_ENVIRONMENT: process.env.APNS_ENVIRONMENT,
+      APNS_KEY_ID: process.env.APNS_KEY_ID,
+      APNS_PRIVATE_KEY: process.env.APNS_PRIVATE_KEY,
+      APNS_TEAM_ID: process.env.APNS_TEAM_ID,
       HONOR_PUSH_APP_ID: process.env.HONOR_PUSH_APP_ID,
       HONOR_PUSH_CLIENT_ID: process.env.HONOR_PUSH_CLIENT_ID,
       HONOR_PUSH_CLIENT_SECRET: process.env.HONOR_PUSH_CLIENT_SECRET,
@@ -26,6 +32,14 @@ export const getPushConfig = () => {
       XIAOMI_PUSH_CHANNEL_ID: process.env.XIAOMI_PUSH_CHANNEL_ID,
     },
     server: {
+      /** Where to reach APNs; only to point at a stand-in. Otherwise follows `APNS_ENVIRONMENT`. */
+      APNS_ENDPOINT: z.string().url().optional(),
+      /** `production` (App Store and TestFlight builds, the default) or `sandbox` (development builds) */
+      APNS_ENVIRONMENT: z.enum(['production', 'sandbox']).optional(),
+      /** APNs token auth: the key's id, the `.p8` key itself (PEM, `\n` escapes allowed), the team id */
+      APNS_KEY_ID: z.string().optional(),
+      APNS_PRIVATE_KEY: z.string().optional(),
+      APNS_TEAM_ID: z.string().optional(),
       /** Honor Push: the app id, and the OAuth client from the app's Push settings */
       HONOR_PUSH_APP_ID: z.string().optional(),
       HONOR_PUSH_CLIENT_ID: z.string().optional(),

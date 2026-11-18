@@ -14,9 +14,9 @@ const authedPushTokenProcedure = authedProcedure.use(serverDatabase).use(async (
 
 export const pushTokenRouter = router({
   /**
-   * Registers this device's push token. `provider` names who delivers to it: Expo by default, or
-   * on Android phones without Google services the phone maker's own push service, whose token is
-   * sent in the same `expoToken` field.
+   * Registers this device's push token. `provider` names who delivers to it: Expo by default; on
+   * Android phones without Google services the phone maker's own push service; on the mainland
+   * iPhone app, Apple's (`apns`). Any of these tokens is sent in the same `expoToken` field.
    */
   register: authedPushTokenProcedure
     .input(
@@ -26,7 +26,9 @@ export const pushTokenRouter = router({
         expoToken: z.string().min(1),
         locale: z.string().optional(),
         platform: z.enum(['ios', 'android']),
-        provider: z.enum(['expo', 'honor', 'huawei', 'oppo', 'vivo', 'xiaomi']).default('expo'),
+        provider: z
+          .enum(['apns', 'expo', 'honor', 'huawei', 'oppo', 'vivo', 'xiaomi'])
+          .default('expo'),
       }),
     )
     .mutation(async ({ ctx, input }) => {

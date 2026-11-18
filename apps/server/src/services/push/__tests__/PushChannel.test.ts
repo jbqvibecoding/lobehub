@@ -236,7 +236,10 @@ describe('PushChannel with phone makers', () => {
     });
 
     expect(result).toEqual({ status: 'delivered' });
-    expect(huawei.send).toHaveBeenCalledWith(['hw-1'], { body: '图片好了', title: '生成完成' });
+    expect(huawei.send).toHaveBeenCalledWith(
+      ['hw-1'],
+      expect.objectContaining({ body: '图片好了', title: '生成完成' }),
+    );
     expect(mockDeleteOfProvider).toHaveBeenCalledWith({}, 'xiaomi', ['mi-1']);
     expect(expo.sendPushNotificationsAsync).not.toHaveBeenCalled();
   });
@@ -254,6 +257,44 @@ describe('PushChannel with phone makers', () => {
 
     expect(result.status).toBe('sent');
     expect(expo.sendPushNotificationsAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives a mainland iPhone, sent through Apple, the notification's buttons and data", async () => {
+    mockListByUserId.mockResolvedValueOnce([
+      { deviceId: 'iphone', expoToken: 'apns-1', locale: 'en-US', provider: 'apns' },
+      { deviceId: 'ipad', expoToken: 'apns-2', locale: 'en-US', provider: 'apns' },
+    ]);
+    const apns = {
+      send: vi.fn().mockResolvedValue({ failedTokens: ['apns-2'], invalidTokens: [] }),
+    };
+
+    const result = await new PushChannel(makeExpoMock() as any, { apns }).deliver({
+      ...ctx,
+      categoryId: 'approval',
+      data: { toolMessageId: 'msg-1' },
+    });
+
+    expect(result).toEqual({ status: 'delivered' });
+    expect(apns.send).toHaveBeenCalledWith(['apns-1', 'apns-2'], {
+      body: 'Your image is ready.',
+      categoryId: 'approval',
+      data: { notificationId: 'notif-1', toolMessageId: 'msg-1', url: '/image?topic=t1' },
+      title: 'Image Generated',
+    });
+  });
+
+  it('counts a phone the maker refused this time as not reached', async () => {
+    mockListByUserId.mockResolvedValueOnce([
+      { deviceId: 'iphone', expoToken: 'apns-1', locale: 'en-US', provider: 'apns' },
+    ]);
+    const apns = {
+      send: vi.fn().mockResolvedValue({ failedTokens: ['apns-1'], invalidTokens: [] }),
+    };
+
+    const result = await new PushChannel(makeExpoMock() as any, { apns }).deliver(ctx);
+
+    expect(result).toEqual({ failedReason: 'all_send_failed', status: 'failed' });
+    expect(mockDeleteOfProvider).not.toHaveBeenCalled();
   });
 
   it('skips tokens of a maker this deployment has no keys for', async () => {

@@ -29,7 +29,10 @@ export const pushTokens = pgTable(
      */
     expoToken: text('expo_token').notNull(),
 
-    /** Who delivers to this token: `expo`, or a phone maker (`huawei`, `honor`, `xiaomi`, `oppo`, `vivo`) */
+    /**
+     * Who delivers to this token: `expo`, a phone maker (`huawei`, `honor`, `xiaomi`, `oppo`, `vivo`),
+     * or `apns` for an iPhone whose device token goes to Apple directly (mainland edition)
+     */
     provider: text('provider').$type<PushTokenProvider>().default('expo').notNull(),
 
     /** Stable device id persisted on the client (expo-secure-store) */
@@ -54,7 +57,7 @@ export const pushTokens = pgTable(
   ],
 );
 
-export type PushTokenProvider = 'expo' | 'honor' | 'huawei' | 'oppo' | 'vivo' | 'xiaomi';
+export type PushTokenProvider = 'apns' | 'expo' | 'honor' | 'huawei' | 'oppo' | 'vivo' | 'xiaomi';
 
 export type NewPushToken = typeof pushTokens.$inferInsert;
 export type PushTokenItem = typeof pushTokens.$inferSelect;
