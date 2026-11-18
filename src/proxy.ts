@@ -39,6 +39,9 @@ export const config = {
     '/task(.*)',
     '/me',
     '/me(.*)',
+    // Personal-only pages (the cloud computer page, the apps download page)
+    '/computer',
+    '/downloads',
     '/share(.*)',
 
     '/onboarding',

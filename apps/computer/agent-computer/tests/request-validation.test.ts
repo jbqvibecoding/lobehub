@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   parseExecTimeout,
+  parseHelpSource,
   parseInputMessage,
   parseNavigateUrl,
   parseScrollDelta,
@@ -146,4 +147,19 @@ describe("a live-screen input message", () => {
     expect(parsed.ok).toBe(false);
     expect((parsed as { error: string }).error).toBeString();
   });
+});
+
+describe("who asks for a person", () => {
+  test("the Bot by default, or a person taking the browser unasked", () => {
+    expect(parseHelpSource(undefined)).toEqual({ ok: true, source: "model" });
+    expect(parseHelpSource("model")).toEqual({ ok: true, source: "model" });
+    expect(parseHelpSource("manual")).toEqual({ ok: true, source: "manual" });
+  });
+
+  test.each([["cloudflare"], ["visible-challenge"], [""], [1]])(
+    "refuses %p, which only this process raises or is not a source",
+    (input) => {
+      expect(parseHelpSource(input).ok).toBe(false);
+    },
+  );
 });

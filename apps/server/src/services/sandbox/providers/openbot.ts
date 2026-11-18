@@ -1,11 +1,7 @@
-import { createHmac } from 'node:crypto';
-
 import type { SandboxCallToolResult } from '@lobechat/builtin-tool-cloud-sandbox';
 import { isRecord } from '@lobechat/utils';
 import debug from 'debug';
 import { sha256 } from 'js-sha256';
-
-import { sandboxEnv } from '@/envs/sandbox';
 
 import type {
   SandboxProvider,
@@ -26,6 +22,7 @@ import {
   scriptPrelude,
   searchFilesScript,
 } from './onlyboxes';
+import { OpenBotComputer } from './openbotComputer';
 
 const log = debug('lobe-server:sandbox:openbot');
 
@@ -33,8 +30,6 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 /** The agent-computer `/exec` endpoint rejects timeouts outside this range. */
 const EXEC_MIN_TIMEOUT_MS = 1000;
 const EXEC_MAX_TIMEOUT_MS = 600_000;
-/** How long a resolved computer URL is reused before the supervisor is asked again. */
-const COMPUTER_URL_TTL_MS = 60_000;
 /**
  * Linux caps a single argv string at 128 KiB, and the whole command travels as one `bash -c`
  * argument, so file content is written in chunks whose base64 form stays well below that.
@@ -42,13 +37,6 @@ const COMPUTER_URL_TTL_MS = 60_000;
 const WRITE_FILE_CHUNK_BYTES = 48 * 1024;
 const BACKGROUND_DIR = '/tmp/lobe-bg';
 const SKILL_ARCHIVE_CACHE_DIR = '/tmp/lobe-skills';
-
-interface ComputerState {
-  botId?: string;
-  error?: string;
-  status?: string;
-  url?: string;
-}
 
 interface ShellResult {
   elapsedMs?: number;
@@ -58,20 +46,6 @@ interface ShellResult {
   timedOut?: boolean;
   truncated?: boolean;
 }
-
-const computerUrlCache = new Map<string, { expiresAt: number; url: string }>();
-
-/** Test hook: the cache is module state shared by every provider instance. */
-export const clearOpenBotComputerCache = () => computerUrlCache.clear();
-
-/**
- * The token one computer accepts: an HMAC of its id under OPENBOT_COMPUTER_TOKEN. The supervisor
- * gives each computer only its own (`computerTokenFor` in apps/computer/supervisor/src/environment.ts;
- * keep the two identical), so a command running on one user's computer can read its token and still
- * reach no other user's computer.
- */
-export const computerTokenFor = (secret: string, computerId: string) =>
-  createHmac('sha256', secret).update(`computer:${computerId}`).digest('hex');
 
 /**
  * Cloud Sandbox backed by an OpenBot computer: a container with Chromium, a durable `/workspace`
@@ -93,18 +67,10 @@ export class OpenBotSandboxProvider implements SandboxProvider {
 
   readonly kind = 'openbot';
 
-  private readonly computerToken: string;
-  private readonly options: SandboxServiceOptions;
-  private readonly scope: 'topic' | 'user';
-  private readonly supervisorToken: string;
-  private readonly supervisorUrl: string;
+  private readonly computer: OpenBotComputer;
 
   constructor(options: SandboxServiceOptions) {
-    this.options = options;
-    this.supervisorUrl = (sandboxEnv.OPENBOT_SUPERVISOR_URL || '').replace(/\/+$/, '');
-    this.supervisorToken = sandboxEnv.OPENBOT_SUPERVISOR_TOKEN || '';
-    this.computerToken = sandboxEnv.OPENBOT_COMPUTER_TOKEN || '';
-    this.scope = sandboxEnv.OPENBOT_COMPUTER_SCOPE || 'user';
+    this.computer = new OpenBotComputer({ topicId: options.topicId, userId: options.userId });
   }
 
   async callTool(
@@ -223,19 +189,8 @@ export class OpenBotSandboxProvider implements SandboxProvider {
     }
   }
 
-  /** The supervisor only accepts plain ids of at most 64 characters, so the scope is hashed. */
-  private get computerId() {
-    if (this.scope === 'topic') {
-      return `t-${sha256(`${this.options.userId}:${this.options.topicId}`).slice(0, 40)}`;
-    }
-
-    return `u-${sha256(this.options.userId).slice(0, 40)}`;
-  }
-
   private missingConfig() {
-    if (!this.supervisorUrl || !this.supervisorToken || !this.computerToken) {
-      return 'OPENBOT_SUPERVISOR_URL, OPENBOT_SUPERVISOR_TOKEN and OPENBOT_COMPUTER_TOKEN are required';
-    }
+    return this.computer.missingConfig();
   }
 
   private async runCommand(params: Record<string, unknown>): Promise<SandboxCallToolResult> {
@@ -486,62 +441,13 @@ export class OpenBotSandboxProvider implements SandboxProvider {
   }
 
   private async exec(command: string, timeoutMs: number): Promise<ShellResult> {
-    const computerUrl = await this.ensureComputer();
+    const computerUrl = await this.computer.ensure();
     const boundedTimeout = Math.min(Math.max(timeoutMs, EXEC_MIN_TIMEOUT_MS), EXEC_MAX_TIMEOUT_MS);
 
-    return this.request<ShellResult>(`${computerUrl}/exec`, {
+    return this.computer.call<ShellResult>(computerUrl, '/exec', {
       body: JSON.stringify({ command, timeoutMs: boundedTimeout }),
-      headers: {
-        'Authorization': `Bearer ${computerTokenFor(this.computerToken, this.computerId)}`,
-        'x-openbot-bot-id': this.computerId,
-      },
       method: 'POST',
     });
-  }
-
-  /** Asks the supervisor for this scope's computer, starting it when it is not running. */
-  private async ensureComputer(): Promise<string> {
-    const computerId = this.computerId;
-    const cached = computerUrlCache.get(computerId);
-
-    if (cached && cached.expiresAt > Date.now()) return cached.url;
-
-    const state = await this.request<ComputerState>(
-      `${this.supervisorUrl}/computers/${computerId}/ensure`,
-      {
-        headers: { Authorization: `Bearer ${this.supervisorToken}` },
-        method: 'POST',
-      },
-    );
-
-    if (!state.url) {
-      throw new Error(`OpenBot supervisor returned no address for computer ${computerId}`);
-    }
-
-    const url = state.url.replace(/\/+$/, '');
-    computerUrlCache.set(computerId, { expiresAt: Date.now() + COMPUTER_URL_TTL_MS, url });
-    log('Computer %s is %s at %s', computerId, state.status, url);
-
-    return url;
-  }
-
-  private async request<T>(url: string, init: RequestInit): Promise<T> {
-    const headers = new Headers(init.headers);
-    headers.set('Content-Type', 'application/json');
-
-    const response = await fetch(url, { ...init, headers });
-    const body = await response.text();
-    const json = body ? JSON.parse(body) : {};
-
-    if (!response.ok) {
-      throw new Error(
-        typeof json?.error === 'string'
-          ? json.error
-          : `OpenBot request failed with HTTP ${response.status}`,
-      );
-    }
-
-    return json as T;
   }
 
   private timeout(params: Record<string, unknown>) {

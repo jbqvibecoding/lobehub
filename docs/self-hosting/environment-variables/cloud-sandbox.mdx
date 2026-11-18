@@ -110,6 +110,13 @@ Supported values:
 - Default: `user`
 - Example: `topic`
 
+### `OPENBOT_COMPUTER_EGRESS`
+
+- Type: Optional
+- Description: Where a computer's browser and shell may connect. A computer refuses every connection until the server gives it this policy. `public` allows public internet addresses only, so a computer cannot reach your private network, the Docker host or other computers. `all` allows private addresses too; use it only when the assistant must reach an internal service. `none` turns the network off. Cloud metadata addresses are refused whatever this says.
+- Default: `public`
+- Example: `all`
+
 ## Market Configuration
 
 By default, LobeHub uses the official Market sandbox and does not require extra sandbox configuration:

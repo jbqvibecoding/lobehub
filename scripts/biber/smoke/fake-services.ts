@@ -8,7 +8,9 @@
  * Point the server at them with OPENAI_PROXY_URL=http://127.0.0.1:<model>/v1 and
  * EXPO_BASE_URL=http://127.0.0.1:<push>.
  */
+import { createHmac } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { deflateSync } from 'node:zlib';
 
 export const CODE_TOOL = 'lobe-cloud-sandbox____executeCode';
 
@@ -496,4 +498,206 @@ export const startFakeLarkApi = async (port: number) => {
   });
   await listen(server, port);
   return { close: () => server.close(), sent };
+};
+
+/** A plain PNG of the given size: a light page with a dark top bar and a box, like a login page. */
+const fakePagePicture = (width: number, height: number) => {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xed_b8_83_20 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc32 = (bytes: Buffer) => {
+    let c = 0xff_ff_ff_ff;
+    for (const byte of bytes) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xff_ff_ff_ff) >>> 0;
+  };
+  const chunk = (type: string, data: Buffer) => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const typed = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(typed));
+    return Buffer.concat([length, typed, crc]);
+  };
+  const rows: Buffer[] = [];
+  for (let y = 0; y < height; y++) {
+    const row = Buffer.alloc(1 + width * 3);
+    for (let x = 0; x < width; x++) {
+      const inBar = y < 64;
+      const inBox = x > width / 2 - 200 && x < width / 2 + 200 && y > 220 && y < 520;
+      const [r, g, b] = inBar ? [31, 41, 55] : inBox ? [255, 255, 255] : [243, 244, 246];
+      row.set([r, g, b], 1 + x * 3);
+    }
+    rows.push(row);
+  }
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header.set([8, 2, 0, 0, 0], 8);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(Buffer.concat(rows))),
+    chunk('IEND', Buffer.alloc(0)),
+  ]).toString('base64');
+};
+
+/**
+ * An OpenBot supervisor and the computers it runs, answering as apps/computer does: the supervisor
+ * reports and starts computers by bot id; each computer has a browser whose wheel the Bot or a person
+ * holds, refuses a person's input until they hold it, and answers only its own bot with its own token
+ * (HMAC of its id under the computer secret, as the supervisor hands it out).
+ *
+ * Point the server at it with SANDBOX_PROVIDER=openbot, OPENBOT_SUPERVISOR_URL=http://127.0.0.1:<supervisor>
+ * and OPENBOT_SUPERVISOR_TOKEN / OPENBOT_COMPUTER_TOKEN set to the secrets passed here.
+ */
+export const startFakeOpenBot = async ({
+  computerPort,
+  computerSecret,
+  supervisorPort,
+  supervisorToken,
+}: {
+  computerPort: number;
+  computerSecret: string;
+  supervisorPort: number;
+  supervisorToken: string;
+}) => {
+  const computerUrl = `http://127.0.0.1:${computerPort}`;
+  const running = new Set<string>();
+  const ensured: string[] = [];
+  const control = new Map<
+    string,
+    {
+      holder: 'bot' | 'human';
+      request?: { id: string; reason: string; source: string; status: string };
+    }
+  >();
+  const humanInputs: { action: string; body: unknown; botId: string }[] = [];
+  /** The network policy the server pushed to each computer. */
+  const policies = new Map<string, any>();
+  const picture = fakePagePicture(1280, 800);
+  let nextRequest = 1;
+
+  const stateOf = (botId: string) => {
+    const state = control.get(botId) ?? { holder: 'bot' as const };
+    control.set(botId, state);
+    return {
+      holder: state.holder,
+      reason: state.request?.status === 'waiting' ? state.request.reason : undefined,
+      request: state.request,
+      requested: state.request?.status === 'waiting',
+      resumeSnapshotRequired: false,
+      since: new Date().toISOString(),
+      transitioning: false,
+    };
+  };
+
+  const supervisor = createServer(async (req, res) => {
+    const json = (body: unknown, status = 200) => {
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(body));
+    };
+    if (req.headers.authorization !== `Bearer ${supervisorToken}`) {
+      json({ error: 'Unauthorized.' }, 401);
+      return;
+    }
+    const match = (req.url ?? '').match(/^\/computers\/([\w-]+)(\/ensure)?$/);
+    if (!match) {
+      json({ error: 'Not found' }, 404);
+      return;
+    }
+    const botId = match[1];
+    if (match[2] && req.method === 'POST') {
+      running.add(botId);
+      ensured.push(botId);
+    }
+    json(
+      running.has(botId)
+        ? { botId, status: 'running', url: computerUrl }
+        : { botId, status: 'absent' },
+    );
+  });
+
+  const computer = createServer(async (req, res) => {
+    const json = (body: unknown, status = 200) => {
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(body));
+    };
+    const botId = String(req.headers['x-openbot-bot-id'] ?? '');
+    const token = createHmac('sha256', computerSecret).update(`computer:${botId}`).digest('hex');
+    if (!running.has(botId) || req.headers.authorization !== `Bearer ${token}`) {
+      json({ error: 'Not authorised.' }, 403);
+      return;
+    }
+    const path = new URL(req.url ?? '/', computerUrl).pathname;
+    const body = req.method === 'POST' ? await readJson(req).catch(() => ({})) : {};
+    const state = control.get(botId) ?? { holder: 'bot' as const };
+    control.set(botId, state);
+
+    if (path === '/egress-policy' && req.method === 'PUT') {
+      policies.set(botId, body.policy);
+      return json({ botId, policy: body.policy });
+    }
+    if (path === '/control' && req.method === 'GET') return json(stateOf(botId));
+    if (path === '/screenshot') {
+      return json({
+        base64: picture,
+        capturedAt: new Date().toISOString(),
+        height: 800,
+        url: 'https://example.com/login',
+        width: 1280,
+      });
+    }
+    if (path === '/control/request') {
+      if (state.holder === 'bot' && state.request?.status !== 'waiting') {
+        state.request = {
+          id: `req-${nextRequest++}`,
+          reason: body.reason ?? 'The assistant needs a person to continue.',
+          source: body.source ?? 'model',
+          status: 'waiting',
+        };
+      }
+      return json(stateOf(botId));
+    }
+    if (path === '/control/take' || path === '/control/release') {
+      if (body.requestId !== state.request?.id) {
+        return json({ error: 'That request is no longer the current handoff.' }, 409);
+      }
+      if (path === '/control/take') {
+        state.holder = 'human';
+        state.request!.status = 'taken';
+      } else {
+        state.holder = 'bot';
+        state.request!.status = 'completed';
+      }
+      return json(stateOf(botId));
+    }
+    if (path.startsWith('/human/')) {
+      if (state.holder !== 'human') return json({ error: 'Take control first.' }, 409);
+      humanInputs.push({ action: path.slice('/human/'.length), body, botId });
+      return json({ action: path, url: 'https://example.com/login' });
+    }
+    json({ error: 'Not found' }, 404);
+  });
+
+  await Promise.all([listen(supervisor, supervisorPort), listen(computer, computerPort)]);
+  return {
+    /** The Bot asking for a person, as the computer tools do when they are stuck. */
+    askForHelp: (botId: string, reason: string) => {
+      control.set(botId, {
+        holder: 'bot',
+        request: { id: `req-${nextRequest++}`, reason, source: 'model', status: 'waiting' },
+      });
+    },
+    close: () => {
+      supervisor.close();
+      computer.close();
+    },
+    control,
+    ensured,
+    humanInputs,
+    policies,
+    running,
+  };
 };

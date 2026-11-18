@@ -7,6 +7,7 @@ import {
   Home,
   Image,
   LibraryBigIcon,
+  MonitorCog,
   Settings,
   ShapesIcon,
 } from 'lucide-react';
@@ -88,6 +89,7 @@ import CommunityListModelLayout from '@/routes/(main)/community/(list)/model/_la
 import CommunityListProviderPage from '@/routes/(main)/community/(list)/provider';
 import CommunityListSkillPage from '@/routes/(main)/community/(list)/skill';
 import CommunityListSkillLayout from '@/routes/(main)/community/(list)/skill/_layout';
+import CloudComputerPage from '@/routes/(main)/computer';
 import DevtoolsIndexPage from '@/routes/(main)/devtools';
 import DevtoolsLayout from '@/routes/(main)/devtools/_layout';
 import DevtoolsToolPage from '@/routes/(main)/devtools/[identifier]';
@@ -620,6 +622,14 @@ export const desktopRoutes: RouteObject[] = [
   {
     children: [
       ...sharedMainAreaChildren,
+
+      // Cloud computer page (personal-only — never mirrored under /:workspaceSlug)
+      {
+        element: <CloudComputerPage />,
+        errorElement: <ErrorBoundary />,
+        handle: { meta: routeMeta({ icon: MonitorCog, titleKey: 'navigation.cloudComputer' }) },
+        path: 'computer',
+      },
 
       // Downloads page (personal-only — never mirrored under /:workspaceSlug)
       {

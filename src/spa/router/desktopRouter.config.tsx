@@ -7,6 +7,7 @@ import {
   Home,
   Image,
   LibraryBigIcon,
+  MonitorCog,
   Settings,
   ShapesIcon,
 } from 'lucide-react';
@@ -716,6 +717,17 @@ export const desktopRoutes: RouteObject[] = [
   {
     children: [
       ...sharedMainAreaChildren,
+
+      // Cloud computer page (personal-only — never mirrored under /:workspaceSlug)
+      {
+        element: dynamicElement(
+          () => import('@/routes/(main)/computer'),
+          'Desktop > Cloud computer',
+        ),
+        errorElement: <ErrorBoundary />,
+        handle: { meta: routeMeta({ icon: MonitorCog, titleKey: 'navigation.cloudComputer' }) },
+        path: 'computer',
+      },
 
       // Downloads page (personal-only — never mirrored under /:workspaceSlug)
       {

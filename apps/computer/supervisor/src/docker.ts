@@ -607,6 +607,32 @@ export async function ensure(
   );
 }
 
+/**
+ * One computer as it is, without starting it (Biber: the cloud computer page polls this, and
+ * looking at a stopped computer must not start it). Null when this supervisor has none for the Bot.
+ * The address is given only while it runs, worked out as `ensure` does.
+ */
+export async function describe(
+  names: ComputerNames,
+  network?: string,
+): Promise<ComputerState | null> {
+  const found = await inspectOwned(names);
+  if (!found) return null;
+  const running = found.status === "running";
+  return {
+    botId: names.botId,
+    container: names.container,
+    status: found.status,
+    ...(found.startedAt ? { startedAt: found.startedAt } : {}),
+    ...(found.port ? { port: found.port } : {}),
+    ...(running && network
+      ? { url: `http://${names.container}:4100` }
+      : running && found.port
+        ? { url: `http://127.0.0.1:${found.port}` }
+        : {}),
+  };
+}
+
 /** Stop this Bot's computer. Its storage is untouched, so its logins survive. */
 export async function stop(names: ComputerNames): Promise<boolean> {
   if (!(await inspectOwned(names))) return false;

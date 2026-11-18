@@ -5,6 +5,7 @@ import { environmentFor } from "./environment";
 import {
   ComputerNotAnsweringError,
   DockerUnavailableError,
+  describe,
   ensure,
   listOwned,
   NameHeldError,
@@ -128,6 +129,26 @@ app.post("/computers/:botId/ensure", async (context) => {
       error instanceof DockerUnavailableError ||
       error instanceof ComputerNotAnsweringError
     ) {
+      return context.json({ error: error.message }, 503);
+    }
+    throw error;
+  }
+});
+
+app.get("/computers/:botId", async (context) => {
+  const parsed = resolve(context.req.param("botId"));
+  if (!parsed.ok) return context.json({ error: parsed.reason }, 400);
+  try {
+    const state = await describe(parsed.names, network);
+    return context.json(
+      state ?? {
+        botId: parsed.names.botId,
+        container: parsed.names.container,
+        status: "absent",
+      },
+    );
+  } catch (error) {
+    if (error instanceof DockerUnavailableError) {
       return context.json({ error: error.message }, 503);
     }
     throw error;

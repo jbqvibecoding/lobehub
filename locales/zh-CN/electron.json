@@ -33,6 +33,7 @@
   "gateway.statusDisconnected": "未连接到网关",
   "gateway.title": "设备网关",
   "navigation.chat": "对话",
+  "navigation.cloudComputer": "云电脑",
   "navigation.discover": "发现",
   "navigation.discoverAssistants": "发现助理",
   "navigation.discoverMcp": "发现 MCP",

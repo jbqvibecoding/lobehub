@@ -31,6 +31,11 @@ Copied from OpenBot as shipped inside OpenDuet (`openbot/supervisor`, `openbot/a
   every computer held the shared token, so a command run on one user's computer could read it and
   reach every other computer on the network. The supervisor already replaces a computer that holds
   a token it no longer hands out, so existing computers are recreated on their next use.
+- `agent-computer`'s `/control/request` also accepts `source: "manual"`: a person who wants the
+  browser without being asked (the Biber cloud computer page's "Take over") raises the request in
+  their own name and takes it. The challenge sources stay internal; a caller cannot name them.
+- `supervisor` answers `GET /computers/:botId` with a computer's state without starting it, so the
+  cloud computer page can poll a stopped computer and leave it stopped.
 - Both `bun.lock` files are committed although the repository ignores `*.lock`: the Dockerfiles
   install with `--frozen-lockfile` and need them.
 

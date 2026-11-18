@@ -1,5 +1,6 @@
 export default {
   'navigation.chat': 'Chat',
+  'navigation.cloudComputer': 'Cloud computer',
   'navigation.discover': 'Discover',
   'navigation.discoverAssistants': 'Discover Agents',
   'navigation.discoverMcp': 'Discover MCP',

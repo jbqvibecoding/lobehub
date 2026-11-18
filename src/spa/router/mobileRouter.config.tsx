@@ -265,6 +265,16 @@ export const mobileRoutes: RouteObject[] = [
     children: [
       ...sharedMainAreaChildren,
 
+      // Cloud computer page (personal-only — never mirrored under /:workspaceSlug)
+      {
+        element: dynamicElement(
+          () => import('@/routes/(main)/computer'),
+          'Mobile > Cloud computer',
+        ),
+        errorElement: <ErrorBoundary />,
+        path: 'computer',
+      },
+
       // Downloads page (personal-only — never mirrored under /:workspaceSlug)
       {
         element: dynamicElement(() => import('@/routes/(main)/downloads'), 'Mobile > Downloads'),

@@ -218,6 +218,30 @@ describe("a name held by somebody else", () => {
   }, 90_000);
 });
 
+describe("looking at a computer", () => {
+  test("never starts it, and gives an address only while it runs", async () => {
+    // The cloud computer page polls this. Looking must not start a computer someone stopped.
+    expect(await withDocker().supervisor.describe(names, "net")).toBeNull();
+
+    await plant(OURS, true);
+    const stopped = await withDocker().supervisor.describe(names, "net");
+    expect(stopped?.status).not.toBe("running");
+    expect(stopped?.url).toBeUndefined();
+    const info = await withDocker()
+      .docker.getContainer(names.container)
+      .inspect();
+    expect(info.State?.Running).toBe(false);
+
+    await withDocker().supervisor.ensure(names, {
+      image: IMAGE,
+      environment: [],
+    });
+    const running = await withDocker().supervisor.describe(names, "net");
+    expect(running?.status).toBe("running");
+    expect(running?.url).toBe(`http://${names.container}:4100`);
+  }, 90_000);
+});
+
 describe("a computer that never answers", () => {
   test("fails instead of being handed out as ready", async () => {
     // A wait that cannot fail is a sleep: every computer that never came up was reported ready, and

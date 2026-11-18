@@ -1,3 +1,4 @@
+import { Link } from 'expo-router';
 import { Stack } from 'expo-router/stack';
 import {
   ActivityIndicator,
@@ -73,6 +74,15 @@ export const AccountScreen = () => {
         />
       ) : null}
       {billedOnWeb ? <Text style={styles.message}>{t('billedOnWebNote')}</Text> : null}
+      <Link asChild href="/computer">
+        <Pressable
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+        >
+          <Text style={styles.rowTitle}>{t('computerTitle')}</Text>
+          <Text style={styles.rowHint}>{t('computerEntryHint')}</Text>
+        </Pressable>
+      </Link>
       {isMainlandEdition ? <Text style={styles.edition}>{t('mainlandEdition')}</Text> : null}
       <Pressable
         accessibilityRole="button"
@@ -94,6 +104,9 @@ const createStyles = (colors: Palette) =>
     link: { color: colors.accent, fontSize: 16 },
     message: { color: colors.secondaryLabel, fontSize: 15, textAlign: 'center' },
     pressed: { opacity: 0.6 },
+    row: { backgroundColor: colors.card, borderRadius: 12, gap: 2, padding: 14 },
+    rowHint: { color: colors.secondaryLabel, fontSize: 13 },
+    rowTitle: { color: colors.label, fontSize: 16 },
     screen: { backgroundColor: colors.background },
     signOut: { alignItems: 'center', backgroundColor: colors.card, borderRadius: 12, padding: 14 },
     signOutText: { color: colors.danger, fontSize: 16 },

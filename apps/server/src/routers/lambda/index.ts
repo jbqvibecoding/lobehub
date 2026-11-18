@@ -39,6 +39,7 @@ import { changelogRouter } from './changelog';
 import { chunkRouter } from './chunk';
 import { comfyuiRouter } from './comfyui';
 import { composioRouter } from './composio';
+import { computerRouter } from './computer';
 import { configRouter } from './config';
 import { connectorRouter } from './connector';
 import { deviceRouter } from './device';
@@ -120,6 +121,7 @@ export const lambdaRouter = router({
   image: imageRouter,
   importer: importerRouter,
   composio: composioRouter,
+  computer: computerRouter,
 
   klavis: klavisRouter,
   knowledge: knowledgeRouter,

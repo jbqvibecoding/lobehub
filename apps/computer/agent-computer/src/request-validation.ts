@@ -67,6 +67,22 @@ export function parseScrollDelta(input: unknown): ScrollDeltaParseResult {
   return { ok: true, deltaY: input };
 }
 
+export type HelpSourceParseResult =
+  | { ok: true; source: "model" | "manual" }
+  | { ok: false; error: string };
+
+/**
+ * Who asked for a person at `/control/request`: the Bot (`model`, the default) or a person who
+ * wants to take the browser without being asked (`manual`). The challenge sources are raised by
+ * this process itself when it meets a challenge page, so a caller cannot name them.
+ */
+export function parseHelpSource(input: unknown): HelpSourceParseResult {
+  if (input === undefined || input === "model")
+    return { ok: true, source: "model" };
+  if (input === "manual") return { ok: true, source: "manual" };
+  return { ok: false, error: 'source must be "model" or "manual".' };
+}
+
 export type InputMessageParseResult =
   | { ok: true; message: InputMessage }
   | { ok: false; error: string };

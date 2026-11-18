@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MarketService } from '@/server/services/market';
 
-import { clearOpenBotComputerCache, computerTokenFor, OpenBotSandboxProvider } from './openbot';
+import { OpenBotSandboxProvider } from './openbot';
+import { clearOpenBotComputerCache, computerTokenFor } from './openbotComputer';
 
 const env = vi.hoisted(() => ({ sandboxEnv: {} as Record<string, unknown> }));
 vi.mock('@/envs/sandbox', () => env);
@@ -36,6 +37,7 @@ const routeFetch = (exec: () => Response = () => Response.json(shellResult())) =
     if (url.endsWith('/ensure')) {
       return Response.json({ status: 'running', url: 'http://computer-1.internal:4100/' });
     }
+    if (url.endsWith('/egress-policy')) return Response.json({});
 
     return exec();
   });
@@ -73,6 +75,8 @@ describe('OpenBotSandboxProvider', () => {
     expect(first).toMatchObject({ result: { exitCode: 0, stdout: 'ok\n' }, success: true });
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       `http://supervisor.internal:4300/computers/${computerId}/ensure`,
+      // Its network policy first: a computer refuses every connection until it has one
+      'http://computer-1.internal:4100/egress-policy',
       'http://computer-1.internal:4100/exec',
       'http://computer-1.internal:4100/exec',
     ]);
@@ -80,7 +84,11 @@ describe('OpenBotSandboxProvider', () => {
     const [, ensureInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect((ensureInit.headers as Headers).get('Authorization')).toBe('Bearer supervisor-token');
 
-    const [, execInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    const [, policyInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(policyInit.method).toBe('PUT');
+    expect(JSON.parse(String(policyInit.body)).policy.mode).toBe('allowlist_only');
+
+    const [, execInit] = fetchMock.mock.calls[2] as unknown as [string, RequestInit];
     const execHeaders = execInit.headers as Headers;
     // Each computer accepts only its own token, never the deployment secret
     expect(execHeaders.get('Authorization')).toBe(
@@ -181,7 +189,10 @@ describe('OpenBotSandboxProvider', () => {
 
     expect(result.success).toBe(true);
     expect(result.result?.commandId).toMatch(/^bg-[\da-z-]+$/);
-    const [, init] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    const [, init] = fetchMock.mock.calls.find(([url]) => url.endsWith('/exec')) as unknown as [
+      string,
+      RequestInit,
+    ];
     expect(JSON.parse(String(init.body)).command).toContain('setsid nohup bash -c');
   });
 });

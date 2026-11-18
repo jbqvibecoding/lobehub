@@ -38,6 +38,7 @@ import {
 import { createProfiles, numberFromEnv, VIEWPORT } from "./profiles";
 import {
   parseExecTimeout,
+  parseHelpSource,
   parseInputMessage,
   parseNavigateUrl,
   parseScrollDelta,
@@ -846,6 +847,7 @@ serve<StreamData>({
       if (url.pathname === "/control/request" && request.method === "POST") {
         const body = (await request.json().catch(() => null)) as {
           reason?: unknown;
+          source?: unknown;
           toolCallId?: unknown;
         } | null;
         if (
@@ -853,13 +855,17 @@ serve<StreamData>({
           typeof body.toolCallId !== "string"
         )
           return json({ error: "toolCallId must be a string." }, 400);
+        // A person may ask too, to take the browser without the Bot asking (Biber: the cloud
+        // computer page's "Take over").
+        const source = parseHelpSource(body?.source);
+        if (!source.ok) return json({ error: source.error }, 400);
         // The page the Bot is stuck on, recorded with the request. A browser that will not start is
         // no reason to refuse the request: the person is the one who can see why.
         const stuckOn = await currentPage(botId).catch(() => undefined);
         const state = session.control.requestHelp(
           body?.reason,
           body?.toolCallId,
-          "model",
+          source.source,
           stuckOn?.url(),
         );
         // Not awaited: reopening the page can take a navigation timeout plus a cold browser start,
