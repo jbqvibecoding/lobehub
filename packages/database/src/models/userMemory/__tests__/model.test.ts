@@ -1854,6 +1854,12 @@ describe('UserMemoryModel', () => {
 
       expect(currentUserMemories).toHaveLength(0);
       expect(otherUserMemories).toHaveLength(1);
+      // Contexts would otherwise outlive their memories and still be retrieved for the agent
+      expect(
+        await serverDB.query.userMemoriesContexts.findMany({
+          where: eq(userMemoriesContexts.userId, userId),
+        }),
+      ).toHaveLength(0);
     });
   });
 

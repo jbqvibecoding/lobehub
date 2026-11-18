@@ -153,6 +153,21 @@ export const startFakeModel = async (port: number) => {
     };
     requests.push(request);
 
+    if (path.endsWith('/embeddings')) {
+      // Enough for memories to be stored: every text gets the same small vector
+      const inputs: unknown[] = Array.isArray(body.input) ? body.input : [body.input];
+      const embedding = Array.from({ length: body.dimensions ?? 1024 }, () => 0.01);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          data: inputs.map((_, index) => ({ embedding, index, object: 'embedding' })),
+          model: body.model,
+          object: 'list',
+          usage: { prompt_tokens: inputs.length, total_tokens: inputs.length },
+        }),
+      );
+      return;
+    }
     if (!path.endsWith('/chat/completions')) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: { message: `fake model does not serve ${path}` } }));

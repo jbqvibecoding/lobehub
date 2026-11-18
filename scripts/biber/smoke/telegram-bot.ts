@@ -1,7 +1,8 @@
 /**
  * The shared Telegram bot, against a running server: updates without the webhook secret are
- * refused, a new user is sent the link that connects their account, they connect it, a message
- * gets the agent's reply, and an action that needs approval is approved with the chat's button.
+ * refused, a new user is sent the link that connects their account, they connect it and the phone
+ * shows it, a message gets the agent's reply, an action that needs approval is approved with the
+ * chat's button, and once the phone unlinks it the bot asks to link again.
  *
  *   bunx tsx scripts/biber/smoke/telegram-bot.ts
  *
@@ -109,6 +110,13 @@ const main = async () => {
       await waitFor('the confirmation', async () => sentText(/Linked successfully/), 15_000);
     });
 
+    await step('the phone shows Telegram as linked', async () => {
+      const links = await client.query<{ platform: string }[]>('mobile', 'messenger.listMyLinks');
+      if (!links.some((link) => link.platform === 'telegram')) {
+        throw new Error(JSON.stringify(links));
+      }
+    });
+
     await step('a message gets the agent’s reply in Telegram', async () => {
       await deliver(message('hello there'));
       await waitFor('the reply', async () => sentText(/Hello from the fake model/), 90_000);
@@ -166,6 +174,19 @@ const main = async () => {
         'the reply after the approved action',
         async () => sentText(/The code ran/),
         90_000,
+      );
+    });
+
+    await step('after unlinking on the phone, Telegram is sent the link again', async () => {
+      await client.mutation('mobile', 'messenger.unlink', { platform: 'telegram' });
+      const before = telegram.textsTo(userId).filter((sent) => /verify-im/.test(sent.text)).length;
+      await deliver(message('are you still there?'));
+      await waitFor(
+        'a new link',
+        async () =>
+          telegram.textsTo(userId).filter((sent) => /verify-im/.test(sent.text)).length > before ||
+          undefined,
+        30_000,
       );
     });
   } finally {

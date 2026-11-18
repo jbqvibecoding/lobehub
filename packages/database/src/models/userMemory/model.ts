@@ -319,8 +319,7 @@ export interface UpdateIdentityEntryParams {
 
 export interface ContextEntryPayload {
   associatedObjects?:
-    | { extra?: Record<string, unknown>; name?: string; type?: UserMemoryContextObjectType }[]
-    | null;
+    { extra?: Record<string, unknown>; name?: string; type?: UserMemoryContextObjectType }[] | null;
   associatedSubjects?:
     | { extra?: Record<string, unknown>; name?: string; type?: UserMemoryContextSubjectType }[]
     | null;
@@ -2447,7 +2446,11 @@ export class UserMemoryModel {
   };
 
   deleteAll = async (): Promise<void> => {
-    await this.db.delete(userMemories).where(this.memoryWhere(userMemories));
+    await this.db.transaction(async (tx) => {
+      // A context lists its memories by id rather than by a foreign key, so it would outlive them
+      await tx.delete(userMemoriesContexts).where(this.memoryWhere(userMemoriesContexts));
+      await tx.delete(userMemories).where(this.memoryWhere(userMemories));
+    });
   };
 
   searchActivities = async (params: {

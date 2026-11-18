@@ -24,6 +24,7 @@ import { homeRouter } from '../lambda/home';
 import { knowledgeBaseRouter } from '../lambda/knowledgeBase';
 import { marketRouter } from '../lambda/market';
 import { messageRouter } from '../lambda/message';
+import { messengerRouter } from '../lambda/messenger';
 import { pluginRouter } from '../lambda/plugin';
 import { pushTokenRouter } from '../lambda/pushToken';
 import { sessionRouter } from '../lambda/session';
@@ -36,6 +37,7 @@ import { userRouter } from '../lambda/user';
 import { activityRouter } from './activity';
 import { approvalRouter } from './approval';
 import { chatRouter } from './chat';
+import { memoriesRouter } from './memories';
 import { routinesRouter } from './routines';
 
 export const mobileRouter = router({
@@ -61,7 +63,9 @@ export const mobileRouter = router({
   home: homeRouter,
   knowledgeBase: knowledgeBaseRouter,
   market: marketRouter,
+  memories: memoriesRouter,
   message: messageRouter,
+  messenger: messengerRouter,
   plugin: pluginRouter,
   pushToken: pushTokenRouter,
   routines: routinesRouter,

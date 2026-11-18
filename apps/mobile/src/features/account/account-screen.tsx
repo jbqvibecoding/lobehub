@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 
 import { isMainlandEdition } from '@/config/app-config';
-import { t } from '@/i18n/strings';
+import { type StringKey, t } from '@/i18n/strings';
 import { api } from '@/lib/api';
 import { type Palette, useColors } from '@/theme/colors';
 
@@ -20,6 +20,16 @@ import { PlanOffers } from './plan-offers';
 import { signOut } from './sign-out';
 import { useAppStore } from './store/use-app-store';
 import { usePlan } from './use-plan';
+
+const SETTINGS: {
+  hint: StringKey;
+  href: '/chat-apps' | '/computer' | '/memories';
+  title: StringKey;
+}[] = [
+  { hint: 'linkedChatsEntryHint', href: '/chat-apps', title: 'linkedChatsTitle' },
+  { hint: 'memoriesEntryHint', href: '/memories', title: 'memoriesTitle' },
+  { hint: 'computerEntryHint', href: '/computer', title: 'computerTitle' },
+];
 
 export const AccountScreen = () => {
   const colors = useColors();
@@ -74,15 +84,17 @@ export const AccountScreen = () => {
         />
       ) : null}
       {billedOnWeb ? <Text style={styles.message}>{t('billedOnWebNote')}</Text> : null}
-      <Link asChild href="/computer">
-        <Pressable
-          accessibilityRole="button"
-          style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-        >
-          <Text style={styles.rowTitle}>{t('computerTitle')}</Text>
-          <Text style={styles.rowHint}>{t('computerEntryHint')}</Text>
-        </Pressable>
-      </Link>
+      {SETTINGS.map(({ hint, href, title }) => (
+        <Link asChild href={href} key={href}>
+          <Pressable
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+          >
+            <Text style={styles.rowTitle}>{t(title)}</Text>
+            <Text style={styles.rowHint}>{t(hint)}</Text>
+          </Pressable>
+        </Link>
+      ))}
       {isMainlandEdition ? <Text style={styles.edition}>{t('mainlandEdition')}</Text> : null}
       <Pressable
         accessibilityRole="button"

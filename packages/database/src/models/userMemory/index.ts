@@ -6,4 +6,5 @@ export * from './model';
 export * from './persona';
 export * from './preference';
 export * from './query';
+export * from './review';
 export * from './sources/benchmarkLoCoMo';
