@@ -54,6 +54,7 @@ import { redisPolicyStateStore } from '@/server/services/agentSignal/store/adapt
 import type { UserMemoryEmbeddingRuntime } from '@/server/services/memory/userMemory/embedding';
 import { embedUserMemoryTexts } from '@/server/services/memory/userMemory/embedding';
 import { normalizeSearchMemoryParams } from '@/server/services/memory/userMemory/searchParams';
+import { refuseSecretMemories } from '@/server/services/memory/userMemory/secretGuard';
 
 import type { ToolExecutionMemoryEmbeddingRuntime } from '../types';
 import type { ServerRuntimeRegistration } from './types';
@@ -879,21 +880,24 @@ export const memoryRuntime: ServerRuntimeRegistration = {
 
     const memoryModel = new UserMemoryModel(context.serverDB, context.userId);
 
-    const service = new MemoryServerRuntimeService({
-      agentId: context.agentId,
-      emitOutcome: emitToolOutcomeSafely,
-      messageId: context.messageId,
-      memoryEffort,
-      memoryEmbeddingRuntime: context.memoryEmbeddingRuntime,
-      memoryModel,
-      operationId: context.operationId,
-      serverDB: context.serverDB,
-      taskId: context.taskId,
-      toolCallId: context.toolCallId,
-      topicId: context.topicId,
-      userId: context.userId,
-      workspaceId: context.workspaceId,
-    });
+    // A memory the agent asks to save is refused when it carries a secret
+    const service = refuseSecretMemories(
+      new MemoryServerRuntimeService({
+        agentId: context.agentId,
+        emitOutcome: emitToolOutcomeSafely,
+        messageId: context.messageId,
+        memoryEffort,
+        memoryEmbeddingRuntime: context.memoryEmbeddingRuntime,
+        memoryModel,
+        operationId: context.operationId,
+        serverDB: context.serverDB,
+        taskId: context.taskId,
+        toolCallId: context.toolCallId,
+        topicId: context.topicId,
+        userId: context.userId,
+        workspaceId: context.workspaceId,
+      }),
+    );
 
     return new MemoryExecutionRuntime({
       service,

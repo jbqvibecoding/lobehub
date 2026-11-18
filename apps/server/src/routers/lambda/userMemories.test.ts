@@ -675,3 +675,36 @@ describe('userMemories.toolAddActivityMemory', () => {
     }
   });
 });
+
+describe('userMemories memory tool writes that carry a secret', () => {
+  it('refuses to remember a password, and stores nothing', async () => {
+    const createPreferenceMemory = vi.fn();
+    vi.mocked(UserMemoryModel).mockImplementation(() => ({ createPreferenceMemory }) as any);
+    vi.mocked(getServerDB).mockResolvedValue(makeServerDBMock() as any);
+
+    const caller = userMemoriesRouter.createCaller(mockCtx as any);
+
+    await expect(
+      caller.toolAddPreferenceMemory({
+        details: '',
+        memoryCategory: 'home',
+        memoryType: TypesEnum.Preference,
+        summary: 'Home wifi password: Tr0ub4dor',
+        tags: [],
+        title: 'Wifi',
+        withPreference: {
+          appContext: null,
+          conclusionDirectives: 'Use this wifi password when asked',
+          extractedLabels: [],
+          extractedScopes: [],
+          originContext: null,
+          scorePriority: 0.5,
+          suggestions: [],
+          type: 'home',
+        },
+      } as any),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: expect.stringContaining('Not saved') });
+    expect(createPreferenceMemory).not.toHaveBeenCalled();
+    expect(embeddingsMock).not.toHaveBeenCalled();
+  });
+});

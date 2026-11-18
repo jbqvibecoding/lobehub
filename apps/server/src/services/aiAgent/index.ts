@@ -89,7 +89,6 @@ import { TaskModel } from '@/database/models/task';
 import { ThreadModel } from '@/database/models/thread';
 import { TopicModel } from '@/database/models/topic';
 import { UserModel } from '@/database/models/user';
-import { UserPersonaModel } from '@/database/models/userMemory/persona';
 import { WorkspaceUserSettingsModel } from '@/database/models/workspaceUserSettings';
 import { toolsEnv } from '@/envs/tools';
 import {
@@ -149,6 +148,7 @@ import type { ConversationHistoryEntry } from '@/server/services/heterogeneousAg
 import { buildCloudHeteroContext } from '@/server/services/heterogeneousAgent/cloudHeteroContext';
 import { buildRemoteDeviceHeteroContext } from '@/server/services/heterogeneousAgent/remoteDeviceHeteroContext';
 import { MarketService } from '@/server/services/market';
+import { loadUserMemoryForRun } from '@/server/services/memory/userMemory/forRun';
 import { markdownToTxt } from '@/utils/markdownToTxt';
 
 import { resolveDeviceAccessPolicy } from './deviceAccessPolicy';
@@ -3290,31 +3290,20 @@ export class AiAgentService {
 
     await throwIfExecutionAborted('tool preparation');
 
-    // 10. Fetch user persona for memory injection (reuses globalMemoryEnabled from step 8)
+    // 10. Fetch the persona and key facts for memory injection (reuses globalMemoryEnabled from step 8)
     let userMemory: ServerUserMemoryConfig | undefined;
 
     if (globalMemoryEnabled) {
       try {
-        const personaModel = new UserPersonaModel(this.db, this.userId);
-        const persona = await personaModel.getLatestPersonaDocument();
-
-        if (persona?.persona) {
-          userMemory = {
-            fetchedAt: Date.now(),
-            memories: {
-              contexts: [],
-              experiences: [],
-              persona: {
-                narrative: persona.persona,
-                tagline: persona.tagline,
-              },
-              preferences: [],
-            },
-          };
-          log('execAgent: fetched user persona (version: %d)', persona.version);
-        }
+        userMemory = await loadUserMemoryForRun(this.db, this.userId);
+        log(
+          'execAgent: fetched user memory (persona: %s, identities: %d, standing instructions: %d)',
+          !!userMemory?.memories?.persona,
+          userMemory?.memories?.identities?.length ?? 0,
+          userMemory?.memories?.preferences?.length ?? 0,
+        );
       } catch (error) {
-        log('execAgent: failed to fetch user persona: %O', error);
+        log('execAgent: failed to fetch user memory: %O', error);
       }
     }
 

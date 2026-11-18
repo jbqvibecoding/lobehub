@@ -16,6 +16,7 @@ import {
 } from '@lobechat/memory-user-memory';
 import type { QueryTaxonomyOptionsResult, SearchMemoryResult } from '@lobechat/types';
 import { LayersEnum, queryTaxonomyOptionsSchema, searchMemorySchema } from '@lobechat/types';
+import { TRPCError } from '@trpc/server';
 import { type SQL } from 'drizzle-orm';
 import { and, asc, eq, gte, lte } from 'drizzle-orm';
 import pMap from 'p-map';
@@ -49,6 +50,10 @@ import { initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
 import type { UserMemoryEmbeddingRuntime } from '@/server/services/memory/userMemory/embedding';
 import { embedUserMemoryTexts } from '@/server/services/memory/userMemory/embedding';
 import { normalizeSearchMemoryParams } from '@/server/services/memory/userMemory/searchParams';
+import {
+  holdsSecret,
+  MEMORY_SECRET_REFUSAL,
+} from '@/server/services/memory/userMemory/secretGuard';
 
 const EMPTY_SEARCH_RESULT: SearchMemoryResult = {
   activities: [],
@@ -257,6 +262,13 @@ const memoryProcedure = authedProcedure.use(serverDatabase).use(async (opts) => 
   });
 });
 const memoryWriteProcedure = memoryProcedure.use(withScopedPermission('message:create'));
+/** What the agent asks to remember; refused when it carries a secret (see `secretGuard.ts`). */
+const memoryToolWriteProcedure = memoryWriteProcedure.use(async (opts) => {
+  if (holdsSecret(await opts.getRawInput())) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: MEMORY_SECRET_REFUSAL });
+  }
+  return opts.next();
+});
 
 export const userMemoriesRouter = router({
   getMemoryDetail: memoryProcedure
@@ -970,7 +982,7 @@ export const userMemoriesRouter = router({
     }
   }),
 
-  toolAddActivityMemory: memoryWriteProcedure
+  toolAddActivityMemory: memoryToolWriteProcedure
     .input(ActivityMemoryItemSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -1032,7 +1044,7 @@ export const userMemoriesRouter = router({
       }
     }),
 
-  toolAddContextMemory: memoryWriteProcedure
+  toolAddContextMemory: memoryToolWriteProcedure
     .input(ContextMemoryItemSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -1087,7 +1099,7 @@ export const userMemoriesRouter = router({
       }
     }),
 
-  toolAddExperienceMemory: memoryWriteProcedure
+  toolAddExperienceMemory: memoryToolWriteProcedure
     .input(ExperienceMemoryItemSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -1143,7 +1155,7 @@ export const userMemoriesRouter = router({
       }
     }),
 
-  toolAddIdentityMemory: memoryWriteProcedure
+  toolAddIdentityMemory: memoryToolWriteProcedure
     .input(AddIdentityActionSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -1211,7 +1223,7 @@ export const userMemoriesRouter = router({
       }
     }),
 
-  toolAddPreferenceMemory: memoryWriteProcedure
+  toolAddPreferenceMemory: memoryToolWriteProcedure
     .input(PreferenceMemoryItemSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -1304,7 +1316,7 @@ export const userMemoriesRouter = router({
     return result;
   }),
 
-  toolUpdateIdentityMemory: memoryWriteProcedure
+  toolUpdateIdentityMemory: memoryToolWriteProcedure
     .input(UpdateIdentityActionSchema)
     .mutation(async ({ input, ctx }) => {
       try {

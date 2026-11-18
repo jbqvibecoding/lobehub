@@ -1,3 +1,4 @@
+import { maskSecrets } from '@lobechat/agent-policy';
 import {
   DEFAULT_USER_MEMORY_EMBEDDING_DIMENSIONS,
   DEFAULT_USER_MEMORY_EMBEDDING_MODEL_ITEM,
@@ -1380,7 +1381,9 @@ export class MemoryExtractionExecutor {
       .map(
         (row) =>
           ({
-            content: row.content as string,
+            // Passwords, keys, card and identity numbers are masked before the extractor reads
+            // the chat, so no memory can ever hold one
+            content: maskSecrets(row.content as string),
             createdAt: row.createdAt ?? topicUpdatedAt,
             id: row.id,
             role: (row.role ?? 'assistant') as LLMRoleType,

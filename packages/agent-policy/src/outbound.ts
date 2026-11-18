@@ -123,10 +123,17 @@ const scanText = (text: string, found: Set<SecretKind>): string => {
   return rest;
 };
 
+const isPlainObject = (value: object) => {
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+};
+
 const walk = (value: unknown, found: Set<SecretKind>, depth: number): unknown => {
   if (typeof value === 'string') return scanText(value, found);
   if (!value || typeof value !== 'object' || depth >= MAX_DEPTH) return value;
   if (Array.isArray(value)) return value.map((item) => walk(item, found, depth + 1));
+  // Dates and other class instances carry no text to scan and must keep their type
+  if (!isPlainObject(value)) return value;
 
   return Object.fromEntries(
     Object.entries(value).map(([key, entry]) => {

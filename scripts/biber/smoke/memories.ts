@@ -1,14 +1,16 @@
 /**
  * What Biber remembers, against a running server, through the routes the phone app calls: a
  * memory the agent stores shows on the phone; forgetting it there removes it from what the agent
- * can retrieve; another account cannot forget it; forgetting everything clears the list.
+ * can retrieve; another account cannot forget it; forgetting everything clears the list. The
+ * agent cannot save a password as a memory, and the key facts (who the person is, the rules they
+ * set) reach every run verbatim.
  *
  *   bunx tsx scripts/biber/smoke/memories.ts
  *
  * The server must use the fake model this script starts, which also serves embeddings (see
  * golden-path.ts).
  */
-import { SmokeClient } from './client';
+import { SmokeClient, waitFor } from './client';
 import { startFakeModel } from './fake-services';
 
 const BASE_URL = process.env.SMOKE_BASE_URL ?? 'http://localhost:3010';
@@ -33,7 +35,7 @@ interface MemoryPage {
 }
 
 /** A preference as the agent's memory tool stores it. */
-const preference = (title: string, directive: string) => ({
+const preference = (title: string, directive: string, scorePriority = 0.5) => ({
   details: '',
   memoryCategory: 'travel',
   memoryType: 'preference',
@@ -46,7 +48,7 @@ const preference = (title: string, directive: string) => ({
     extractedLabels: [],
     extractedScopes: [],
     originContext: null,
-    scorePriority: 0.5,
+    scorePriority,
     suggestions: [],
     type: 'travel',
   },
@@ -59,8 +61,14 @@ const main = async () => {
   const stamp = Date.now();
 
   const list = () => client.query<MemoryPage>('mobile', 'memories.list', { page: 1 });
-  const remember = (title: string, directive: string) =>
-    client.mutation('lambda', 'userMemories.toolAddPreferenceMemory', preference(title, directive));
+  const remember = (title: string, directive: string, priority?: number) =>
+    client.mutation(
+      'lambda',
+      'userMemories.toolAddPreferenceMemory',
+      preference(title, directive, priority),
+    );
+  const textOf = (content: unknown) =>
+    typeof content === 'string' ? content : JSON.stringify(content ?? '');
 
   try {
     await client.signUp(`memories-${stamp}@biber.test`, 'Smoke-pass-12345', 'Memories');
@@ -95,6 +103,66 @@ const main = async () => {
       if ((await list()).items.length !== 2) throw new Error('not both stored');
       await client.mutation('mobile', 'memories.forgetAll');
       if ((await list()).items.length > 0) throw new Error('still listed');
+    });
+
+    await step('the agent cannot save a password as a memory', async () => {
+      const refused = await remember('Wifi', 'The home wifi password is Tr0ub4dor').then(
+        () => undefined,
+        (error: unknown) => String(error),
+      );
+      if (!refused?.includes('Not saved'))
+        throw new Error(`saved, or failed otherwise: ${refused}`);
+      if ((await list()).items.length > 0) throw new Error('something was stored');
+    });
+
+    await step('key facts reach every run verbatim', async () => {
+      await client.mutation('lambda', 'userMemories.toolAddIdentityMemory', {
+        details: null,
+        memoryCategory: 'health',
+        memoryType: 'fact',
+        summary: 'Severely allergic to peanuts',
+        tags: ['health'],
+        title: 'Peanut allergy',
+        withIdentity: {
+          description: 'Severely allergic to peanuts',
+          episodicDate: null,
+          extractedLabels: [],
+          relationship: 'self',
+          role: 'patient',
+          scoreConfidence: 0.9,
+          sourceEvidence: null,
+          type: 'personal',
+        },
+      });
+      await remember('Mornings', 'Never book anything before 9am', 0.9);
+      const { agentId } = await client.mutation<{ agentId: string }>(
+        'lambda',
+        'agent.createAgent',
+        {
+          config: {
+            model: 'gpt-4o-mini',
+            provider: 'openai',
+            systemRole: '',
+            title: 'Facts agent',
+          },
+        },
+      );
+      const before = model.requests.length;
+      await client.mutation('lambda', 'aiAgent.execAgent', { agentId, prompt: 'hello there' });
+      await waitFor(
+        'the model to be given the key facts',
+        async () =>
+          model.requests
+            .slice(before)
+            .find((request) =>
+              request.messages.some(
+                (message) =>
+                  textOf(message.content).includes('Severely allergic to peanuts') &&
+                  textOf(message.content).includes('Never book anything before 9am'),
+              ),
+            ),
+        60_000,
+      );
     });
   } finally {
     model.close();

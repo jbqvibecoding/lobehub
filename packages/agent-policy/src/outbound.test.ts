@@ -54,6 +54,14 @@ describe('findSecrets', () => {
 });
 
 describe('maskSecrets', () => {
+  it('keeps dates and other values that are not plain data as they are', () => {
+    const createdAt = new Date('2026-11-18T08:00:00Z');
+    const [message] = maskSecrets([{ content: 'my pwd is hunter22', createdAt, index: 3 }]);
+
+    expect(message.createdAt).toBe(createdAt);
+    expect(message).toEqual({ content: `my ${REDACTED}`, createdAt, index: 3 });
+  });
+
   it('replaces secrets and keeps everything else', () => {
     expect(
       maskSecrets({
