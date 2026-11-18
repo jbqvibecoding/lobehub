@@ -51,6 +51,7 @@ import { selectNonVectorColumns } from '../../utils/columns';
 import { TopicModel } from '../topic';
 import type { UserMemoryHybridSearchAggregatedResult } from './query';
 import { UserMemoryQueryModel } from './query';
+import { forgetEverything } from './review';
 
 const normalizeRelationshipValue = (input: unknown): RelationshipEnum | null => {
   if (input === null) return null;
@@ -2446,11 +2447,9 @@ export class UserMemoryModel {
   };
 
   deleteAll = async (): Promise<void> => {
-    await this.db.transaction(async (tx) => {
-      // A context lists its memories by id rather than by a foreign key, so it would outlive them
-      await tx.delete(userMemoriesContexts).where(this.memoryWhere(userMemoriesContexts));
-      await tx.delete(userMemories).where(this.memoryWhere(userMemories));
-    });
+    // Contexts list memories by id rather than by a foreign key, and undo records keep what
+    // extractions replaced, so both would outlive a plain delete of the memories
+    await this.db.transaction((tx) => forgetEverything(tx, this.userId));
   };
 
   searchActivities = async (params: {

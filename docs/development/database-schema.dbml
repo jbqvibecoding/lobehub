@@ -2511,6 +2511,35 @@ table user_memories_preferences {
   }
 }
 
+table user_memory_extraction_changes {
+  id varchar(255) [pk, not null]
+  extraction_id varchar(255) [not null]
+  user_id text [not null]
+  kind text [not null]
+  memory_id varchar(255) [not null]
+  live_memory_id varchar(255)
+  before jsonb [not null]
+  after_fingerprint text
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    extraction_id [name: 'user_memory_extraction_changes_extraction_id_index']
+    live_memory_id [name: 'user_memory_extraction_changes_live_memory_id_index']
+  }
+}
+
+table user_memory_extractions {
+  id varchar(255) [pk, not null]
+  user_id text [not null]
+  topic_id text
+  added_memory_ids jsonb [not null, default: `[]`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (user_id, created_at) [name: 'user_memory_extractions_user_id_created_at_index']
+  }
+}
+
 table user_memory_persona_document_histories {
   id varchar(255) [pk, not null]
   user_id text

@@ -861,6 +861,13 @@
       "when": 1794457041940,
       "tag": "0122_add_push_token_provider",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1795045184914,
+      "tag": "0123_add_user_memory_extractions",
+      "breakpoints": true
     }
   ],
   "version": "6"

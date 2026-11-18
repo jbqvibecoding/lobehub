@@ -29,3 +29,19 @@ export interface MemoryPage {
   hasMore: boolean;
   items: Memory[];
 }
+
+/** One memory extraction the user can undo (`memories.recentExtractions`). */
+export interface MemoryExtraction {
+  /** Memories it learned that still exist */
+  added: number;
+  /** Memories it changed or removed that can still be put back */
+  changed: number;
+  createdAt: Date;
+  id: string;
+  /** The chat it learned from; null when the chat has no title or was deleted */
+  topicTitle: string | null;
+}
+
+/** What `memories.undoExtraction` did. */
+export type ExtractionUndo =
+  { undone: false } | { forgotten: number; notRestored: string[]; restored: number; undone: true };

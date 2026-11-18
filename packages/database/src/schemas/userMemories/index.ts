@@ -324,4 +324,5 @@ export type UserMemoryActivitiesWithoutVectors = Omit<
 >;
 export type NewUserMemoryActivity = typeof userMemoriesActivities.$inferInsert;
 
+export * from './extractions';
 export * from './persona';

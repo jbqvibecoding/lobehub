@@ -1,7 +1,52 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 
-import { userMemories, userMemoriesContexts } from '../../schemas';
-import type { LobeChatDatabase } from '../../type';
+import { userMemories, userMemoriesContexts, userMemoryExtractions } from '../../schemas';
+import type { LobeChatDatabase, Transaction } from '../../type';
+
+/**
+ * Deletes memories and every place that carries them: their layer rows (by cascade), the copies an
+ * undo record kept (by cascade), and their ids in contexts, which list memories by id rather than
+ * by a foreign key and so outlive them. Returns the ids that were deleted.
+ */
+export const forgetMemories = async (
+  tx: Transaction,
+  userId: string,
+  ids: string[],
+): Promise<string[]> => {
+  if (ids.length === 0) return [];
+  const deleted = (
+    await tx
+      .delete(userMemories)
+      .where(and(inArray(userMemories.id, ids), eq(userMemories.userId, userId)))
+      .returning({ id: userMemories.id })
+  ).map((row) => row.id);
+  if (deleted.length === 0) return [];
+
+  const contexts = await tx
+    .select({ id: userMemoriesContexts.id, memoryIds: userMemoriesContexts.userMemoryIds })
+    .from(userMemoriesContexts)
+    .where(
+      and(
+        eq(userMemoriesContexts.userId, userId),
+        or(
+          ...deleted.map(
+            (id) => sql`${userMemoriesContexts.userMemoryIds} @> ${JSON.stringify([id])}::jsonb`,
+          ),
+        ),
+      ),
+    );
+  const gone = new Set(deleted);
+  for (const context of contexts) {
+    const rest = (context.memoryIds ?? []).filter((memoryId) => !gone.has(memoryId));
+    await (rest.length === 0
+      ? tx.delete(userMemoriesContexts).where(eq(userMemoriesContexts.id, context.id))
+      : tx
+          .update(userMemoriesContexts)
+          .set({ userMemoryIds: rest })
+          .where(eq(userMemoriesContexts.id, context.id)));
+  }
+  return deleted;
+};
 
 export interface ReviewableMemory {
   capturedAt: Date;
@@ -47,39 +92,15 @@ export class UserMemoryReviewModel {
 
   /** Forgets one memory. False when the user has no memory with that id. */
   forget = async (id: string): Promise<boolean> =>
-    this.db.transaction(async (tx) => {
-      const deleted = await tx
-        .delete(userMemories)
-        .where(and(eq(userMemories.id, id), eq(userMemories.userId, this.userId)))
-        .returning({ id: userMemories.id });
-      if (deleted.length === 0) return false;
+    this.db.transaction(async (tx) => (await forgetMemories(tx, this.userId, [id])).length > 0);
 
-      // A context lists its memories by id rather than by a foreign key, so it outlives them
-      const contexts = await tx
-        .select({ id: userMemoriesContexts.id, memoryIds: userMemoriesContexts.userMemoryIds })
-        .from(userMemoriesContexts)
-        .where(
-          and(
-            eq(userMemoriesContexts.userId, this.userId),
-            sql`${userMemoriesContexts.userMemoryIds} @> ${JSON.stringify([id])}::jsonb`,
-          ),
-        );
-      for (const context of contexts) {
-        const rest = (context.memoryIds ?? []).filter((memoryId) => memoryId !== id);
-        await (rest.length === 0
-          ? tx.delete(userMemoriesContexts).where(eq(userMemoriesContexts.id, context.id))
-          : tx
-              .update(userMemoriesContexts)
-              .set({ userMemoryIds: rest })
-              .where(eq(userMemoriesContexts.id, context.id)));
-      }
-      return true;
-    });
-
-  /** Forgets every memory, contexts included. */
-  forgetAll = async () =>
-    this.db.transaction(async (tx) => {
-      await tx.delete(userMemoriesContexts).where(eq(userMemoriesContexts.userId, this.userId));
-      await tx.delete(userMemories).where(eq(userMemories.userId, this.userId));
-    });
+  /** Forgets every memory, contexts and undo records included. */
+  forgetAll = async () => this.db.transaction((tx) => forgetEverything(tx, this.userId));
 }
+
+/** Deletes all of a user's memories and everything kept about them, undo records included. */
+export const forgetEverything = async (tx: Transaction, userId: string) => {
+  await tx.delete(userMemoryExtractions).where(eq(userMemoryExtractions.userId, userId));
+  await tx.delete(userMemoriesContexts).where(eq(userMemoriesContexts.userId, userId));
+  await tx.delete(userMemories).where(eq(userMemories.userId, userId));
+};

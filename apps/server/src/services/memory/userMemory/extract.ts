@@ -65,8 +65,11 @@ import { type ListTopicsForMemoryExtractorCursor } from '@/database/models/topic
 import { TopicModel } from '@/database/models/topic';
 import { type ListUsersForMemoryExtractorCursor } from '@/database/models/user';
 import { UserModel } from '@/database/models/user';
-import type { UserMemoryHybridSearchAggregatedResult } from '@/database/models/userMemory';
-import { UserMemoryModel } from '@/database/models/userMemory';
+import type {
+  TrackedIdentityChange,
+  UserMemoryHybridSearchAggregatedResult,
+} from '@/database/models/userMemory';
+import { UserMemoryExtractionModel, UserMemoryModel } from '@/database/models/userMemory';
 import { UserMemorySourceBenchmarkLoCoMoModel } from '@/database/models/userMemory/sources/benchmarkLoCoMo';
 import { AiInfraRepos } from '@/database/repositories/aiInfra';
 import { asyncTasks } from '@/database/schemas';
@@ -347,6 +350,8 @@ interface MemoryExtractionTaskErrorItem extends AsyncTaskStructuredErrorItem {
 }
 
 interface PersistLayerResult {
+  /** Identity memories the layer rewrote or removed, as they were before, for undo */
+  changes?: TrackedIdentityChange[];
   errors: MemoryExtractionTaskErrorItem[];
   ids: string[];
 }
@@ -1254,7 +1259,9 @@ export class MemoryExtractionExecutor {
     db: Awaited<ReturnType<typeof getServerDB>>,
   ) {
     const insertedIds: string[] = [];
+    const changes: TrackedIdentityChange[] = [];
     const userMemoryModel = new UserMemoryModel(db, job.userId);
+    const extractionModel = new UserMemoryExtractionModel(db, job.userId);
 
     const addActions = result?.add ?? [];
     const updateActions = result?.update ?? [];
@@ -1316,44 +1323,50 @@ export class MemoryExtractionExecutor {
           )
         : [];
 
-      await userMemoryModel.updateIdentityEntry({
-        base: {
-          capturedAt: job.sourceUpdatedAt,
-          details: set.details,
-          detailsVector1024: detailsVector ?? undefined,
-          memoryCategory: set.memoryCategory,
-          memoryType: set.memoryType,
-          summary: set.summary,
-          summaryVector1024: summaryVector ?? undefined,
-          tags: set.tags,
-          title: set.title,
-        },
-        identity: {
-          capturedAt: job.sourceUpdatedAt,
-          description: set.withIdentity?.description,
-          descriptionVector: descriptionVector ?? undefined,
-          metadata: set.withIdentity.extractedLabels
-            ? this.buildBaseMetadata(
-                job,
-                messageIds,
-                LayersEnum.Identity,
-                set.withIdentity.extractedLabels,
-              )
-            : undefined,
-          relationship: set.withIdentity.relationship ?? undefined,
-          role: set.withIdentity.role ?? undefined,
-          type: set.withIdentity.type ?? undefined,
-        },
-        identityId: action.id,
-        mergeStrategy: action.mergeStrategy as MergeStrategyEnum,
-      });
+      const change = await extractionModel.trackIdentityChange(action.id, 'updated', () =>
+        userMemoryModel.updateIdentityEntry({
+          base: {
+            capturedAt: job.sourceUpdatedAt,
+            details: set.details,
+            detailsVector1024: detailsVector ?? undefined,
+            memoryCategory: set.memoryCategory,
+            memoryType: set.memoryType,
+            summary: set.summary,
+            summaryVector1024: summaryVector ?? undefined,
+            tags: set.tags,
+            title: set.title,
+          },
+          identity: {
+            capturedAt: job.sourceUpdatedAt,
+            description: set.withIdentity?.description,
+            descriptionVector: descriptionVector ?? undefined,
+            metadata: set.withIdentity.extractedLabels
+              ? this.buildBaseMetadata(
+                  job,
+                  messageIds,
+                  LayersEnum.Identity,
+                  set.withIdentity.extractedLabels,
+                )
+              : undefined,
+            relationship: set.withIdentity.relationship ?? undefined,
+            role: set.withIdentity.role ?? undefined,
+            type: set.withIdentity.type ?? undefined,
+          },
+          identityId: action.id,
+          mergeStrategy: action.mergeStrategy as MergeStrategyEnum,
+        }),
+      );
+      if (change) changes.push(change);
     }
 
     for (const action of removeActions) {
-      await userMemoryModel.removeIdentityEntry(action.id);
+      const change = await extractionModel.trackIdentityChange(action.id, 'removed', () =>
+        userMemoryModel.removeIdentityEntry(action.id),
+      );
+      if (change) changes.push(change);
     }
 
-    return { errors: [], ids: insertedIds } satisfies PersistLayerResult;
+    return { changes, errors: [], ids: insertedIds } satisfies PersistLayerResult;
   }
 
   async listConversationsForTopic(
@@ -1551,6 +1564,16 @@ export class MemoryExtractionExecutor {
           }
           if ((job.from && topic.createdAt < job.from) || (job.to && topic.createdAt > job.to)) {
             span.setStatus({ code: SpanStatusCode.OK, message: 'topic_out_of_range' });
+            topicProcessed = true;
+            return {
+              extracted: false,
+              layers: {},
+              memoryIds: [],
+              traceId: span.spanContext().traceId,
+            };
+          }
+          if (topic.metadata?.userMemoryExtractUndone) {
+            span.setStatus({ code: SpanStatusCode.OK, message: 'undone_by_user' });
             topicProcessed = true;
             return {
               extracted: false,
@@ -1832,13 +1855,20 @@ export class MemoryExtractionExecutor {
             };
           }
 
-          const persistedRes = await this.persistExtraction(
+          const { identityChanges, ...persistedRes } = await this.persistExtraction(
             extractionJob,
             messageIds,
             extraction,
             runtimes,
             memoryServiceConfig,
             db,
+          );
+          await this.keepUndoRecord(
+            db,
+            job.userId,
+            topic.id,
+            persistedRes.createdIds,
+            identityChanges,
           );
           if (retrievalErrors.length > 0) {
             throw new MemoryExtractionAggregateError(
@@ -2195,8 +2225,9 @@ export class MemoryExtractionExecutor {
     runtimes: RuntimeBundle,
     memoryServiceConfig: ResolvedMemoryServiceConfig,
     db: Awaited<ReturnType<typeof getServerDB>>,
-  ): Promise<PersistedMemoryResult> {
+  ): Promise<PersistedMemoryResult & { identityChanges: TrackedIdentityChange[] }> {
     const createdIds: string[] = [];
+    const identityChanges: TrackedIdentityChange[] = [];
     const perLayer: Partial<Record<LayersEnum, number>> = {};
     const errors: MemoryExtractionTaskErrorItem[] = [];
     const appendError = (
@@ -2233,9 +2264,10 @@ export class MemoryExtractionExecutor {
         { attributes },
         async (span) => {
           try {
-            const { errors: persistErrors, ids } = await persist();
+            const { changes = [], errors: persistErrors, ids } = await persist();
 
             createdIds.push(...ids);
+            identityChanges.push(...changes);
             perLayer[layer] = ids.length;
             errors.push(...persistErrors);
             this.recordLayerEntries(job, layer, ids.length);
@@ -2368,8 +2400,37 @@ export class MemoryExtractionExecutor {
 
     return {
       createdIds,
+      identityChanges,
       layers: perLayer,
     };
+  }
+
+  /**
+   * Keeps what one extraction from a conversation did, so the user can undo it from the phone. A
+   * failure here costs only the undo, never the memories, so it is logged rather than thrown.
+   */
+  private async keepUndoRecord(
+    db: Awaited<ReturnType<typeof getServerDB>>,
+    userId: string,
+    topicId: string,
+    addedMemoryIds: string[],
+    changes: TrackedIdentityChange[],
+  ) {
+    try {
+      const id = await new UserMemoryExtractionModel(db, userId).record({
+        addedMemoryIds,
+        changes,
+        topicId,
+      });
+      if (id) {
+        console.info(
+          `[memory-extraction] undo record ${id} for topic ${topicId}: ` +
+            `${addedMemoryIds.length} added, ${changes.length} changed`,
+        );
+      }
+    } catch (error) {
+      console.error('[memory-extraction] failed to keep the undo record', error, 'topic:', topicId);
+    }
   }
 
   private async getAiProviderRuntimeState(

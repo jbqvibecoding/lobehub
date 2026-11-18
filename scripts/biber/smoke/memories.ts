@@ -3,17 +3,22 @@
  * memory the agent stores shows on the phone; forgetting it there removes it from what the agent
  * can retrieve; another account cannot forget it; forgetting everything clears the list. The
  * agent cannot save a password as a memory, and the key facts (who the person is, the rules they
- * set) reach every run verbatim.
+ * set) reach every run verbatim. Undoing what a chat taught takes it back and marks the chat so it
+ * is not learned from again.
  *
- *   bunx tsx scripts/biber/smoke/memories.ts
+ *   SMOKE_DATABASE_URL=postgres://… bunx tsx scripts/biber/smoke/memories.ts
  *
  * The server must use the fake model this script starts, which also serves embeddings (see
- * golden-path.ts).
+ * golden-path.ts). Memory extraction runs as an Upstash workflow, which this setup does not run,
+ * so the undo step writes the record an extraction leaves straight into the server's database.
  */
+import pg from 'pg';
+
 import { SmokeClient, waitFor } from './client';
 import { startFakeModel } from './fake-services';
 
 const BASE_URL = process.env.SMOKE_BASE_URL ?? 'http://localhost:3010';
+const DATABASE_URL = process.env.SMOKE_DATABASE_URL ?? process.env.DATABASE_URL;
 
 const steps: { name: string; ok: boolean }[] = [];
 const step = async <T>(name: string, run: () => Promise<T>): Promise<T> => {
@@ -55,6 +60,9 @@ const preference = (title: string, directive: string, scorePriority = 0.5) => ({
 });
 
 const main = async () => {
+  if (!DATABASE_URL) throw new Error('Set SMOKE_DATABASE_URL to the server’s database');
+  const db = new pg.Client({ connectionString: DATABASE_URL });
+  await db.connect();
   const model = await startFakeModel(Number(process.env.SMOKE_MODEL_PORT ?? 4010));
   const client = new SmokeClient(BASE_URL);
   const stranger = new SmokeClient(BASE_URL);
@@ -71,7 +79,8 @@ const main = async () => {
     typeof content === 'string' ? content : JSON.stringify(content ?? '');
 
   try {
-    await client.signUp(`memories-${stamp}@biber.test`, 'Smoke-pass-12345', 'Memories');
+    const email = `memories-${stamp}@biber.test`;
+    await client.signUp(email, 'Smoke-pass-12345', 'Memories');
     await stranger.signUp(`memories-other-${stamp}@biber.test`, 'Smoke-pass-12345', 'Other');
 
     const seat = await step('a memory the agent stores shows on the phone', async () => {
@@ -164,8 +173,67 @@ const main = async () => {
         60_000,
       );
     });
+
+    await step(
+      'undoing what a chat taught takes it back, and the chat is not learned from again',
+      async () => {
+        await remember('Hotels', 'Book hotels near the station');
+        const hotel = (await list()).items.find((item) => item.title === 'Hotels');
+        if (!hotel) throw new Error('not stored');
+        const {
+          rows: [topic],
+        } = await db.query(
+          `SELECT t.id FROM topics t JOIN users u ON u.id = t.user_id
+          WHERE u.email = $1 ORDER BY t.created_at DESC LIMIT 1`,
+          [email],
+        );
+        if (!topic) throw new Error('the run left no conversation');
+        // What an extraction from that conversation leaves behind
+        await db.query(
+          `INSERT INTO user_memory_extractions (id, user_id, topic_id, added_memory_ids)
+         SELECT $1, user_id, id, $2::jsonb FROM topics WHERE id = $3`,
+          [`smoke-undo-${stamp}`, JSON.stringify([hotel.id]), topic.id],
+        );
+
+        const recent = await client.query<{ added: number; id: string }[]>(
+          'mobile',
+          'memories.recentExtractions',
+        );
+        if (recent.length !== 1 || recent[0].added !== 1) throw new Error(JSON.stringify(recent));
+        const refused = await stranger.mutation<{ undone: boolean }>(
+          'mobile',
+          'memories.undoExtraction',
+          { id: recent[0].id },
+        );
+        if (refused.undone) throw new Error('another account undid it');
+
+        const undone = await client.mutation<{ forgotten: number; undone: boolean }>(
+          'mobile',
+          'memories.undoExtraction',
+          { id: recent[0].id },
+        );
+        if (!undone.undone || undone.forgotten !== 1) throw new Error(JSON.stringify(undone));
+        if ((await list()).items.some((item) => item.id === hotel.id))
+          throw new Error('still listed');
+        const left = await client.query<unknown[]>('lambda', 'userMemory.getPreferences');
+        if (left.some((row) => JSON.stringify(row).includes('near the station'))) {
+          throw new Error('the agent still finds it');
+        }
+        const {
+          rows: [marked],
+        } = await db.query(
+          `SELECT metadata->>'userMemoryExtractUndone' AS undone FROM topics WHERE id = $1`,
+          [topic.id],
+        );
+        if (marked?.undone !== 'true') throw new Error('the chat is not marked');
+        if ((await client.query<unknown[]>('mobile', 'memories.recentExtractions')).length > 0) {
+          throw new Error('still offered for undo');
+        }
+      },
+    );
   } finally {
     model.close();
+    await db.end();
     const failed = steps.filter((s) => !s.ok).length;
     console.log(`\n${steps.length - failed}/${steps.length} steps passed`);
   }

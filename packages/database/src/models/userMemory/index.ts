@@ -1,6 +1,7 @@
 export * from './activity';
 export * from './context';
 export * from './experience';
+export * from './extractions';
 export * from './identity';
 export * from './keyFacts';
 export * from './model';

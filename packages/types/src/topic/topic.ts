@@ -201,6 +201,8 @@ export interface ChatTopicMetadata {
   scheduledRun?: TopicScheduledRun | null;
   userMemoryExtractRunState?: TopicUserMemoryExtractRunState;
   userMemoryExtractStatus?: 'pending' | 'completed' | 'failed';
+  /** The user undid what Biber learned from this conversation; it is not learned from again */
+  userMemoryExtractUndone?: boolean;
   /**
    * Topic-level working directory.
    * On desktop: local filesystem path for the CC session cwd.

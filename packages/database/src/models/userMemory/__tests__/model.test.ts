@@ -19,6 +19,7 @@ import {
   userMemoriesExperiences,
   userMemoriesIdentities,
   userMemoriesPreferences,
+  userMemoryExtractions,
   users,
 } from '../../../schemas';
 import type { LobeChatDatabase } from '../../../type';
@@ -1842,6 +1843,7 @@ describe('UserMemoryModel', () => {
       await createExperiencePair();
       await createPreferencePair();
       await createIdentityPair({ user: otherUserId });
+      await serverDB.insert(userMemoryExtractions).values({ addedMemoryIds: ['gone'], userId });
 
       await memoryModel.deleteAll();
 
@@ -1860,6 +1862,8 @@ describe('UserMemoryModel', () => {
           where: eq(userMemoriesContexts.userId, userId),
         }),
       ).toHaveLength(0);
+      // Undo records keep what extractions replaced, so they go too
+      expect(await serverDB.select().from(userMemoryExtractions)).toHaveLength(0);
     });
   });
 

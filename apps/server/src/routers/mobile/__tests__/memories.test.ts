@@ -1,9 +1,11 @@
 // @vitest-environment node
 import { type LobeChatDatabase } from '@lobechat/database';
-import { userMemories, userPersonaDocuments } from '@lobechat/database/schemas';
+import { topics, userMemories, userPersonaDocuments } from '@lobechat/database/schemas';
 import { getTestDB } from '@lobechat/database/test-utils';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { UserMemoryExtractionModel } from '@/database/models/userMemory/extractions';
 
 import { cleanupTestUser, createTestUser } from '../../lambda/__tests__/integration/setup';
 import { memoriesRouter } from '../memories';
@@ -80,6 +82,39 @@ describe('mobile memoriesRouter', () => {
     expect((await callerFor(userId).list(null)).items).toEqual([]);
     expect(await summaryOf(userId)).toEqual([]);
     await cleanupTestUser(testDB, userId);
+  });
+
+  it('undoes what one conversation taught, only for its owner, and drops the summary', async () => {
+    const userId = await createTestUser(testDB);
+    const otherId = await createTestUser(testDB);
+    const [topic] = await testDB.insert(topics).values({ title: 'Role play', userId }).returning();
+    await remember(userId, `learned-${userId}`);
+    const id = await new UserMemoryExtractionModel(testDB, userId).record({
+      addedMemoryIds: [`learned-${userId}`],
+      changes: [],
+      topicId: topic.id,
+    });
+    await summarize(userId);
+
+    expect(await callerFor(userId).recentExtractions()).toEqual([
+      expect.objectContaining({ added: 1, changed: 0, id, topicTitle: 'Role play' }),
+    ]);
+    expect(await callerFor(otherId).recentExtractions()).toEqual([]);
+    expect(await callerFor(otherId).undoExtraction({ id: id! })).toEqual({ undone: false });
+    expect(await summaryOf(userId)).toHaveLength(1);
+
+    expect(await callerFor(userId).undoExtraction({ id: id! })).toEqual({
+      forgotten: 1,
+      notRestored: [],
+      restored: 0,
+      undone: true,
+    });
+    expect((await callerFor(userId).list(null)).items).toEqual([]);
+    expect(await callerFor(userId).recentExtractions()).toEqual([]);
+    expect(await summaryOf(userId)).toEqual([]);
+
+    await cleanupTestUser(testDB, userId);
+    await cleanupTestUser(testDB, otherId);
   });
 });
 

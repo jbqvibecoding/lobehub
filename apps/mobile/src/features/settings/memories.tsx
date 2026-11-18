@@ -15,6 +15,7 @@ import { type StringKey, t } from '@/i18n/strings';
 import type { ApiClient } from '@/lib/api-client';
 import { type Palette, useColors } from '@/theme/colors';
 
+import { RecentExtractions } from './recent-extractions';
 import type { Memory, MemoryPage } from './types';
 
 export const memoriesKey = ['memories'] as const;
@@ -30,7 +31,10 @@ const LAYERS: Record<string, StringKey> = {
 const formatDate = (date: Date) =>
   new Date(date).toLocaleDateString(undefined, { dateStyle: 'medium' });
 
-/** What Biber remembers about the person, newest first: forget one, or everything. */
+/**
+ * What Biber remembers about the person, newest first: forget one, or everything, or undo what
+ * one recent chat taught it.
+ */
 export const MemoriesList = ({ api }: { api: ApiClient }) => {
   const colors = useColors();
   const styles = createStyles(colors);
@@ -147,6 +151,7 @@ export const MemoriesList = ({ api }: { api: ApiClient }) => {
           <Text style={styles.intro}>{t('memoriesIntro')}</Text>
           {error && data ? <Text style={styles.error}>{t('memoriesRefreshError')}</Text> : null}
           {failed ? <Text style={styles.error}>{t('memoryForgetError')}</Text> : null}
+          <RecentExtractions api={api} />
         </View>
       }
       onEndReached={() => {
