@@ -1,3 +1,5 @@
+import type { SecretKind } from '@lobechat/agent-policy';
+
 import type { StepPresentationData } from '../agentRuntime/types';
 import { getExtremeAck } from './ackPhrases';
 import { type BotReplyLocale, formatDuration } from './platforms';
@@ -277,11 +279,29 @@ type SystemStrings = {
   toolApprovalRejected: string;
   toolApprovalReplyHint: string;
   toolApprovalReplyOnlyText: string;
+  /** Warns that a call would send out these kinds of secret. */
+  toolApprovalSecrets: (kinds: SecretKind[]) => string;
   toolApprovalTitledApproved: (title: string) => string;
   toolApprovalTitledRejected: (title: string) => string;
   toolApprovalWaitingForOwner: string;
   toolApprovalWaitingForYou: string;
   toolsCallingHeader: (count: number, time: string) => string;
+};
+
+const EN_SECRET_NAMES: Record<SecretKind, string> = {
+  api_key: 'an API key',
+  card_number: 'a card number',
+  id_number: 'an identity number',
+  password: 'a password',
+  private_key: 'a private key',
+};
+
+const ZH_SECRET_NAMES: Record<SecretKind, string> = {
+  api_key: 'API 密钥',
+  card_number: '银行卡号',
+  id_number: '证件号码',
+  password: '密码',
+  private_key: '私钥',
 };
 
 const SYSTEM_STRINGS: Partial<Record<BotReplyLocale, SystemStrings>> = {
@@ -380,6 +400,12 @@ const SYSTEM_STRINGS: Partial<Record<BotReplyLocale, SystemStrings>> = {
     toolApprovalReplyHint:
       "Reply 1 to approve or 2 to reject, or tell me what to do instead (then this won't run).",
     toolApprovalReplyOnlyText: 'Reply 1 to approve or 2 to reject.',
+    toolApprovalSecrets: (kinds) => {
+      const names = kinds.map((kind) => EN_SECRET_NAMES[kind]);
+      const list =
+        names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
+      return `⚠️ This would send what looks like ${list}. Approve only if you meant to share it.`;
+    },
     toolApprovalTitledApproved: (title) => `✅ Approved: ${title}. Continuing…`,
     toolApprovalTitledRejected: (title) => `❌ Rejected: ${title}. Letting the agent know…`,
     toolApprovalWaitingForOwner: "⏸ Waiting for the owner's approval.",
@@ -468,6 +494,8 @@ const SYSTEM_STRINGS: Partial<Record<BotReplyLocale, SystemStrings>> = {
     toolApprovalRejected: '❌ 已拒绝，正在告诉 Agent…',
     toolApprovalReplyHint: '回复 1 批准，2 拒绝，或直接告诉我该怎么做（这次操作就不做了）。',
     toolApprovalReplyOnlyText: '回复 1 批准，2 拒绝。',
+    toolApprovalSecrets: (kinds) =>
+      `⚠️ 这一步会发出疑似${kinds.map((kind) => ZH_SECRET_NAMES[kind]).join('、')}的内容。确认要发出去再批准。`,
     toolApprovalTitledApproved: (title) => `✅ 已批准：${title}，继续执行…`,
     toolApprovalTitledRejected: (title) => `❌ 已拒绝：${title}，正在告诉助理…`,
     toolApprovalWaitingForOwner: '⏸ 正在等机器人主人批准。',
@@ -756,6 +784,8 @@ export function renderStepProgress(params: RenderStepParams, lng?: BotReplyLocal
 
 export interface ApprovalRequestItem {
   details: string[];
+  /** What the call would send out that looks like a secret (`findSecrets`). */
+  secrets?: SecretKind[];
   title: string;
 }
 
@@ -785,7 +815,11 @@ export function renderApprovalRequest(
   if (!isOwner) return strings.toolApprovalWaitingForOwner;
 
   const block = (item: ApprovalRequestItem, label = item.title) =>
-    [label, ...item.details].join('\n');
+    [
+      label,
+      ...item.details,
+      ...(item.secrets?.length ? [strings.toolApprovalSecrets(item.secrets)] : []),
+    ].join('\n');
 
   if (answerBy === 'reply') {
     const [first, ...rest] = items;

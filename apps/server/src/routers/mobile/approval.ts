@@ -1,3 +1,4 @@
+import { findSecrets, parseToolArguments } from '@lobechat/agent-policy';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -27,9 +28,14 @@ const approvalProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts)
 export const approvalRouter = router({
   listPending: approvalProcedure
     .input(z.object({ limit: z.number().int().min(1).max(100).optional() }).optional())
-    .query(async ({ ctx, input }) =>
-      ctx.messageModel.listPendingInterventions({ limit: input?.limit }),
-    ),
+    .query(async ({ ctx, input }) => {
+      const pending = await ctx.messageModel.listPendingInterventions({ limit: input?.limit });
+      // Says on the card what the call would send out that looks like a secret
+      return pending.map((item) => ({
+        ...item,
+        secrets: findSecrets(parseToolArguments(item.arguments ?? undefined)),
+      }));
+    }),
 
   respond: approvalProcedure
     .use(withScopedPermission('message:create'))

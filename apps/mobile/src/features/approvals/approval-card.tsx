@@ -1,12 +1,20 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { t } from '@/i18n/strings';
+import { type StringKey, t, tf } from '@/i18n/strings';
 import { type Palette, useColors } from '@/theme/colors';
 
 import { confirmWithBiometrics } from './confirm-with-biometrics';
 import { describeToolCall } from './describe-tool-call';
-import type { ApprovalDecision, PendingApproval } from './types';
+import type { ApprovalDecision, PendingApproval, SecretKind } from './types';
+
+const SECRET_NAMES: Record<SecretKind, StringKey> = {
+  api_key: 'secretApiKey',
+  card_number: 'secretCardNumber',
+  id_number: 'secretIdNumber',
+  password: 'secretPassword',
+  private_key: 'secretPrivateKey',
+};
 
 interface ApprovalCardProps {
   approval: PendingApproval;
@@ -49,6 +57,14 @@ export const ApprovalCard = ({ approval, onRespond }: ApprovalCardProps) => {
           <Text style={styles.fieldValue}>{field.value}</Text>
         </View>
       ))}
+
+      {approval.secrets?.length ? (
+        <Text role="alert" style={styles.secrets}>
+          {tf('approvalSecretsWarning', {
+            kinds: approval.secrets.map((kind) => t(SECRET_NAMES[kind])).join(t('listSeparator')),
+          })}
+        </Text>
+      ) : null}
 
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
@@ -106,5 +122,6 @@ const createStyles = (colors: Palette) =>
     notice: { color: colors.danger, fontSize: 14, marginTop: 12 },
     reject: { borderColor: colors.border, borderWidth: StyleSheet.hairlineWidth },
     rejectLabel: { color: colors.danger, fontSize: 16, fontWeight: '600' },
+    secrets: { color: colors.warning, fontSize: 14, lineHeight: 20, marginTop: 12 },
     title: { color: colors.label, fontSize: 18, fontWeight: '600', marginTop: 4 },
   });

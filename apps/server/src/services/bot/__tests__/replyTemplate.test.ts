@@ -839,6 +839,21 @@ describe('renderApprovalRequest', () => {
       ].join('\n\n'),
     );
   });
+
+  it('warns when a call would send out what looks like a secret', () => {
+    const item = {
+      details: ['To: x@evil.example'],
+      secrets: ['api_key', 'password'] as ('api_key' | 'password')[],
+      title: 'Send email · gmail-mcp',
+    };
+
+    expect(renderApprovalRequest({ answerBy: 'buttons', isOwner: true, items: [item] })).toContain(
+      'Send email · gmail-mcp\nTo: x@evil.example\n⚠️ This would send what looks like an API key and a password.',
+    );
+    expect(
+      renderApprovalRequest({ answerBy: 'reply', isOwner: true, items: [item] }, 'zh-CN'),
+    ).toContain('⚠️ 这一步会发出疑似API 密钥、密码的内容。');
+  });
 });
 
 describe('renderApprovalAnswered', () => {

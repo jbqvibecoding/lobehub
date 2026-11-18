@@ -38,6 +38,20 @@ describe('ApprovalCard', () => {
     expect(screen.getByText('Send email')).toBeOnTheScreen();
     expect(screen.getByText('gmail-mcp')).toBeOnTheScreen();
     expect(screen.getByText('ana@example.com')).toBeOnTheScreen();
+    expect(screen.queryByRole('alert')).not.toBeOnTheScreen();
+  });
+
+  it('warns when the call would send out what looks like a secret', async () => {
+    await render(
+      <ApprovalCard
+        approval={{ ...approval, secrets: ['card_number', 'password'] }}
+        onRespond={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'This would send what looks like a card number, a password. Approve only if you meant to share it.',
+    );
   });
 
   it('approves only after Face ID or Touch ID succeeds', async () => {

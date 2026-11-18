@@ -13,6 +13,8 @@ export interface PendingApproval {
   id: string;
   /** The tool or connector, e.g. an MCP server. */
   identifier?: string;
+  /** What the call would send out that looks like a secret; absent from older servers. */
+  secrets?: SecretKind[];
   threadId?: string;
   toolCallId?: string;
   topicId?: string;
@@ -20,3 +22,6 @@ export interface PendingApproval {
 }
 
 export type ApprovalDecision = 'approved' | 'rejected';
+
+/** `findSecrets` on the server. */
+export type SecretKind = 'api_key' | 'card_number' | 'id_number' | 'password' | 'private_key';

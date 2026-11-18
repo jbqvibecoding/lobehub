@@ -22,6 +22,15 @@ describe('redactForAudit', () => {
     });
   });
 
+  it('masks secrets in fields it keeps', () => {
+    expect(
+      redactForAudit({
+        subject: 'Login for Ana: password is Tr0ub4dor',
+        to: ['ana@example.com'],
+      }),
+    ).toEqual({ subject: `Login for Ana: ${REDACTED}`, to: ['ana@example.com'] });
+  });
+
   it('bounds what it keeps', () => {
     const kept = redactForAudit({
       list: Array.from({ length: 25 }, (_, index) => index),

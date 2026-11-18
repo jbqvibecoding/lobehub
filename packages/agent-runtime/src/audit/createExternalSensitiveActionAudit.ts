@@ -7,7 +7,7 @@ import {
 
 export const EXTERNAL_SENSITIVE_ACTION_AUDIT_TYPE = 'externalSensitiveAction';
 
-interface AuditedToolCall {
+export interface AuditedToolCall {
   apiName: string;
   identifier: string;
   source?: ToolSource;
@@ -22,7 +22,7 @@ const EXTERNAL_SOURCES = new Set<ToolSource>(['composio', 'lobehubSkill', 'mcp']
  * plugins, Composio and LobeHub Skills connectors) usually ship none, so without this audit a
  * `send_email` or `delete_repo` from them would run unasked.
  */
-const isExternalTool = (call: AuditedToolCall) =>
+export const isExternalTool = (call: AuditedToolCall) =>
   (call.source !== undefined && EXTERNAL_SOURCES.has(call.source)) ||
   (call.type !== undefined && call.type !== 'builtin');
 

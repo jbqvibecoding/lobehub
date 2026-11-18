@@ -1,8 +1,12 @@
 /**
  * What an audit trail may keep of a tool call, after OpenBot (`server/src/audit.ts`): the shape of
- * the arguments and who they were addressed to, never credentials or the content being sent.
+ * the arguments and who they were addressed to, never credentials or the content being sent, and
+ * no secret found elsewhere in the arguments either (`outbound.ts`).
  */
 import { approvalKey } from './approval';
+import { maskSecrets, REDACTED } from './outbound';
+
+export { REDACTED } from './outbound';
 
 /** Credentials, plus fields that carry message or document content rather than its addressing. */
 const REDACTED_KEYS = new Set([
@@ -38,15 +42,15 @@ const MAX_STRING_LENGTH = 300;
 const MAX_ARRAY_ITEMS = 20;
 const MAX_DEPTH = 6;
 
-export const REDACTED = '[REDACTED]';
-
 const isRedactedKey = (key: string) =>
   REDACTED_KEYS.has(key.replaceAll(/[^\dA-Z]/gi, '').toLowerCase());
 
 /** A copy of `value` safe to keep: sensitive fields replaced, long strings and lists cut. */
 export const redactForAudit = (value: unknown, depth = 0): unknown => {
   if (typeof value === 'string') {
-    return value.length > MAX_STRING_LENGTH ? `${value.slice(0, MAX_STRING_LENGTH)}…` : value;
+    // Secrets are masked wherever they sit, not only under the field names above
+    const masked = maskSecrets(value);
+    return masked.length > MAX_STRING_LENGTH ? `${masked.slice(0, MAX_STRING_LENGTH)}…` : masked;
   }
   if (!value || typeof value !== 'object') return value;
   if (depth >= MAX_DEPTH) return '[…]';

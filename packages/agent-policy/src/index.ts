@@ -18,6 +18,7 @@ export {
   type ToolCallRequest,
   toolKey,
 } from './engine';
+export { findSecrets, maskSecrets, type SecretKind } from './outbound';
 export {
   ALL_CAPABILITIES,
   DEFAULT_TIER_TABLE,
