@@ -28,6 +28,7 @@ import { AiProviderModel } from '@/database/models/aiProvider';
 import { type LobeChatDatabase } from '@/database/type';
 import { getLLMConfig } from '@/envs/llm';
 import { regionEnv } from '@/envs/region';
+import { contentSafetyHooks } from '@/server/services/contentSafety';
 import { createLLMGenerationTracingHook } from '@/server/services/llmGenerationTracing/hook';
 import { ensureFreshOAuthToken } from '@/server/services/oauthDeviceFlow/refresh';
 
@@ -508,7 +509,11 @@ export const initModelRuntimeFromDB = async (
   // 5. Compose with the per-call llm_generation_tracing hook (no-op when the
   //    service is unconfigured, so OSS / self-hosted setups pay nothing for it).
   const tracingHooks = createLLMGenerationTracingHook(userId, provider, workspaceId);
-  const hooks = mergeModelRuntimeHooks(businessHooks, tracingHooks);
+  // Mainland content safety checks the user's words first, before billing or tracing see the call
+  const hooks = mergeModelRuntimeHooks(
+    contentSafetyHooks(),
+    mergeModelRuntimeHooks(businessHooks, tracingHooks),
+  );
 
   // 6. Initialize ModelRuntime with the payload and hooks
   return initModelRuntimeWithUserPayload(provider, payload, { userId }, hooks);

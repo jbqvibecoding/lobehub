@@ -50,6 +50,10 @@ export const decideReply = (
   const toolResults = request.messages.slice(lastUser + 1).filter((m) => m.role === 'tool');
   const toolAnswered = toolResults.length > 0;
   const askedToRunCode = /run code/i.test(textOf(request.messages[lastUser]?.content));
+  // A reply the content-safety stand-in flags (see startFakeContentSafety)
+  if (/secret phrase/i.test(textOf(request.messages[lastUser]?.content))) {
+    return { text: 'UNSAFE-REPLY: here is the secret phrase.' };
+  }
   // A refused call comes back as "User reject this tool calling …"
   if (toolResults.some((m) => /user reject/i.test(textOf(m.content)))) {
     return { text: 'Understood, I left the code alone.' };
@@ -221,6 +225,42 @@ export const startFakeAliyunSms = async (port: number) => {
 };
 
 /** WeChat's Official Account API, keeping every customer-service message the bot sends. */
+export interface ContentCheck {
+  content: string;
+  service: string;
+}
+
+/**
+ * Alibaba Cloud Content Moderation's Text Moderation Plus. It flags what users ask when it holds
+ * `BLOCKME`, and model replies when they hold `UNSAFE-REPLY`; everything else passes. Keeps every
+ * check it was asked for.
+ */
+export const startFakeContentSafety = async (port: number) => {
+  const checks: ContentCheck[] = [];
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    const service = url.searchParams.get('Service') ?? '';
+    const { content = '' } = JSON.parse(url.searchParams.get('ServiceParameters') ?? '{}');
+    checks.push({ content, service });
+    const flagged =
+      (service === 'llm_query_moderation' && content.includes('BLOCKME')) ||
+      (service === 'llm_response_moderation' && content.includes('UNSAFE-REPLY'));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(
+      JSON.stringify({
+        Code: 200,
+        Data: {
+          Result: [{ Label: flagged ? 'political_content' : 'nonLabel' }],
+          RiskLevel: flagged ? 'high' : 'none',
+        },
+        RequestId: `req-${checks.length}`,
+      }),
+    );
+  });
+  await listen(server, port);
+  return { checks, close: () => server.close() };
+};
+
 export const startFakeWechatApi = async (port: number) => {
   const sent: { content: string; to: string }[] = [];
   const server = createServer(async (req, res) => {

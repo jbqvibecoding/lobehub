@@ -3,6 +3,7 @@ import { ChatErrorType } from '@lobechat/types';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import * as agentSignalService from '@/server/services/agentSignal';
+import * as contentSafety from '@/server/services/contentSafety';
 import * as verifyServices from '@/server/services/verify';
 
 import { CompletionLifecycle } from '../CompletionLifecycle';
@@ -578,6 +579,66 @@ describe('CompletionLifecycle.dispatchHooks — lastAssistantContent DB recovery
     );
 
     expect(findById).not.toHaveBeenCalled();
+  });
+});
+
+describe('CompletionLifecycle.dispatchHooks — mainland content safety on the reply', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const doneState = {
+    messages: [
+      { content: 'user prompt', id: 'msg-user', role: 'user' },
+      { content: 'a flagged reply', id: 'msg-assistant', role: 'assistant' },
+    ],
+    metadata: { _hooks: [], agentId: 'agent-1', topicId: 'tpc-1', userId: 'user-1' },
+    status: 'done',
+  };
+
+  const setup = (verdict: 'allowed' | 'hidden') => {
+    const lifecycle = buildLifecycle();
+    vi.spyOn(lifecycle as any, 'persistCompletion').mockResolvedValue(undefined);
+    vi.spyOn(lifecycle as any, 'createVerifyMessage').mockResolvedValue(undefined);
+    vi.spyOn(verifyServices, 'runVerifyOnCompletion').mockResolvedValue(undefined);
+    vi.spyOn(hookDispatcher, 'unregister').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(contentSafety, 'reviewModelReply').mockResolvedValue(verdict);
+    const update = vi.fn().mockResolvedValue(undefined);
+    (lifecycle as any).messageModel = { findById: vi.fn(), update };
+    const dispatch = vi.spyOn(hookDispatcher, 'dispatch').mockResolvedValue(undefined as any);
+    return { dispatch, lifecycle, update };
+  };
+
+  it('replaces a flagged reply in the store and in what chats are sent', async () => {
+    const { dispatch, lifecycle, update } = setup('hidden');
+
+    await lifecycle.dispatchHooks('op-1', doneState, 'done');
+
+    expect(contentSafety.reviewModelReply).toHaveBeenCalledWith('a flagged reply');
+    expect(update).toHaveBeenCalledWith('msg-assistant', {
+      content: contentSafety.REPLY_HIDDEN_NOTICE,
+    });
+    expect(dispatch).toHaveBeenCalledWith(
+      'op-1',
+      'onComplete',
+      expect.objectContaining({ lastAssistantContent: contentSafety.REPLY_HIDDEN_NOTICE }),
+      [],
+    );
+  });
+
+  it('leaves a reply that passes untouched', async () => {
+    const { dispatch, lifecycle, update } = setup('allowed');
+
+    await lifecycle.dispatchHooks('op-1', doneState, 'done');
+
+    expect(update).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith(
+      'op-1',
+      'onComplete',
+      expect.objectContaining({ lastAssistantContent: 'a flagged reply' }),
+      [],
+    );
   });
 });
 

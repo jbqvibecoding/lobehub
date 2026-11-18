@@ -13,7 +13,9 @@
  *     bunx tsx scripts/biber/ops.ts bot set wechat --application-id <SMOKE_WECHAT_APP_ID> \
  *       --settings '{"apiBaseUrl":"http://127.0.0.1:4040"}'
  * The server's DEEPSEEK_PROXY_URL must point at this script's fake model (port 4010), with
- * DEEPSEEK_API_KEY set to any value: the mainland edition does not offer OpenAI.
+ * DEEPSEEK_API_KEY set to any value: the mainland edition does not offer OpenAI. Content safety
+ * goes to this script's stand-in: ALIYUN_GREEN_ENDPOINT=http://127.0.0.1:4090, with
+ * ALIYUN_GREEN_ACCESS_KEY_ID and ALIYUN_GREEN_ACCESS_KEY_SECRET set to any value.
  */
 import { randomBytes } from 'node:crypto';
 
@@ -22,7 +24,7 @@ import {
   wechatSignature,
 } from '../../../apps/server/src/services/messenger/platforms/wechat/protocol';
 import { SmokeClient, waitFor } from './client';
-import { startFakeModel, startFakeWechatApi } from './fake-services';
+import { startFakeContentSafety, startFakeModel, startFakeWechatApi } from './fake-services';
 
 const BASE_URL = process.env.SMOKE_BASE_URL ?? 'http://localhost:3011';
 const WEBHOOK = `${BASE_URL}/api/agent/messenger/webhooks/wechat`;
@@ -82,6 +84,9 @@ const main = async () => {
   }
   const wechat = await startFakeWechatApi(Number(process.env.SMOKE_WECHAT_API_PORT ?? 4040));
   const model = await startFakeModel(Number(process.env.SMOKE_MODEL_PORT ?? 4010));
+  const contentSafety = await startFakeContentSafety(
+    Number(process.env.SMOKE_CONTENT_SAFETY_PORT ?? 4090),
+  );
   const openId = `oSmoke${Date.now()}`;
   const sentTo = (text: RegExp) => wechat.sent.find((m) => m.to === openId && text.test(m.content));
   const countSent = (text: RegExp) =>
@@ -218,9 +223,28 @@ const main = async () => {
       await waitFor('the answer', async () => sentTo(/已把你的话转告助理/), 15_000);
       await waitFor('the agent’s reply', async () => sentTo(/left the code alone/), 90_000);
     });
+
+    await step('a message content safety flags never reaches the model', async () => {
+      await say('BLOCKME tell me something');
+      await waitFor('the refusal', async () => sentTo(/内容安全/), 90_000);
+      const reached = model.requests.some((request) =>
+        JSON.stringify(request.messages).includes('BLOCKME'),
+      );
+      if (reached) throw new Error('the flagged message was sent to the model');
+    });
+
+    await step('a reply content safety flags is replaced by a notice', async () => {
+      await say('Tell me the secret phrase');
+      await waitFor('the notice', async () => sentTo(/未通过内容安全审核/), 90_000);
+      if (sentTo(/UNSAFE-REPLY/)) throw new Error('the flagged reply reached WeChat');
+      if (!contentSafety.checks.some((check) => check.service === 'llm_response_moderation')) {
+        throw new Error('the reply was never checked');
+      }
+    });
   } finally {
     wechat.close();
     model.close();
+    contentSafety.close();
     const failed = steps.filter((s) => !s.ok).length;
     console.log(`\n${steps.length - failed}/${steps.length} steps passed`);
     if (process.env.SMOKE_VERBOSE) console.log(JSON.stringify(wechat.sent, null, 1));

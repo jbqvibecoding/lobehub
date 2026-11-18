@@ -16,6 +16,7 @@ import { buildFinalSnapshotKey } from '@/server/modules/AgentTracing';
 import { emitAgentSignalSourceEvent } from '@/server/services/agentSignal';
 import { toAgentSignalTraceEvents } from '@/server/services/agentSignal/observability/traceEvents';
 import { extractSelfIterationCompletionPayload } from '@/server/services/agentSignal/services/selfIteration/completion';
+import { REPLY_HIDDEN_NOTICE, reviewModelReply } from '@/server/services/contentSafety';
 import { instantiateVerifyPlanOnStart, runVerifyOnCompletion } from '@/server/services/verify';
 
 import { hookDispatcher, type SerializedHook } from './hooks';
@@ -545,6 +546,17 @@ export class CompletionLifecycle {
         if (recovered) event.lastAssistantContent = recovered;
       }
 
+      // Mainland content safety reviews the complete reply before anyone is told about it: a
+      // flagged one is replaced in the store (what the app and the phone show) and in the event
+      // (what chats are sent)
+      if (reason === 'done' && event.lastAssistantContent?.trim()) {
+        const verdict = await reviewModelReply(event.lastAssistantContent);
+        if (verdict === 'hidden') {
+          await this.hideReply(operationId, assistantMessageId, metadata?.userId || this.userId);
+          event.lastAssistantContent = REPLY_HIDDEN_NOTICE;
+        }
+      }
+
       await hookDispatcher.dispatch(operationId, 'onComplete', event, metadata._hooks);
 
       // Delivery checker: on a successful completion, run the confirmed verify
@@ -679,6 +691,25 @@ export class CompletionLifecycle {
     } catch (error) {
       log('[%s] recoverLastAssistantContent failed (non-fatal): %O', operationId, error);
       return undefined;
+    }
+  }
+
+  /** Replaces a reply that failed content safety with the notice, where the app reads it. */
+  private async hideReply(
+    operationId: string,
+    assistantMessageId: string | undefined,
+    userId: string,
+  ): Promise<void> {
+    console.warn(`[CompletionLifecycle][${operationId}] reply failed content safety; hidden`);
+    if (!assistantMessageId) return;
+    try {
+      const messageModel =
+        userId === this.userId
+          ? this.messageModel
+          : new MessageModel(this.serverDB, userId, this.workspaceId);
+      await messageModel.update(assistantMessageId, { content: REPLY_HIDDEN_NOTICE });
+    } catch (error) {
+      console.error(`[CompletionLifecycle][${operationId}] hiding the reply failed: %O`, error);
     }
   }
 
