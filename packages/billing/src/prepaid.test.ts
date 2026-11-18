@@ -2,7 +2,7 @@ import { Plans } from '@lobechat/types';
 import { describe, expect, it } from 'vitest';
 
 import { effectivePlan } from './entitlement';
-import { prepaidPeriod } from './prepaid';
+import { prepaidPeriod, prepaidRefundEnd } from './prepaid';
 
 const paidAt = new Date('2026-11-11T10:00:00Z');
 
@@ -61,5 +61,23 @@ describe('effectivePlan for a prepaid period', () => {
   it('grants the plan until the period ends, and not after', () => {
     expect(effectivePlan([prepaid], new Date('2026-12-11T09:59:59Z'))).toBe(Plans.Premium);
     expect(effectivePlan([prepaid], new Date('2026-12-11T10:00:00Z'))).toBe(Plans.Free);
+  });
+});
+
+describe('prepaidRefundEnd', () => {
+  const current = { currentPeriodEnd: new Date('2027-01-11T10:00:00Z'), plan: Plans.Starter };
+
+  it('takes back what the refunded purchase added to the running plan', () => {
+    expect(prepaidRefundEnd({ current, interval: 'monthly', plan: Plans.Starter })).toEqual(
+      new Date('2026-12-11T10:00:00Z'),
+    );
+    expect(prepaidRefundEnd({ current, interval: 'yearly', plan: Plans.Starter })).toEqual(
+      new Date('2026-01-11T10:00:00Z'),
+    );
+  });
+
+  it('leaves a plan alone that the refunded purchase did not buy', () => {
+    expect(prepaidRefundEnd({ current, interval: 'monthly', plan: Plans.Premium })).toBeUndefined();
+    expect(prepaidRefundEnd({ interval: 'monthly', plan: Plans.Starter })).toBeUndefined();
   });
 });

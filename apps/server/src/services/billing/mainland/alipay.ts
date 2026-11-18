@@ -4,7 +4,7 @@ import { beijingParts, readPrivateKey, readPublicKey } from './keys';
 
 /**
  * Alipay open platform, the calls a desktop web payment needs: the page-pay link the user is sent
- * to, the trade query, and the asynchronous payment notification. Everything is signed RSA2
+ * to, the trade query, the refund, and the asynchronous payment notification. Everything is signed RSA2
  * (SHA256withRSA) with the app's key and checked against Alipay's public key.
  */
 export interface AlipayConfig {
@@ -20,7 +20,11 @@ export interface AlipayConfig {
 export interface AlipayTrade {
   /** When the payment was made, in notifications */
   gmt_payment?: string;
+  /** When money was refunded, in notifications sent after a refund */
+  gmt_refund?: string;
   out_trade_no: string;
+  /** How much has been refunded so far, in yuan, in notifications sent after a refund */
+  refund_fee?: string;
   /** When the payment was made, in query results */
   send_pay_date?: string;
   /** In yuan with two decimals, e.g. `68.00` */
@@ -118,6 +122,24 @@ export const createAlipay = (config: AlipayConfig) => {
     return { ...params, sign: sign(signingContent(params, ['sign'])) };
   };
 
+  /** Posts one API call and returns its response member once Alipay's signature on it checks out. */
+  const callApi = async <T>(method: string, bizContent: object) => {
+    const response = await fetch(gateway, {
+      body: new URLSearchParams(signedRequest(method, bizContent)).toString(),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
+      method: 'POST',
+    });
+    const text = await response.text();
+    if (!response.ok) throw new AlipayError(`Alipay ${method} failed with HTTP ${response.status}`);
+
+    const raw = rawMember(text, `${method.replaceAll('.', '_')}_response`);
+    const { sign: signature } = JSON.parse(text) as { sign?: string };
+    if (!raw || !signature || !verifies(raw, signature)) {
+      throw new AlipayError(`The ${method} response is not signed by Alipay`);
+    }
+    return JSON.parse(raw) as T & { code: string; sub_code?: string; sub_msg?: string };
+  };
+
   return {
     /**
      * The link that opens Alipay's cashier for a desktop payment (`alipay.trade.page.pay`). After
@@ -147,30 +169,38 @@ export const createAlipay = (config: AlipayConfig) => {
 
     /** Reads a trade by our order number; undefined when Alipay has none (not paid yet). */
     async queryTrade(outTradeNo: string): Promise<AlipayTrade | undefined> {
-      const response = await fetch(gateway, {
-        body: new URLSearchParams(
-          signedRequest('alipay.trade.query', { out_trade_no: outTradeNo }),
-        ).toString(),
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
-        method: 'POST',
+      const result = await callApi<AlipayTrade>('alipay.trade.query', {
+        out_trade_no: outTradeNo,
       });
-      const text = await response.text();
-      if (!response.ok) throw new AlipayError(`Alipay query failed with HTTP ${response.status}`);
-
-      const raw = rawMember(text, 'alipay_trade_query_response');
-      const { sign: signature } = JSON.parse(text) as { sign?: string };
-      if (!raw || !signature || !verifies(raw, signature)) {
-        throw new AlipayError('The query response is not signed by Alipay');
-      }
-
-      const result = JSON.parse(raw) as AlipayTrade & {
-        code: string;
-        sub_code?: string;
-        sub_msg?: string;
-      };
       if (result.code === '10000') return result;
       if (result.sub_code === 'ACQ.TRADE_NOT_EXIST') return undefined;
       throw new AlipayError(`Alipay query: ${result.sub_msg ?? result.code}`);
+    },
+
+    /**
+     * Refunds a paid trade in full (`alipay.trade.refund`). The request number names the refund,
+     * so asking again with the same number cannot refund twice. Alipay answers at once; `refunded`
+     * says whether the money moved (`fund_change`), which it does not on a repeated request.
+     */
+    async refund(refund: {
+      amount: number;
+      outRequestNo: string;
+      outTradeNo: string;
+      reason?: string;
+    }) {
+      const result = await callApi<{ fund_change?: string; refund_fee?: string }>(
+        'alipay.trade.refund',
+        {
+          out_request_no: refund.outRequestNo,
+          out_trade_no: refund.outTradeNo,
+          refund_amount: yuan(refund.amount),
+          ...(refund.reason && { refund_reason: refund.reason }),
+        },
+      );
+      if (result.code !== '10000') {
+        throw new AlipayError(`Alipay refund: ${result.sub_msg ?? result.code}`);
+      }
+      return { refunded: result.fund_change === 'Y', refundFee: fen(result.refund_fee) };
     },
 
     /**

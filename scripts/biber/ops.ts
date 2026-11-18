@@ -6,6 +6,7 @@
  *   bunx tsx scripts/biber/ops.ts bot list
  *   bunx tsx scripts/biber/ops.ts stripe prices [--apply]
  *   bunx tsx scripts/biber/ops.ts doctor
+ *   bunx tsx scripts/biber/ops.ts refund <order number> [--reason TEXT]
  *
  * `bot set` stores a shared bot's credentials encrypted with KEY_VAULTS_SECRET, then reads them
  * back the way the server does, so a row the server cannot use is reported at once. For Telegram
@@ -16,6 +17,10 @@
  * `stripe prices` compares the Stripe prices with the plan catalog's US dollar prices and, with
  * `--apply`, creates the missing ones and replaces changed ones (the old price is archived, so
  * existing subscribers keep it). Without `--apply` it only prints what it would do.
+ *
+ * `refund` refunds a WeChat Pay or Alipay order in full (the order number is the `out_trade_no` the
+ * payer sees in WeChat or Alipay) and takes back what it bought: the plan it bought ends that much
+ * earlier, or at once. Asking again for the same order cannot refund it twice.
  *
  * `doctor` checks this deployment against its region, reaches the database and Redis, and makes
  * one call to each configured outside service that changes nothing there, to prove its keys.
@@ -42,6 +47,7 @@ import {
   getWechatPay,
   isAlipayConfigured,
   isWechatPayConfigured,
+  refundOrder,
 } from '@/server/services/billing/mainland';
 import { getStripe, isStripeConfigured } from '@/server/services/billing/stripe';
 import { type StripePriceChange, syncStripePrices } from '@/server/services/billing/stripePrices';
@@ -298,14 +304,32 @@ const doctor = async () => {
   if (checks.some((check) => check.status === 'fail')) process.exitCode = 1;
 };
 
+const refund = async (args: string[]) => {
+  const [outTradeNo] = args;
+  if (!outTradeNo || outTradeNo.startsWith('--'))
+    throw new Error('Usage: ops.ts refund <order number>');
+  const result = await refundOrder(serverDB, outTradeNo, { reason: flag(args, 'reason') });
+  if (result.outcome === 'duplicate') {
+    console.log(`Order ${outTradeNo} was refunded before; nothing changed.`);
+    return;
+  }
+  const planEndsAt = 'planEndsAt' in result ? result.planEndsAt : undefined;
+  console.log(
+    `Refunded order ${outTradeNo} (${result.outcome}). ${
+      planEndsAt ? `The plan now ends ${planEndsAt.toISOString()}.` : 'No running plan changed.'
+    }`,
+  );
+};
+
 const main = async () => {
   const [command, sub, ...rest] = process.argv.slice(2);
   if (command === 'bot' && sub === 'set') return botSet(rest);
   if (command === 'bot' && sub === 'list') return botList();
   if (command === 'stripe' && sub === 'prices') return stripePrices(rest);
   if (command === 'doctor') return doctor();
+  if (command === 'refund') return refund([sub, ...rest].filter(Boolean));
   console.log(
-    'Usage: ops.ts bot set <platform> | bot list | stripe prices [--apply] | doctor (see the comment at the top)',
+    'Usage: ops.ts bot set <platform> | bot list | stripe prices [--apply] | doctor | refund <order> (see the comment at the top)',
   );
   process.exitCode = 1;
 };

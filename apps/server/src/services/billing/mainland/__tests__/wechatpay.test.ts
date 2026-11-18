@@ -136,11 +136,32 @@ describe('payment notifications', () => {
   });
 
   it('ignores events other than a successful payment', () => {
-    const body = notification({ out_refund_no: 'r1' }, 'REFUND.SUCCESS');
+    const refund = { mchid: '1900000001', out_refund_no: 'r1', out_trade_no: 'order-1' };
+    const body = notification(refund, 'REFUND.SUCCESS');
 
     expect(
       wechatPay.readNotification(wechatHeaders(platform.privateKey, body), body),
     ).toBeUndefined();
+  });
+
+  it('reads a refund notification, and refuses another merchant’s', () => {
+    const refund = {
+      amount: { refund: 6800, total: 6800 },
+      mchid: '1900000001',
+      out_refund_no: 'order-1R',
+      out_trade_no: 'order-1',
+      refund_status: 'SUCCESS',
+    };
+    const body = notification(refund, 'REFUND.SUCCESS');
+    expect(wechatPay.readEvent(wechatHeaders(platform.privateKey, body), body)).toEqual({
+      refund,
+      type: 'refund',
+    });
+
+    const foreign = notification({ ...refund, mchid: '1900000999' }, 'REFUND.SUCCESS');
+    expect(() => wechatPay.readEvent(wechatHeaders(platform.privateKey, foreign), foreign)).toThrow(
+      'another merchant',
+    );
   });
 
   it('refuses a forged, replayed, or foreign notification', () => {

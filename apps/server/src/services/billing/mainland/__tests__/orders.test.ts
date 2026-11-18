@@ -14,7 +14,13 @@ import {
 
 import { BillingService, listPlanPrices } from '../../index';
 import { signingContent } from '../alipay';
-import { applyPaidOrder, handleAlipayNotification, handleWechatPayNotification } from '../index';
+import {
+  applyPaidOrder,
+  applyRefund,
+  handleAlipayNotification,
+  handleWechatPayNotification,
+  refundOrder,
+} from '../index';
 import { rsaPair, signWith, wechatEncrypt, wechatHeaders } from './keys';
 
 const merchant = rsaPair();
@@ -315,5 +321,174 @@ describe('periods', () => {
         provider: 'wechat',
       }),
     ).rejects.toMatchObject({ code: 'ALREADY_SUBSCRIBED' });
+  });
+});
+
+const wechatRefundNotification = (outTradeNo: string, total: number, refunded = total) => {
+  const body = JSON.stringify({
+    event_type: 'REFUND.SUCCESS',
+    resource: wechatEncrypt(
+      API_V3_KEY,
+      JSON.stringify({
+        amount: { refund: refunded, total },
+        mchid: '1900000001',
+        out_refund_no: `${outTradeNo}R`,
+        out_trade_no: outTradeNo,
+        refund_status: 'SUCCESS',
+        success_time: new Date().toISOString(),
+      }),
+    ),
+  });
+  return { body, headers: wechatHeaders(platform.privateKey, body) };
+};
+
+/** Alipay answers its API with this signed response member. */
+const alipayAnswers = (member: string, response: object) => {
+  const raw = JSON.stringify(response);
+  const calls: URLSearchParams[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_url: string, init: RequestInit) => {
+      calls.push(new URLSearchParams(String(init.body)));
+      return new Response(`{"${member}":${raw},"sign":"${signWith(alipayKeys.privateKey, raw)}"}`);
+    }),
+  );
+  return calls;
+};
+
+const orderStatus = async (outTradeNo: string) =>
+  (await db.select().from(paymentOrders).where(eq(paymentOrders.outTradeNo, outTradeNo)))[0].status;
+
+describe('refunds', () => {
+  it('refunds a WeChat Pay order in full and ends the month it bought', async () => {
+    const { order, outTradeNo } = await buyWithWechat(Plans.Starter, 'monthly');
+    const request = vi.fn(async (_url: string, init: RequestInit) => {
+      const text = JSON.stringify({ out_refund_no: `${outTradeNo}R`, status: 'PROCESSING' });
+      expect(JSON.parse(String(init.body))).toMatchObject({
+        amount: { currency: 'CNY', refund: order.amount, total: order.amount },
+        notify_url: 'https://app.biber.test/api/webhooks/wechatpay',
+        out_refund_no: `${outTradeNo}R`,
+        out_trade_no: outTradeNo,
+      });
+      return new Response(text, { headers: wechatHeaders(platform.privateKey, text) });
+    });
+    vi.stubGlobal('fetch', request);
+
+    const result = await refundOrder(db, outTradeNo, { reason: 'Asked for it back' });
+
+    expect(result.outcome).toBe('refunded');
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(await orderStatus(outTradeNo)).toBe('refunded');
+    expect((await service().getStatus()).plan).toBe(Plans.Free);
+  });
+
+  it('takes back one month of two, so the plan runs until the first month ends', async () => {
+    await buyWithWechat(Plans.Starter, 'monthly', 5);
+    const [first] = await prepaidRows();
+    const { outTradeNo } = await buyWithWechat(Plans.Starter, 'monthly');
+
+    const { body, headers } = wechatRefundNotification(outTradeNo, 6800);
+    await handleWechatPayNotification(db, headers, body);
+
+    const [row] = await prepaidRows();
+    expect(row.status).toBe('active');
+    expect(row.currentPeriodEnd).toEqual(first.currentPeriodEnd);
+    expect((await service().getStatus()).plan).toBe(Plans.Starter);
+  });
+
+  it('counts a refund reported twice once', async () => {
+    await buyWithWechat(Plans.Starter, 'monthly', 5);
+    const [first] = await prepaidRows();
+    const { outTradeNo } = await buyWithWechat(Plans.Starter, 'monthly');
+    const refund = { outTradeNo, provider: 'wechat' as const, refundedAt: new Date() };
+
+    expect((await applyRefund(db, refund)).outcome).toBe('refunded');
+    expect((await applyRefund(db, refund)).outcome).toBe('duplicate');
+    expect((await prepaidRows())[0].currentPeriodEnd).toEqual(first.currentPeriodEnd);
+  });
+
+  it('leaves a higher plan alone when an order for the lower one it replaced is refunded', async () => {
+    const { outTradeNo } = await buyWithWechat(Plans.Starter, 'yearly', 30);
+    await buyWithWechat(Plans.Ultimate, 'monthly');
+
+    await applyRefund(db, { outTradeNo, provider: 'wechat', refundedAt: new Date() });
+
+    expect((await service().getStatus()).plan).toBe(Plans.Ultimate);
+  });
+
+  it('keeps the plan on a partial refund made in the merchant platform', async () => {
+    const { outTradeNo } = await buyWithWechat(Plans.Starter, 'monthly');
+
+    const { body, headers } = wechatRefundNotification(outTradeNo, 6800, 1000);
+    await handleWechatPayNotification(db, headers, body);
+
+    expect(await orderStatus(outTradeNo)).toBe('paid');
+    expect((await service().getStatus()).plan).toBe(Plans.Starter);
+  });
+
+  it('refunds an Alipay order through alipay.trade.refund', async () => {
+    const order = await service().createPrepaidOrder({
+      interval: 'monthly',
+      plan: Plans.Starter,
+      provider: 'alipay',
+    });
+    const outTradeNo = await outTradeNoOf(order.orderId);
+    await handleAlipayNotification(db, alipayNotification(outTradeNo, '68.00'));
+    const calls = alipayAnswers('alipay_trade_refund_response', {
+      code: '10000',
+      fund_change: 'Y',
+      out_trade_no: outTradeNo,
+      refund_fee: '68.00',
+    });
+
+    expect((await refundOrder(db, outTradeNo)).outcome).toBe('refunded');
+
+    expect(calls[0].get('method')).toBe('alipay.trade.refund');
+    expect(JSON.parse(calls[0].get('biz_content')!)).toMatchObject({
+      out_request_no: `${outTradeNo}R`,
+      out_trade_no: outTradeNo,
+      refund_amount: '68.00',
+    });
+    expect((await service().getStatus()).plan).toBe(Plans.Free);
+  });
+
+  it("ends the plan when Alipay reports a full refund made in Alipay's console", async () => {
+    const order = await service().createPrepaidOrder({
+      interval: 'monthly',
+      plan: Plans.Starter,
+      provider: 'alipay',
+    });
+    const outTradeNo = await outTradeNoOf(order.orderId);
+    await handleAlipayNotification(db, alipayNotification(outTradeNo, '68.00'));
+
+    const fields: Record<string, string> = {
+      app_id: '2021000000000001',
+      gmt_refund: '2026-11-18 10:00:00',
+      out_trade_no: outTradeNo,
+      refund_fee: '68.00',
+      total_amount: '68.00',
+      trade_no: `ali-${outTradeNo}`,
+      trade_status: 'TRADE_CLOSED',
+    };
+    await handleAlipayNotification(db, {
+      ...fields,
+      sign: signWith(alipayKeys.privateKey, signingContent(fields, [])),
+    });
+
+    expect(await orderStatus(outTradeNo)).toBe('refunded');
+    expect((await service().getStatus()).plan).toBe(Plans.Free);
+  });
+
+  it('refuses to refund an order that was never paid', async () => {
+    wechatAnswers({ code_url: 'weixin://wxpay/bizpayurl?pr=abc' });
+    const order = await service().createPrepaidOrder({
+      interval: 'monthly',
+      plan: Plans.Starter,
+      provider: 'wechat',
+    });
+
+    await expect(refundOrder(db, await outTradeNoOf(order.orderId))).rejects.toThrow(
+      'is pending, not paid',
+    );
   });
 });

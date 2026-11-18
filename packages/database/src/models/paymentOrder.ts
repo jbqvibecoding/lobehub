@@ -72,6 +72,19 @@ export class PaymentOrderModel {
     return row;
   }
 
+  /**
+   * Marks a paid order refunded and returns it; returns nothing when it was not paid or was already
+   * refunded, so a refund reported twice is taken back once.
+   */
+  static async markRefunded(db: Db, outTradeNo: string) {
+    const [row] = await db
+      .update(paymentOrders)
+      .set({ status: 'refunded', updatedAt: new Date() })
+      .where(and(eq(paymentOrders.outTradeNo, outTradeNo), eq(paymentOrders.status, 'paid')))
+      .returning();
+    return row;
+  }
+
   /** Gives up on a pending order, e.g. when the provider would not take it. */
   async close(id: string) {
     await this.db

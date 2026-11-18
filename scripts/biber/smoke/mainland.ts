@@ -2,7 +2,8 @@
  * The mainland edition's own paths, against a running `APP_REGION=cn` server: sign in with a code
  * texted to a mainland mobile number (and not into an account someone else made with that number),
  * buy a month of a plan with Alipay, receive Alipay's signed payment notification, and find the plan
- * active; the same notification again changes nothing.
+ * active; the same notification again changes nothing; Alipay's notification of a full refund ends
+ * the plan.
  *
  *   bunx tsx scripts/biber/smoke/mainland.ts
  *
@@ -38,6 +39,34 @@ const step = async <T>(name: string, run: () => Promise<T>): Promise<T> => {
     throw error;
   }
 };
+
+/** Beijing time as Alipay writes it: `2026-11-11 10:30:00`. */
+const beijingNow = () =>
+  new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 19).replace('T', ' ');
+
+/** Signs notification fields as Alipay does. */
+const signedForm = (fields: Record<string, string>) => {
+  const sign = createSign('RSA-SHA256')
+    .update(signingContent(fields, []), 'utf8')
+    .sign(signingKey, 'base64');
+  return new URLSearchParams({ ...fields, sign, sign_type: 'RSA2' });
+};
+
+/** Alipay's notification after a trade is refunded in full (e.g. from its merchant console). */
+const alipayRefundNotification = (outTradeNo: string, totalAmount: string) =>
+  signedForm({
+    app_id: ALIPAY_APP_ID,
+    gmt_refund: beijingNow(),
+    notify_id: `notify-refund-${Date.now()}`,
+    notify_time: new Date().toISOString(),
+    notify_type: 'trade_status_sync',
+    out_biz_no: `${outTradeNo}R`,
+    out_trade_no: outTradeNo,
+    refund_fee: totalAmount,
+    total_amount: totalAmount,
+    trade_no: `2026${Date.now()}`,
+    trade_status: 'TRADE_CLOSED',
+  });
 
 /** Alipay's asynchronous notification for a paid trade, signed as Alipay signs it. */
 const alipayNotification = (outTradeNo: string, totalAmount: string) => {
@@ -185,6 +214,20 @@ const main = async () => {
       });
       if ((await response.text()) === 'success')
         throw new Error('a changed notification was accepted');
+    });
+
+    await step("a full refund made in Alipay's console ends the plan", async () => {
+      const response = await fetch(`${BASE_URL}/api/webhooks/alipay`, {
+        body: alipayRefundNotification(order.outTradeNo, order.amount),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        method: 'POST',
+      });
+      const text = await response.text();
+      if (text !== 'success') throw new Error(`HTTP ${response.status}: ${text}`);
+      const status = await client.query<any>('mobile', 'subscription.status');
+      if (status.plan !== 'free') {
+        throw new Error(JSON.stringify({ plan: status.plan, subscription: status.subscription }));
+      }
     });
   } finally {
     sms.close();

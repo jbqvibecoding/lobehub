@@ -18,7 +18,12 @@ export {
   stripeLookupKeyFor,
   usdPriceFor,
 } from './plans';
-export { type PrepaidHolding, type PrepaidPeriod, prepaidPeriod } from './prepaid';
+export {
+  type PrepaidHolding,
+  type PrepaidPeriod,
+  prepaidPeriod,
+  prepaidRefundEnd,
+} from './prepaid';
 export {
   type BillingInterval,
   isPrepaidProvider,

@@ -50,3 +50,22 @@ export const prepaidPeriod = ({
     start: running.currentPeriodStart ?? paidAt,
   };
 };
+
+/**
+ * Where the running prepaid period ends once a purchase of `interval` of `plan` is refunded in
+ * full: earlier by what the purchase bought, when the plan running is the one it bought. Undefined
+ * when the refund leaves the running plan alone (it bought a plan that never ran, or one a higher
+ * plan has since replaced). An end at or before the refund means the plan ends at once.
+ */
+export const prepaidRefundEnd = ({
+  current,
+  interval,
+  plan,
+}: {
+  current?: PrepaidHolding;
+  interval: BillingInterval;
+  plan: Plans;
+}): Date | undefined =>
+  current?.currentPeriodEnd && current.plan === plan
+    ? monthsAfter(current.currentPeriodEnd, -MONTHS[interval])
+    : undefined;

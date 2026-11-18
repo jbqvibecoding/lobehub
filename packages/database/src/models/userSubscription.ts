@@ -84,6 +84,14 @@ export class UserSubscriptionModel {
     return row;
   }
 
+  /** Moves the end of what the user holds with a provider, e.g. a prepaid period partly refunded. */
+  async setPeriodEnd(provider: SubscriptionProvider, currentPeriodEnd: Date) {
+    await this.db
+      .update(userSubscriptions)
+      .set({ currentPeriodEnd, syncedAt: new Date(), updatedAt: new Date() })
+      .where(and(this.ownership(), eq(userSubscriptions.provider, provider)));
+  }
+
   /** Ends what the user holds with a provider, e.g. a prepaid period another one replaced. */
   async endWith(provider: SubscriptionProvider, endedAt = new Date()) {
     await this.db

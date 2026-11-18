@@ -10,7 +10,7 @@ import { beijingParts, readPrivateKey, readPublicKey } from './keys';
 
 /**
  * WeChat Pay API v3, the calls a Native (QR code) payment needs: place an order, read it back,
- * and verify and decrypt the payment notification. Requests are signed with the merchant's API
+ * refund it, and verify and decrypt the payment and refund notifications. Requests are signed with the merchant's API
  * key; responses and notifications are checked against WeChat Pay's public key.
  */
 export interface WechatPayConfig {
@@ -36,6 +36,24 @@ export interface WechatPayTransaction {
   trade_state: string;
   transaction_id?: string;
 }
+
+/** A refund as WeChat Pay reports it (the fields this app reads). */
+export interface WechatPayRefund {
+  amount?: { refund?: number; total?: number };
+  mchid?: string;
+  out_refund_no: string;
+  out_trade_no: string;
+  refund_id?: string;
+  /** `SUCCESS` once the money is back; `PROCESSING` meanwhile; `CLOSED` or `ABNORMAL` if it failed */
+  refund_status?: string;
+  /** In the response to a refund request; notifications call it `refund_status` */
+  status?: string;
+  success_time?: string;
+}
+
+export type WechatPayEvent =
+  | { transaction: WechatPayTransaction; type: 'payment' }
+  | { refund: WechatPayRefund; type: 'refund' };
 
 export class WechatPayError extends Error {
   constructor(
@@ -143,6 +161,39 @@ export const createWechatPay = (config: WechatPayConfig) => {
     );
   };
 
+  /**
+   * Verifies a notification and returns the payment or refund it reports, or nothing for other
+   * events. Throws when it is not from WeChat Pay or names another merchant.
+   */
+  const readEvent = (
+    headers: { get: (name: string) => string | null },
+    body: string,
+    now = new Date(),
+  ): WechatPayEvent | undefined => {
+    verify(headers, body, now);
+    const event = JSON.parse(body) as {
+      event_type: string;
+      resource: { associated_data?: string; ciphertext: string; nonce: string };
+    };
+
+    if (event.event_type === 'TRANSACTION.SUCCESS') {
+      const transaction = JSON.parse(decrypt(event.resource)) as WechatPayTransaction;
+      if (transaction.mchid !== config.merchantId || transaction.appid !== config.appId) {
+        throw new WechatPayError('The payment belongs to another merchant or app');
+      }
+      return { transaction, type: 'payment' };
+    }
+    // REFUND.SUCCESS, REFUND.ABNORMAL, REFUND.CLOSED; a refund names the merchant, not the app
+    if (event.event_type.startsWith('REFUND.')) {
+      const refund = JSON.parse(decrypt(event.resource)) as WechatPayRefund;
+      if (refund.mchid !== config.merchantId) {
+        throw new WechatPayError('The refund belongs to another merchant');
+      }
+      return { refund, type: 'refund' };
+    }
+    return undefined;
+  };
+
   return {
     /** Places a Native order and returns the `weixin://` link the QR code shows. */
     async createNativeOrder(order: {
@@ -172,27 +223,37 @@ export const createWechatPay = (config: WechatPayConfig) => {
       );
     },
 
-    /**
-     * Verifies a notification and returns the payment it reports, or nothing for other events.
-     * Throws when it is not from WeChat Pay or names another merchant.
-     */
+    readEvent,
+
+    /** The payment a notification reports, or nothing for other events (see `readEvent`). */
     readNotification(
       headers: { get: (name: string) => string | null },
       body: string,
       now = new Date(),
     ): WechatPayTransaction | undefined {
-      verify(headers, body, now);
-      const event = JSON.parse(body) as {
-        event_type: string;
-        resource: { associated_data?: string; ciphertext: string; nonce: string };
-      };
-      if (event.event_type !== 'TRANSACTION.SUCCESS') return undefined;
+      const event = readEvent(headers, body, now);
+      return event?.type === 'payment' ? event.transaction : undefined;
+    },
 
-      const transaction = JSON.parse(decrypt(event.resource)) as WechatPayTransaction;
-      if (transaction.mchid !== config.merchantId || transaction.appid !== config.appId) {
-        throw new WechatPayError('The payment belongs to another merchant or app');
-      }
-      return transaction;
+    /**
+     * Refunds a paid order in full. The refund number names the refund, so asking again with the
+     * same number cannot refund twice. WeChat Pay answers `SUCCESS` or `PROCESSING`; the money's
+     * arrival is reported to `notifyUrl`.
+     */
+    refund(refund: {
+      amount: number;
+      notifyUrl: string;
+      outRefundNo: string;
+      outTradeNo: string;
+      reason?: string;
+    }) {
+      return call<WechatPayRefund>('POST', '/v3/refund/domestic/refunds', {
+        amount: { currency: 'CNY', refund: refund.amount, total: refund.amount },
+        notify_url: refund.notifyUrl,
+        out_refund_no: refund.outRefundNo,
+        out_trade_no: refund.outTradeNo,
+        ...(refund.reason && { reason: refund.reason }),
+      });
     },
   };
 };

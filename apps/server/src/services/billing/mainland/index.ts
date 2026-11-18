@@ -7,6 +7,7 @@ import {
   planRank,
   prepaidPeriod,
   type PrepaidProvider,
+  prepaidRefundEnd,
 } from '@lobechat/billing';
 import { isPaymentProviderAvailable } from '@lobechat/region';
 import { Plans } from '@lobechat/types';
@@ -184,6 +185,101 @@ export const applyPaidOrder = async (
     return 'applied';
   });
 
+export type RefundOutcome =
+  /** Refunded now: the plan the order bought ends earlier, or at once */
+  | 'refunded'
+  /** The refund was taken back before */
+  | 'duplicate'
+  /** The order was never paid */
+  | 'not_paid'
+  /** We placed no such order */
+  | 'unknown';
+
+/**
+ * Records that a paid order was refunded in full and takes back what it bought: when the plan
+ * running is the one the order bought, its end moves back by the order's period, and a plan with
+ * nothing left ends at once (`prepaidRefundEnd`). A plan the order did not buy is left alone. Like
+ * a payment, a refund reported twice counts once.
+ */
+export const applyRefund = async (
+  db: LobeChatDatabase,
+  refund: { outTradeNo: string; provider: PrepaidProvider; refundedAt: Date },
+): Promise<{ outcome: RefundOutcome; planEndsAt?: Date }> =>
+  db.transaction(async (tx) => {
+    const order = await PaymentOrderModel.findByOutTradeNo(tx, refund.outTradeNo);
+    if (!order || order.provider !== refund.provider) {
+      log('refund for unknown order %s (%s)', refund.outTradeNo, refund.provider);
+      return { outcome: 'unknown' };
+    }
+
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, order.userId)).for('update');
+
+    const refunded = await PaymentOrderModel.markRefunded(tx, order.outTradeNo);
+    if (!refunded) return { outcome: order.status === 'refunded' ? 'duplicate' : 'not_paid' };
+
+    const subscriptions = new UserSubscriptionModel(tx, order.userId);
+    const current = grantingPrepaid(await subscriptions.list(), refund.refundedAt);
+    const end = prepaidRefundEnd({
+      current,
+      interval: order.billingInterval,
+      plan: order.plan,
+    });
+    if (!current || !end) {
+      log('order %s refunded; it bought no plan that is running', order.outTradeNo);
+      return { outcome: 'refunded' };
+    }
+
+    if (end <= refund.refundedAt) {
+      await subscriptions.endWith(current.provider, refund.refundedAt);
+      log('order %s refunded; %s ends now', order.outTradeNo, current.plan);
+      return { outcome: 'refunded', planEndsAt: refund.refundedAt };
+    }
+    await subscriptions.setPeriodEnd(current.provider, end);
+    log('order %s refunded; %s now ends %s', order.outTradeNo, current.plan, end.toISOString());
+    return { outcome: 'refunded', planEndsAt: end };
+  });
+
+/** Our refund number for an order: one per order, so asking again cannot refund it twice. */
+export const refundNumber = (outTradeNo: string) => `${outTradeNo}R`;
+
+/**
+ * Refunds a paid order in full through its provider, then takes back what it bought (an operator
+ * runs this: `ops.ts refund`). Throws when the order cannot be refunded or the provider refuses.
+ */
+export const refundOrder = async (
+  db: LobeChatDatabase,
+  outTradeNo: string,
+  { now = new Date(), reason }: { now?: Date; reason?: string } = {},
+) => {
+  const order = await PaymentOrderModel.findByOutTradeNo(db, outTradeNo);
+  if (!order) throw new Error(`No order ${outTradeNo}`);
+  if (order.status === 'refunded') return { outcome: 'duplicate' as const };
+  if (order.status !== 'paid') throw new Error(`Order ${outTradeNo} is ${order.status}, not paid`);
+
+  if (order.provider === 'wechat') {
+    const result = await getWechatPay().refund({
+      amount: order.amount,
+      notifyUrl: webhookUrl('wechat'),
+      outRefundNo: refundNumber(outTradeNo),
+      outTradeNo,
+      reason,
+    });
+    const status = result.status ?? result.refund_status;
+    if (status !== 'SUCCESS' && status !== 'PROCESSING') {
+      throw new WechatPayError(`WeChat Pay did not take the refund (${status ?? 'no status'})`);
+    }
+  } else {
+    await getAlipay().refund({
+      amount: order.amount,
+      outRequestNo: refundNumber(outTradeNo),
+      outTradeNo,
+      reason,
+    });
+  }
+
+  return applyRefund(db, { outTradeNo, provider: order.provider, refundedAt: now });
+};
+
 /** A provider's payment time, never later than now. */
 const paidAtFrom = (time: string | undefined, now: Date) => {
   const parsed = time ? new Date(time) : undefined;
@@ -194,14 +290,38 @@ const paidAtFrom = (time: string | undefined, now: Date) => {
 const alipayDate = (time: string | undefined) =>
   time ? `${time.replace(' ', 'T')}+08:00` : undefined;
 
-/** A WeChat Pay payment notification. Throws `WechatPayError` when WeChat Pay did not sign it. */
+/**
+ * A WeChat Pay payment or refund notification. A refund made anywhere (here or in the merchant
+ * platform) takes back what the order bought once WeChat Pay reports the money returned in full.
+ * Throws `WechatPayError` when WeChat Pay did not sign it.
+ */
 export const handleWechatPayNotification = async (
   db: LobeChatDatabase,
   headers: { get: (name: string) => string | null },
   body: string,
   now = new Date(),
 ) => {
-  const transaction = getWechatPay().readNotification(headers, body, now);
+  const event = getWechatPay().readEvent(headers, body, now);
+  if (event?.type === 'refund') {
+    const { refund } = event;
+    if (refund.refund_status !== 'SUCCESS') {
+      console.error(
+        `[billing] WeChat Pay refund ${refund.out_refund_no} for ${refund.out_trade_no} is ${refund.refund_status}; check it in the merchant platform`,
+      );
+      return;
+    }
+    if ((refund.amount?.refund ?? 0) < (refund.amount?.total ?? Number.POSITIVE_INFINITY)) {
+      log('partial refund of %s; the plan stays', refund.out_trade_no);
+      return;
+    }
+    await applyRefund(db, {
+      outTradeNo: refund.out_trade_no,
+      provider: 'wechat',
+      refundedAt: paidAtFrom(refund.success_time, now),
+    });
+    return;
+  }
+  const transaction = event?.type === 'payment' ? event.transaction : undefined;
   if (!transaction || transaction.trade_state !== 'SUCCESS') return;
 
   await applyPaidOrder(db, {
@@ -213,13 +333,29 @@ export const handleWechatPayNotification = async (
   });
 };
 
-/** An Alipay payment notification (the posted form). Throws `AlipayError` when Alipay did not sign it. */
+/**
+ * An Alipay notification (the posted form): a payment, or a refund made anywhere (here or in the
+ * merchant console), which takes back what the order bought once the whole amount is refunded.
+ * Throws `AlipayError` when Alipay did not sign it.
+ */
 export const handleAlipayNotification = async (
   db: LobeChatDatabase,
   fields: Record<string, string>,
   now = new Date(),
 ) => {
   const trade = getAlipay().readNotification(fields);
+  if (trade.refund_fee !== undefined && fen(trade.refund_fee) > 0) {
+    if (fen(trade.refund_fee) < fen(trade.total_amount)) {
+      log('partial refund of %s; the plan stays', trade.out_trade_no);
+      return;
+    }
+    await applyRefund(db, {
+      outTradeNo: trade.out_trade_no,
+      provider: 'alipay',
+      refundedAt: paidAtFrom(alipayDate(trade.gmt_refund), now),
+    });
+    return;
+  }
   if (!isAlipayPaid(trade.trade_status)) return;
 
   await applyPaidOrder(db, {

@@ -126,7 +126,11 @@ export const paymentOrders = pgTable(
     amount: integer('amount').notNull(),
     currency: text('currency').default('CNY').notNull(),
 
-    status: text('status').$type<'closed' | 'paid' | 'pending'>().default('pending').notNull(),
+    /** `refunded`: paid, then refunded in full, which took back what it bought */
+    status: text('status')
+      .$type<'closed' | 'paid' | 'pending' | 'refunded'>()
+      .default('pending')
+      .notNull(),
     /** The provider's id for the payment, from its notification */
     providerTransactionId: text('provider_transaction_id'),
     paidAt: timestamptz('paid_at'),
