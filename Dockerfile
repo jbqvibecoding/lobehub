@@ -1,8 +1,12 @@
 ## Set global build ENV
 ARG NODEJS_VERSION="24"
+# Base images, from Docker Hub by default. A mainland China build points them at copies in its own
+# registry, e.g. --build-arg NODE_IMAGE=registry.cn-hangzhou.aliyuncs.com/<namespace>/node:24-slim
+ARG NODE_IMAGE="node:${NODEJS_VERSION}-slim"
+ARG BUSYBOX_IMAGE="busybox:latest"
 
 ## Base image for all building stages
-FROM node:${NODEJS_VERSION}-slim AS base
+FROM ${NODE_IMAGE} AS base
 
 ARG USE_CN_MIRROR
 
@@ -81,6 +85,8 @@ RUN set -e && \
         export SENTRYCLI_CDNURL="https://npmmirror.com/mirrors/sentry-cli"; \
         npm config set registry "https://registry.npmmirror.com/"; \
         echo 'canvas_binary_host_mirror=https://npmmirror.com/mirrors/canvas' >> .npmrc; \
+        # ffmpeg-static downloads its binary from GitHub releases, which npmmirror mirrors
+        export FFMPEG_BINARIES_URL="https://cdn.npmmirror.com/binaries/ffmpeg-static"; \
     fi && \
     export COREPACK_NPM_REGISTRY=$(npm config get registry | sed 's/\/$//') && \
     npm i -g corepack@latest && \
@@ -102,7 +108,7 @@ RUN rm -rf src/app/desktop "src/app/(backend)/trpc/desktop"
 RUN npm run build:docker
 
 ## Application image, copy all the files for production
-FROM busybox:latest AS app
+FROM ${BUSYBOX_IMAGE} AS app
 
 COPY --from=base /distroless/ /
 

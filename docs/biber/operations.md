@@ -234,7 +234,7 @@ curl -fsS -H "Authorization: Bearer $CRON_SECRET" < APP_URL > /api/agent/approva
 准备：
 
 1. 起一个 ParadeDB（带 `pg_search` 和 `vector` 的 Postgres）和 Redis，执行 `bun run db:migrate`。
-   Docker Hub 限流时可以用 `mirror.gcr.io/paradedb/paradedb:latest-pg17`。
+   Docker Hub 限流时可以用 `mirror.gcr.io/paradedb/paradedb:latest-pg17`；在境内用自己仓库里的副本，见第 12 节。
 2. 服务端的环境变量：
    - 国际版：`OPENAI_API_KEY` 设任意值，`OPENAI_PROXY_URL=http://127.0.0.1:4010/v1`，
      `EXPO_BASE_URL=http://127.0.0.1:4020`。
@@ -331,3 +331,33 @@ curl -fsS -H "Authorization: Bearer $CRON_SECRET" < APP_URL > /api/agent/approva
 | `cdn.jsdelivr.net`、`pypi.org`     | 浏览器里运行 Python（Pyodide）                                      | Python 运行不了            |
 | `cdn.jsdelivr.net`（服务端）       | 把对话导出成 PDF 时下载中文字体                                     | PDF 导出失败               |
 | GitHub releases（桌面版）          | 首次运行时下载 agent-browser                                        | 桌面版的浏览器自动化不可用 |
+
+## 12. 构建国内版
+
+在境内构建时，基础镜像和依赖都要能从境内下载。各 Dockerfile 默认用 Docker Hub、GHCR 和各家的官方源，
+国内版构建时用下面的参数换掉。
+
+| 构建               | 命令                                                                                                                                      | `USE_CN_MIRROR=true` 时换成                                            |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 主镜像             | 仓库根目录 `docker build --build-arg USE_CN_MIRROR=true --build-arg NODE_IMAGE=… --build-arg BUSYBOX_IMAGE=… .`                           | apt 用中科大镜像，npm 用 npmmirror，ffmpeg 从 npmmirror 下载           |
+| 云电脑、supervisor | `apps/computer` 下 `USE_CN_MIRROR=true NODE_IMAGE=… BUN_IMAGE=… UBUNTU_IMAGE=… SPIRE_IMAGE=… SUPERVISOR_BUN_IMAGE=… docker compose build` | apt 用阿里云镜像，bun 用 npmmirror，Playwright 浏览器从 npmmirror 下载 |
+
+**基础镜像：** Docker Hub 和 GHCR 在境内不稳定。先在能访问的机器上拉下这些镜像，推到自己的阿里云容器镜像服务（ACR），
+构建时用上表的参数指过去，标签和 digest 保持不变：
+
+| 用在       | 镜像                                                                                          |
+| ---------- | --------------------------------------------------------------------------------------------- |
+| 主镜像     | `node:24-slim`、`busybox:latest`                                                              |
+| 云电脑     | `node:24.18.1-bookworm-slim`、`oven/bun:1.4.3`（用 Dockerfile 里写的 digest）、`ubuntu:24.04` |
+| supervisor | `ghcr.io/spiffe/spire-server:1.15.1`、`oven/bun:1.4.3-alpine`                                 |
+| 部署       | `paradedb/paradedb:latest-pg17`、`redis:7-alpine`                                             |
+
+**手机端：** 在 EAS 的云端构建，不受影响。
+
+**桌面版：** 正式包（设了 `UPDATE_CHANNEL`）必须设 `UPDATE_SERVER_URL`，否则打包直接失败。国内版指向境内的对象存储。
+本地打的包没有更新源，不会自动更新，也不会去上游 LobeHub 的 GitHub 检查更新。
+Electron 本身已由 `apps/desktop/.npmrc` 和 `electron-builder.mjs` 从 npmmirror 下载。
+
+**没有验证过的：** 上面的国内镜像地址按 npmmirror 公开的镜像配置和阿里云的说明填写。开发环境连不上这些镜像，
+没有实际下载过；第一次在境内构建时，请留意下载是否成功。浏览器里运行 Python 用的 Pyodide 没有找到可靠的境内完整镜像，
+仍从 jsDelivr 加载（见第 11 节）。

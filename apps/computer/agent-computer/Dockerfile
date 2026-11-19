@@ -2,20 +2,37 @@
 #
 # The image tag and Playwright dependency must be pinned to the same exact version. Bump both or
 # neither.
-FROM node:24.18.1-bookworm-slim AS node-toolchain
-FROM oven/bun:1.4.3@sha256:ec06c3b6cea04192ae6770c434f668ca41d343ad19fa6472216c7b48be39c598 AS bun-toolchain
+#
+# Base images come from Docker Hub by default. A mainland China build points them at copies in its
+# own registry (keep the same tags and digest) and sets USE_CN_MIRROR=true for apt, npm and the
+# Playwright browser download.
+ARG NODE_IMAGE=node:24.18.1-bookworm-slim
+ARG BUN_IMAGE=oven/bun:1.4.3@sha256:ec06c3b6cea04192ae6770c434f668ca41d343ad19fa6472216c7b48be39c598
+ARG UBUNTU_IMAGE=ubuntu:24.04
 
-FROM ubuntu:24.04
+FROM ${NODE_IMAGE} AS node-toolchain
+FROM ${BUN_IMAGE} AS bun-toolchain
+
+FROM ${UBUNTU_IMAGE}
 
 # The Bun image digest pins the amd64/arm64 release bytes, including if its tag changes.
 ARG PLAYWRIGHT_VERSION=1.62.1
+ARG USE_CN_MIRROR=false
 ENV BUN_INSTALL=/usr/local
 ENV PATH="/usr/local/bin:${PATH}"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 COPY --from=node-toolchain /usr/local /usr/local
 COPY --from=bun-toolchain /usr/local/bin/bun /usr/local/bin/bun
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Plain http for the apt mirror: there are no CA certificates yet, and apt checks package signatures
+RUN if [ "${USE_CN_MIRROR}" = "true" ]; then \
+      sed -i 's#http://\(archive\|security\|ports\).ubuntu.com#http://mirrors.aliyun.com#g' \
+        /etc/apt/sources.list.d/ubuntu.sources; \
+      export BUN_CONFIG_REGISTRY=https://registry.npmmirror.com \
+        NPM_CONFIG_REGISTRY=https://registry.npmmirror.com \
+        PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright; \
+    fi \
+  && apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl python3 unzip xz-utils \
   && ln -s bun /usr/local/bin/bunx \
   && bunx --bun "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium \
@@ -25,7 +42,8 @@ WORKDIR /app
 # The lockfile as well as the manifest: `--frozen-lockfile` with no lockfile present resolves afresh
 # and exits 0, so the file has to be here for the flag to mean anything.
 COPY agent-computer/package.json agent-computer/bun.lock ./
-RUN bun install --frozen-lockfile
+RUN if [ "${USE_CN_MIRROR}" = "true" ]; then export BUN_CONFIG_REGISTRY=https://registry.npmmirror.com; fi \
+  && bun install --frozen-lockfile
 
 COPY agent-computer/src ./src
 # index.ts imports ../../shared/file-download at runtime (the other shared imports are type-only and

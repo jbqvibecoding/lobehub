@@ -110,6 +110,11 @@ export class UpdaterManager {
     // Read persisted channel from store (defaults to build-time UPDATE_CHANNEL)
     this.currentChannel = this.app.storeManager.get('updateChannel') ?? UPDATE_CHANNEL;
 
+    if (!this.hasUpdateSource()) {
+      logger.info('No UPDATE_SERVER_URL in this build, so it does not update itself');
+      return;
+    }
+
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.allowDowngrade = false;
@@ -176,6 +181,19 @@ export class UpdaterManager {
    */
   public checkForUpdates = async ({ manual = false }: { manual?: boolean } = {}) => {
     if (this.checking || this.downloading) return;
+
+    if (!this.hasUpdateSource()) {
+      logger.info('Update check skipped: this build has no update server');
+      if (manual) {
+        this.setStage('error', {
+          error: 'This build has no update server, so it cannot update itself',
+        });
+        setTimeout(() => {
+          if (this.stage === 'error') this.setStage('idle');
+        }, 3000);
+      }
+      return;
+    }
 
     this.checking = true;
     this.activeGeneration = this.checkGeneration;
@@ -399,6 +417,14 @@ export class UpdaterManager {
    * Strip trailing channel path from URL so we can re-append the correct channel.
    * Handles both base URL (https://cdn.example.com) and legacy URLs with channel suffixes.
    */
+  /**
+   * Whether this build knows where its updates are: the server it was built with, or the local dev
+   * config. Without one it never checks, rather than asking someone else's release feed.
+   */
+  private hasUpdateSource() {
+    return !!this.getBaseUpdateUrl() || isDev || FORCE_DEV_UPDATE_CONFIG;
+  }
+
   private getBaseUpdateUrl(): string | undefined {
     if (!UPDATE_SERVER_URL) return undefined;
     return UPDATE_SERVER_URL.replace(/\/(stable|nightly|canary|beta)\/?$/, '');
@@ -426,18 +452,8 @@ export class UpdaterManager {
         url: feedUrl,
       });
     } else {
-      // Fallback to GitHub when no S3 URL configured (local dev)
-      logger.info(
-        `No UPDATE_SERVER_URL configured, falling back to GitHub provider for ${this.currentChannel} channel`,
-      );
-
-      autoUpdater.setFeedURL({
-        owner: 'lobehub',
-        provider: 'github',
-        repo: 'lobehub',
-      });
-
-      autoUpdater.allowPrerelease = this.currentChannel !== 'stable';
+      // Never fall back to the upstream project's releases: they are a different product
+      logger.info(`No UPDATE_SERVER_URL configured; no update feed for ${this.currentChannel}`);
     }
   }
 

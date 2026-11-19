@@ -17,6 +17,8 @@ services:
     build:
       context: .
       dockerfile: agent-computer/Dockerfile
+      # Taken from the environment when set; see the Dockerfile for the mainland China build
+      args: [USE_CN_MIRROR, NODE_IMAGE, BUN_IMAGE, UBUNTU_IMAGE]
     image: ${COMPUTER_IMAGE:-lobe-agent-computer:latest}
     # Built here, started by the supervisor: one container per user (or per topic).
     profiles: [build-only]
@@ -25,6 +27,7 @@ services:
     build:
       context: .
       dockerfile: supervisor/Dockerfile
+      args: [USE_CN_MIRROR, SPIRE_IMAGE, SUPERVISOR_BUN_IMAGE]
     image: ${SUPERVISOR_IMAGE:-lobe-computer-supervisor:latest}
     restart: unless-stopped
     environment:

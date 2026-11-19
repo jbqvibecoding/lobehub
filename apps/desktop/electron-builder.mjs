@@ -39,8 +39,14 @@ const region = channel
 const arch = os.arch();
 const hasAppleCertificate = Boolean(process.env.CSC_LINK);
 
-// 自定义更新服务器 URL (用于 stable 频道)
+// Where the app looks for its updates. A release build must name it: without one, electron-builder
+// would point the app at the upstream project's GitHub releases, a different product.
 const updateServerUrl = process.env.UPDATE_SERVER_URL;
+if (channel && !updateServerUrl?.trim()) {
+  throw new Error(
+    `UPDATE_SERVER_URL is required for the ${channel} desktop release: it is where the app looks for updates`,
+  );
+}
 
 console.info(`🚄 Build Version ${packageJSON.version}, Channel: ${channel}, Region: ${region}`);
 console.info(`🏗️ Building for architecture: ${arch}`);
@@ -57,7 +63,7 @@ const stripChannelSuffix = (url) => url.replace(/\/(stable|nightly|canary|beta)\
 
 // 根据 channel 配置 publish provider
 // - 所有渠道 + UPDATE_SERVER_URL: 使用 generic (S3)
-// - 无 UPDATE_SERVER_URL: 回退到 GitHub (本地开发)
+// - 无 UPDATE_SERVER_URL（只有本地打包）: 不发布更新源，打出的应用不自动更新
 const getPublishConfig = () => {
   const channelPath = isStable ? 'stable' : isNightly ? 'nightly' : channel || 'stable';
 
@@ -73,15 +79,8 @@ const getPublishConfig = () => {
     ];
   }
 
-  // 本地开发无 S3 时回退到 GitHub
-  console.info(`📦 ${channelPath} channel: No UPDATE_SERVER_URL, falling back to GitHub provider`);
-  return [
-    {
-      owner: 'lobehub',
-      provider: 'github',
-      repo: 'lobehub',
-    },
-  ];
+  console.info(`📦 ${channelPath} channel: No UPDATE_SERVER_URL, so this package does not update`);
+  return null;
 };
 
 // Keep only these Electron Framework localization folders (*.lproj)
