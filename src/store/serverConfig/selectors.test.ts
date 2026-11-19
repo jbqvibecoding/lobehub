@@ -56,6 +56,20 @@ describe('serverConfigSelectors', () => {
     });
   });
 
+  describe('isGlobalEdition', () => {
+    it.each([
+      ['global', true],
+      ['cn', false],
+      [undefined, false],
+    ] as const)('is %s → %s', (region, expected) => {
+      const store = initServerConfigStore({
+        serverConfig: { aiProvider: {}, region, telemetry: {} },
+      });
+
+      expect(serverConfigSelectors.isGlobalEdition(store.getState())).toBe(expected);
+    });
+  });
+
   describe('enabledTelemetryChat', () => {
     it('should return langfuse value from store when defined', () => {
       const store = initServerConfigStore({

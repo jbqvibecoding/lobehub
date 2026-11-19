@@ -252,6 +252,8 @@ export default {
   'resourceList.viewTransferred': 'View',
   'portal.openInPageEditor': 'Edit in Page',
   'preview.downloadFile': 'Download File',
+  'preview.officeOnlineUnavailable':
+    "Office files can't be previewed here yet. Download the file to open it.",
   'preview.unsupportedFileAndContact':
     'This file format is not currently supported for online preview. If you have a request for previewing, feel free to <1>contact us</1>.',
   'resource': 'Resource',

@@ -3,6 +3,11 @@
 import { Flexbox } from '@lobehub/ui';
 import { css, cx } from 'antd-style';
 import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { serverConfigSelectors, useServerConfigStore } from '@/store/serverConfig';
+
+import NotSupport from '../../NotSupport';
 
 const container = css`
   position: relative;
@@ -22,11 +27,25 @@ const content = css`
 
 interface MSDocViewerProps {
   fileId: string;
+  fileName?: string;
   url: string | null;
 }
 
-const MSDocViewer = memo<MSDocViewerProps>(({ url }) => {
+/**
+ * Previews Office files with Microsoft's online viewer, whose servers download the whole file.
+ * Only the Global edition sends files there; elsewhere the file can be downloaded instead.
+ */
+const MSDocViewer = memo<MSDocViewerProps>(({ fileName, url }) => {
+  const { t } = useTranslation('file');
+  const isGlobalEdition = useServerConfigStore(serverConfigSelectors.isGlobalEdition);
+
   if (!url) return null;
+
+  if (!isGlobalEdition) {
+    return (
+      <NotSupport fileName={fileName} message={t('preview.officeOnlineUnavailable')} url={url} />
+    );
+  }
 
   return (
     <Flexbox className={cx(container)} height={'100%'} id="msdoc-renderer" width={'100%'}>

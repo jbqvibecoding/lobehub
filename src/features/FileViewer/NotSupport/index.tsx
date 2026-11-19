@@ -1,7 +1,7 @@
 import { Center, Flexbox, FluentEmoji } from '@lobehub/ui';
 import { Button } from '@lobehub/ui/base-ui';
 import { createStaticStyles } from 'antd-style';
-import { type ComponentType, type CSSProperties } from 'react';
+import { type ComponentType, type CSSProperties, type ReactNode } from 'react';
 import { useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
@@ -22,11 +22,13 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
 
 interface NotSupportProps {
   fileName?: string;
+  /** Why there is no preview; replaces the default note that invites preview requests */
+  message?: ReactNode;
   style?: CSSProperties;
   url?: string | null;
 }
 
-const NotSupport: ComponentType<NotSupportProps> = ({ fileName, url, style }) => {
+const NotSupport: ComponentType<NotSupportProps> = ({ fileName, message, url, style }) => {
   const { t } = useTranslation('file');
   const [loading, setLoading] = useState(false);
 
@@ -36,20 +38,22 @@ const NotSupport: ComponentType<NotSupportProps> = ({ fileName, url, style }) =>
         <Flexbox align={'center'} gap={12}>
           <FluentEmoji emoji={'👀'} size={64} />
           <Flexbox style={{ textAlign: 'center' }}>
-            <Trans
-              i18nKey="preview.unsupportedFileAndContact"
-              ns={'file'}
-              components={[
-                <span key="0" />,
-                <a
-                  aria-label={'todo'}
-                  href={MORE_FILE_PREVIEW_REQUEST_URL}
-                  key="1"
-                  rel="noreferrer"
-                  target="_blank"
-                />,
-              ]}
-            />
+            {message ?? (
+              <Trans
+                i18nKey="preview.unsupportedFileAndContact"
+                ns={'file'}
+                components={[
+                  <span key="0" />,
+                  <a
+                    aria-label={'todo'}
+                    href={MORE_FILE_PREVIEW_REQUEST_URL}
+                    key="1"
+                    rel="noreferrer"
+                    target="_blank"
+                  />,
+                ]}
+              />
+            )}
           </Flexbox>
           {url && (
             <Button

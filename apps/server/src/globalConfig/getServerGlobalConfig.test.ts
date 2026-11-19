@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 
 interface MockGlobalConfigOptions {
   agentGatewayUrl?: string;
+  appRegion?: string;
   enableAgentGateway?: boolean;
 }
 
@@ -77,6 +78,10 @@ const mockGlobalConfigDependencies = (
     langfuseEnv: {
       ENABLE_LANGFUSE: false,
     },
+  }));
+
+  vi.doMock('@/envs/region', () => ({
+    regionEnv: { APP_REGION: options.appRegion ?? 'global' },
   }));
 
   vi.doMock('@/envs/tools', () => ({
@@ -194,6 +199,19 @@ describe('getServerGlobalConfig', () => {
 
     await expect(loadServerConfig(false, { enableAgentGateway: true })).resolves.toMatchObject({
       enableGatewayMode: false,
+    });
+  });
+
+  it('tells the web app which edition it serves', async () => {
+    await expect(loadServerConfig(false, { appRegion: 'global' })).resolves.toMatchObject({
+      region: 'global',
+    });
+    await expect(loadServerConfig(false, { appRegion: 'cn' })).resolves.toMatchObject({
+      region: 'cn',
+    });
+    // The dev edition runs the mainland rules
+    await expect(loadServerConfig(false, { appRegion: 'dev' })).resolves.toMatchObject({
+      region: 'cn',
     });
   });
 });

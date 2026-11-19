@@ -87,6 +87,11 @@ export interface GlobalServerConfig {
   image?: PartialDeep<UserImageConfig>;
   memory?: GlobalMemoryConfig;
   oAuthSSOProviders?: string[];
+  /**
+   * Which edition this deployment serves. Outside the Global edition the web app keeps user
+   * content away from services abroad, so it treats a missing value the same way.
+   */
+  region?: 'cn' | 'global';
   systemAgent?: PartialDeep<UserServiceModelConfig>;
   telemetry: {
     langfuse?: boolean;

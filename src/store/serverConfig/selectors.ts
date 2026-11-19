@@ -18,6 +18,11 @@ export const serverConfigSelectors = {
   enableVisualUnderstanding: (s: ServerConfigStore) =>
     s.serverConfig.enableVisualUnderstanding || false,
   enabledTelemetryChat: (s: ServerConfigStore) => s.serverConfig.telemetry.langfuse || false,
+  /**
+   * Whether this is the Global edition, the only one that may hand user content to services
+   * abroad. False until the server config arrives, so those services stay off rather than flash on.
+   */
+  isGlobalEdition: (s: ServerConfigStore) => s.serverConfig.region === 'global',
   isMobile: (s: ServerConfigStore) => s.isMobile || false,
   oAuthSSOProviders: (s: ServerConfigStore) => s.serverConfig.oAuthSSOProviders,
   visualUnderstanding: (s: ServerConfigStore) => s.serverConfig.visualUnderstanding,
