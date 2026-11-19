@@ -1,3 +1,6 @@
+import { Globe } from 'lucide-react';
+
+import { useSiteIconUrl } from '@/hooks/useSiteIconUrl';
 import Image from '@/libs/next/Image';
 
 interface WebFaviconProps {
@@ -8,15 +11,17 @@ interface WebFaviconProps {
 }
 
 const WebFavicon = ({ url, title, alt, size = 14 }: WebFaviconProps) => {
-  const urlObj = new URL(url);
-  const host = urlObj.hostname;
+  const siteIconUrl = useSiteIconUrl();
+  const src = siteIconUrl(new URL(url).hostname);
+
+  if (!src) return <Globe size={size} style={{ flexShrink: 0 }} />;
 
   return (
     <Image
       unoptimized
       alt={alt || title || url}
       height={size}
-      src={`https://icons.duckduckgo.com/ip3/${host}.ico`}
+      src={src}
       style={{ borderRadius: 4 }}
       width={size}
     />

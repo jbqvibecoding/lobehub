@@ -9,6 +9,12 @@ vi.mock('../../../store', async (importOriginal) => {
   return { ...original, useConversationStore: vi.fn() };
 });
 
+vi.mock('@/store/serverConfig', async (importOriginal) => ({
+  ...((await importOriginal()) as Record<string, unknown>),
+  useServerConfigStore: (selector: (state: unknown) => unknown) =>
+    selector({ serverConfig: { region: 'global' } }),
+}));
+
 const mockUseConversationStore = vi.mocked(storeModule.useConversationStore);
 
 const MESSAGE_ID = 'msg-test-1';

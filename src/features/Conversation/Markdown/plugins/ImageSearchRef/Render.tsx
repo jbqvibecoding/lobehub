@@ -5,6 +5,7 @@ import { createStaticStyles } from 'antd-style';
 import isEqual from 'fast-deep-equal';
 import { memo } from 'react';
 
+import { useSiteIconUrl } from '@/hooks/useSiteIconUrl';
 import Image from '@/libs/next/Image';
 
 import { dataSelectors, useConversationStore } from '../../../store';
@@ -98,10 +99,13 @@ const Render = memo<MarkdownElementProps<ImageSearchRefProperties>>(({ node, id 
     (s) => dataSelectors.getDbMessageById(id)(s)?.search?.imageResults,
     isEqual,
   );
+  const siteIconUrl = useSiteIconUrl();
 
   // Fallback: no image results on this message (e.g. non-image-search model)
   const image = imageResults?.[imageIndex];
   if (!image) return <span>{originalText}</span>;
+
+  const domainIcon = siteIconUrl(image.domain);
 
   const popoverContent = (
     <Flexbox gap={4} style={{ maxWidth: 240 }}>
@@ -130,14 +134,16 @@ const Render = memo<MarkdownElementProps<ImageSearchRefProperties>>(({ node, id 
           {image.title && <div className={styles.imageTitle}>{stripHtml(image.title)}</div>}
           {image.domain && (
             <Flexbox horizontal align="center" gap={4}>
-              <Image
-                unoptimized
-                alt={image.domain}
-                height={12}
-                src={`https://icons.duckduckgo.com/ip3/${image.domain}.ico`}
-                style={{ borderRadius: 2, flexShrink: 0 }}
-                width={12}
-              />
+              {domainIcon && (
+                <Image
+                  unoptimized
+                  alt={image.domain}
+                  height={12}
+                  src={domainIcon}
+                  style={{ borderRadius: 2, flexShrink: 0 }}
+                  width={12}
+                />
+              )}
               <div className={styles.imageDomain}>{image.domain}</div>
             </Flexbox>
           )}

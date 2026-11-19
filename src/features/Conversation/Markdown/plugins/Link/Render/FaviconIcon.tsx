@@ -1,6 +1,8 @@
 import { Globe } from 'lucide-react';
 import { memo, useState } from 'react';
 
+import { useSiteIconUrl } from '@/hooks/useSiteIconUrl';
+
 interface FaviconIconProps {
   domain: string;
   size?: number;
@@ -8,18 +10,19 @@ interface FaviconIconProps {
 
 /**
  * Inline site favicon for generic external links. Falls back to a globe glyph
- * when the favicon cannot be loaded.
+ * when the favicon cannot be loaded, or this edition does not load site icons.
  */
 const FaviconIcon = memo<FaviconIconProps>(({ domain, size = 15 }) => {
   const [failed, setFailed] = useState(false);
+  const src = useSiteIconUrl()(domain);
 
-  if (failed) return <Globe size={size} />;
+  if (failed || !src) return <Globe size={size} />;
 
   return (
     <img
       alt=""
       height={size}
-      src={`https://icons.duckduckgo.com/ip3/${domain}.ico`}
+      src={src}
       style={{ borderRadius: 3, objectFit: 'contain' }}
       width={size}
       onError={() => setFailed(true)}

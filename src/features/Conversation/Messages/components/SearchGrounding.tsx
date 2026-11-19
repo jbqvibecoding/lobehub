@@ -1,13 +1,18 @@
-import { Flexbox, Icon, SearchResultCards, Tag } from '@lobehub/ui';
+import { Flexbox, Icon, SearchResultCards } from '@lobehub/ui';
+import { Tag } from '@lobehub/ui/base-ui';
 import { createStaticStyles, cssVar, cx } from 'antd-style';
 import { ChevronDown, ChevronRight, Globe, Images } from 'lucide-react';
 import { AnimatePresence, m } from 'motion/react';
-import { memo, useState } from 'react';
+import { type ComponentProps, memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useIsDark } from '@/hooks/useIsDark';
+import { useSiteIconUrl } from '@/hooks/useSiteIconUrl';
 import Image from '@/libs/next/Image';
+import { serverConfigSelectors, useServerConfigStore } from '@/store/serverConfig';
 import { type GroundingSearch } from '@/types/search';
+
+import SearchSourceCards from './SearchSourceCards';
 
 // Resolve the favicon host defensively: some providers (e.g. OpenRouter built-in
 // web search) may emit citations with an empty/invalid url, and `new URL(undefined)`
@@ -21,6 +26,16 @@ const getFaviconHost = (favicon?: string, url?: string): string => {
   } catch {
     return '';
   }
+};
+
+/** A site's icon, where this edition loads site icons */
+const SiteIcon = ({
+  host,
+  ...props
+}: Omit<ComponentProps<typeof Image>, 'src'> & { host: string }) => {
+  const src = useSiteIconUrl()(host);
+
+  return src ? <Image unoptimized src={src} {...props} /> : null;
 };
 
 const stripHtml = (html: string) =>
@@ -125,6 +140,8 @@ const SearchGrounding = memo<GroundingSearch>(
   ({ searchQueries, citations, imageResults, imageSearchQueries }) => {
     const { t } = useTranslation('chat');
     const isDarkMode = useIsDark();
+    // Site icons come from DuckDuckGo, so only the Global edition shows them
+    const isGlobalEdition = useServerConfigStore(serverConfigSelectors.isGlobalEdition);
 
     const [showDetail, setShowDetail] = useState(false);
 
@@ -161,15 +178,14 @@ const SearchGrounding = memo<GroundingSearch>(
           <Flexbox horizontal align={'center'} gap={8}>
             <Icon icon={titleIcon} />
             <Flexbox horizontal>{titleText}</Flexbox>
-            {!showDetail && hasWebResults && (
+            {!showDetail && hasWebResults && isGlobalEdition && (
               <Flexbox horizontal>
                 {validCitations?.slice(0, 8).map((item, index) => (
-                  <Image
-                    unoptimized
+                  <SiteIcon
                     alt={item.title || item.url}
                     height={16}
+                    host={getFaviconHost(item.favicon, item.url)}
                     key={`${item.url}-${index}`}
-                    src={`https://icons.duckduckgo.com/ip3/${getFaviconHost(item.favicon, item.url)}.ico`}
                     width={16}
                     style={{
                       background: cssVar.colorBgContainer,
@@ -182,15 +198,14 @@ const SearchGrounding = memo<GroundingSearch>(
                 ))}
               </Flexbox>
             )}
-            {!showDetail && !hasWebResults && hasImageResults && (
+            {!showDetail && !hasWebResults && hasImageResults && isGlobalEdition && (
               <Flexbox horizontal>
                 {imageResults?.slice(0, 8).map((item, index) => (
-                  <Image
-                    unoptimized
+                  <SiteIcon
                     alt={item.domain || ''}
                     height={16}
+                    host={item.domain || ''}
                     key={`${item.domain}-${index}`}
-                    src={`https://icons.duckduckgo.com/ip3/${item.domain || ''}.ico`}
                     width={16}
                     style={{
                       background: cssVar.colorBgContainer,
@@ -237,7 +252,10 @@ const SearchGrounding = memo<GroundingSearch>(
                     </Flexbox>
                   </Flexbox>
                 )}
-                {validCitations && (
+                {validCitations && !isGlobalEdition && (
+                  <SearchSourceCards citations={validCitations} />
+                )}
+                {validCitations && isGlobalEdition && (
                   <SearchResultCards
                     dataSource={validCitations.map((c) => ({
                       ...c,
@@ -290,11 +308,10 @@ const SearchGrounding = memo<GroundingSearch>(
                               )}
                               {item.domain && (
                                 <Flexbox horizontal align="center" gap={4}>
-                                  <Image
-                                    unoptimized
+                                  <SiteIcon
                                     alt={item.domain}
                                     height={12}
-                                    src={`https://icons.duckduckgo.com/ip3/${item.domain}.ico`}
+                                    host={item.domain}
                                     style={{ borderRadius: 2, flexShrink: 0 }}
                                     width={12}
                                   />

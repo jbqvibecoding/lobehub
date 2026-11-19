@@ -52,6 +52,14 @@ vi.mock('@/store/agent', () => ({
   useAgentStore: (selector: (state: unknown) => unknown) => selector({ activeAgentId: 'agt_1' }),
 }));
 
+let mockRegion: 'cn' | 'global' = 'global';
+
+vi.mock('@/store/serverConfig', async (importOriginal) => ({
+  ...((await importOriginal()) as Record<string, unknown>),
+  useServerConfigStore: (selector: (state: unknown) => unknown) =>
+    selector({ serverConfig: { region: mockRegion } }),
+}));
+
 vi.mock('@/store/chat', () => ({
   useChatStore: (selector: (state: unknown) => unknown) =>
     selector({
@@ -91,6 +99,7 @@ afterEach(() => {
   mockShowIcon = true;
   mockIsDesktop = false;
   mockEnableInAppBrowser = false;
+  mockRegion = 'global';
 });
 
 beforeEach(() => {
@@ -114,6 +123,20 @@ describe('Link Render — message link icon toggle', () => {
       expect(anchor.querySelector('span')).toBeTruthy();
       expect(anchor.querySelector('img')).toBeTruthy();
       expect(anchor.textContent).toContain('https://thecoffee.club');
+    });
+
+    it('shows a globe instead of asking DuckDuckGo for the icon in the mainland edition', () => {
+      mockRegion = 'cn';
+      const { container } = renderLink({
+        linkDomain: 'thecoffee.club',
+        linkHref: 'https://thecoffee.club',
+        linkKind: 'generic',
+        linkLabel: 'https://thecoffee.club',
+      });
+      const anchor = container.querySelector('a')!;
+      expect(anchor.querySelector('img')).toBeNull();
+      expect(anchor.querySelector('svg')).toBeTruthy();
+      expect(container.innerHTML).not.toContain('duckduckgo');
     });
 
     it('renders a github link with an icon (svg)', () => {
