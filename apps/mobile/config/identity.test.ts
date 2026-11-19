@@ -27,14 +27,18 @@ describe('appIdentity', () => {
     });
   });
 
-  it('refuses a release build that does not name its region or server', () => {
+  it('refuses a release build that does not name its region, or names a plain-http server', () => {
     expect(() => appIdentity({ apiUrl: 'https://api.example.test', release: true })).toThrow(
       'APP_REGION is required',
     );
-    expect(() => appIdentity({ region: 'global', release: true })).toThrow('https address');
     expect(() =>
       appIdentity({ apiUrl: 'http://api.example.test', region: 'global', release: true }),
     ).toThrow('https address');
+  });
+
+  it('points a release build at its own edition’s service when no server is named', () => {
+    expect(appIdentity({ region: 'global', release: true }).apiUrl).toBe('https://app.biber.ai');
+    expect(appIdentity({ region: 'cn', release: true }).apiUrl).toBe('https://app.biber.cn');
   });
 
   it('accepts a release build with both, without a trailing slash', () => {

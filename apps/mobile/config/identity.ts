@@ -1,3 +1,4 @@
+import { EDITION_SERVICE_URLS } from '../../../packages/region/src/endpoints.ts';
 import {
   type AppRegion,
   regionalIdentifier,
@@ -24,8 +25,9 @@ const BASE_SCHEME = 'biber';
 const LOCAL_API_URL = 'http://localhost:3010';
 
 /**
- * Release builds (EAS) must name their region and a real API address; a local build falls back to
- * Global and a local server.
+ * Release builds (EAS) must name their region, and talk to that edition's service unless
+ * `EXPO_PUBLIC_API_URL` names another https address; a local build falls back to Global and a
+ * local server.
  */
 export const appIdentity = ({
   apiUrl,
@@ -40,7 +42,7 @@ export const appIdentity = ({
     ? requireAppRegion(rawRegion, 'a Biber mobile release build')
     : resolveAppRegion(rawRegion);
 
-  const url = apiUrl?.trim() || (release ? '' : LOCAL_API_URL);
+  const url = apiUrl?.trim() || (release ? EDITION_SERVICE_URLS[region] : LOCAL_API_URL);
   if (release && !url.startsWith('https://')) {
     throw new Error(
       'EXPO_PUBLIC_API_URL must be an https address for a Biber mobile release build',

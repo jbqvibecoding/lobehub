@@ -34,7 +34,11 @@ export const desktopProtocolScheme = (region: DesktopRegion, channel?: string) =
 export const isDesktopProtocol = (protocol: string) =>
   protocol === `${SCHEME_BASE}:` || protocol.startsWith(`${SCHEME_BASE}-`);
 
-/** The hosted service each edition signs in to by default. */
+/**
+ * The hosted service each edition signs in to by default: a copy of `EDITION_SERVICE_URLS` in
+ * packages/region/src/endpoints.ts, which this import-free file cannot reach. A test there keeps
+ * the two equal.
+ */
 const CLOUD_SERVERS: Record<DesktopRegion, string> = {
   cn: 'https://app.biber.cn',
   dev: 'https://app.biber.cn',

@@ -1,4 +1,5 @@
 import { isModelProviderAvailable } from './availability';
+import { MAINLAND_EXTERNAL_SERVICES } from './endpoints';
 import { isMainlandRegion, resolveAppRegion } from './region';
 
 /** Platform keys for overseas model providers, which the mainland edition does not offer. */
@@ -32,11 +33,7 @@ export const regionDeploymentProblems = (env: DeploymentEnv): string[] => {
 
   if (!isMainlandRegion(region)) return problems;
 
-  if (env.AGENT_RUNTIME_MODE === 'queue' && !env.QSTASH_URL?.trim()) {
-    problems.push(
-      `AGENT_RUNTIME_MODE=queue sends every agent step through Upstash QStash, which is hosted outside mainland China. Set QSTASH_URL to a QStash-compatible endpoint in the ${region} region, or use AGENT_RUNTIME_MODE=local.`,
-    );
-  }
+  for (const external of MAINLAND_EXTERNAL_SERVICES) problems.push(...external.problems(env));
 
   if (env.STRIPE_SECRET_KEY?.trim()) {
     problems.push(

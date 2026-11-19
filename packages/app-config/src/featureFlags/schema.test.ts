@@ -113,6 +113,13 @@ describe('mapFeatureFlagsEnvToState', () => {
     expect(mappedState.enableStorageOverage).toBe(true);
   });
 
+  it('does not show LobeHub’s changelog or check LobeHub’s releases by default', () => {
+    const mappedState = mapFeatureFlagsEnvToState(DEFAULT_FEATURE_FLAGS);
+
+    expect(mappedState.showChangelog).toBe(false);
+    expect(mappedState.enableCheckUpdates).toBe(false);
+  });
+
   it('should map the workspace allowlist flag by user ID', () => {
     const config = {
       workspace: ['user-123'],

@@ -13,9 +13,9 @@
 | `AUTH_SECRET`               | 登录会话签名                                                   |
 | `CRON_SECRET`               | 定时任务调用内部地址时带的密钥，见第 5 节 "后台运行的审批过期" |
 
-国内版启动时会拒绝这些配置：Stripe 密钥、`SANDBOX_PROVIDER=market`、
-`AGENT_RUNTIME_MODE=queue` 但没有境内的 `QSTASH_URL`、境外模型厂商的密钥（`OPENAI_API_KEY`、`ANTHROPIC_API_KEY` 等），
-以及把境外厂商设为默认的 `DEFAULT_AGENT_CONFIG`。规则在 `packages/region/src/preflight.ts`。
+国内版启动时会拒绝这些配置：Stripe 密钥、`SANDBOX_PROVIDER=market`、境外模型厂商的密钥（`OPENAI_API_KEY`、`ANTHROPIC_API_KEY` 等），
+把境外厂商设为默认的 `DEFAULT_AGENT_CONFIG`，以及会把请求发到境外的设置，详见第 11 节。
+规则在 `packages/region/src/preflight.ts` 和 `packages/region/src/endpoints.ts`。
 
 国内版只提供境内厂商的模型（DeepSeek、通义千问、智谱、Kimi、豆包等，清单是 `@lobechat/region` 的
 `MAINLAND_MODEL_PROVIDERS`），平台密钥用这些厂商的，例如 `DEEPSEEK_API_KEY`。默认模型已经是 DeepSeek。
@@ -239,6 +239,7 @@ curl -fsS -H "Authorization: Bearer $CRON_SECRET" < APP_URL > /api/agent/approva
    - 国际版：`OPENAI_API_KEY` 设任意值，`OPENAI_PROXY_URL=http://127.0.0.1:4010/v1`，
      `EXPO_BASE_URL=http://127.0.0.1:4020`。
    - 中国大陆版：`DEEPSEEK_API_KEY` 设任意值，`DEEPSEEK_PROXY_URL=http://127.0.0.1:4010/v1`（国内版不提供 OpenAI）；
+     第 11 节的必填设置：`TELEMETRY_DISABLED=1`、`FEATURE_FLAGS=-market`、`SEARCH_PROVIDERS=bocha`、`CRAWLER_IMPLS=naive`；
      `ALIYUN_GREEN_ACCESS_KEY_ID`、`ALIYUN_GREEN_ACCESS_KEY_SECRET` 设任意值，`ALIYUN_GREEN_ENDPOINT=http://127.0.0.1:4090`；
      `ALIYUN_SMS_*` 设任意值，并设 `ALIYUN_SMS_ENDPOINT=http://127.0.0.1:4030`；
      `ALIPAY_PUBLIC_KEY` 设成一把本地 RSA 密钥的公钥。
@@ -289,3 +290,44 @@ curl -fsS -H "Authorization: Bearer $CRON_SECRET" < APP_URL > /api/agent/approva
 - 应用：`ContentBlock` 三个、`WorkflowCollapse` 一个、`oidc-provider/http-adapter` 一个测试。
 
 另外 `lint:style` 带 `--fix`，本地跑会直接改文件。
+
+## 11. 国内版的外部地址
+
+国内版不能把用户的请求和数据发到境外。下面列出服务端和网页端会访问的外部服务，以及国内版怎么处理。
+清单写在 `packages/region/src/endpoints.ts`，服务启动时逐项检查，配置不对就拒绝启动，并说明该怎么改。
+
+**已经按版本切换的：** 模型厂商（只提供境内厂商）、支付（微信支付、支付宝）、聊天平台（微信、飞书）、
+云电脑（OpenBot）、内容安全和短信（阿里云）、手机推送（APNs 直连和厂商通道）。这些不用额外设置。
+
+**国内版必须设置的：**
+
+| 外部服务                                 | 境外默认地址                                                | 国内版的要求                                                                                                      |
+| ---------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 智能体队列和工作流                       | `qstash.upstash.io`                                         | 设了 `QSTASH_TOKEN` 或 `AGENT_RUNTIME_MODE=queue` 时，必须设境内的 `QSTASH_URL`                                   |
+| 遥测和工具调用上报                       | `market.lobehub.com`                                        | `TELEMETRY_DISABLED=1`                                                                                            |
+| 社区助手、插件、技能                     | `market.lobehub.com`                                        | `FEATURE_FLAGS` 含 `-market`，或 `MARKET_BASE_URL` 指向境内的市场服务                                             |
+| 网页搜索                                 | `api.search1api.com`                                        | `SEARCH_PROVIDERS` 只用 `bocha`、`anspire`、`searxng`；用 `jina` 时设 `JINA_USE_CN_DOMAINS=true`                  |
+| 读取网页                                 | `r.jina.ai`、`api.search1api.com`                           | `CRAWLER_IMPLS` 用 `naive`；`jina` 同上；`browserless`、`firecrawl` 要设境内的 `BROWSERLESS_URL`、`FIRECRAWL_URL` |
+| Google 统计、X 广告、Clarity、React Scan | 各自的境外地址                                              | 不能用                                                                                                            |
+| PostHog、Plausible、Umami                | 各自的云服务                                                | 只能用自建的，设 `POSTHOG_HOST`、`PLAUSIBLE_SCRIPT_BASE_URL`、`UMAMI_SCRIPT_URL`                                  |
+| 模型调用追踪（Langfuse）                 | `cloud.langfuse.com`                                        | 开启时必须设自建的 `LANGFUSE_HOST`                                                                                |
+| 邮件                                     | Resend                                                      | 用 `nodemailer` 和境内的 SMTP                                                                                     |
+| 单点登录                                 | Google、GitHub、Microsoft、Auth0、Okta、Cognito、Cloudflare | 不能用。苹果、飞书、微信和自建的 OIDC（Casdoor、Keycloak、Logto 等）可以用                                        |
+| Composio、Vercel Edge Config             | 各自的境外服务                                              | 不能用                                                                                                            |
+
+**两个版本都关掉的：** 更新日志和版本检查（显示的是 LobeHub 的更新日志和版本），默认就是关的。
+
+**还没处理的地址：** 大多只用来下载图标、脚本、字体或程序，在国内可能打不开。标了 ⚠ 的两项会把用户内容带到境外，
+应当优先处理。除了 PDF 字体是服务端下载的，其余都由浏览器或桌面版直接访问。影响如下：
+
+| 地址                               | 用在哪里                                                            | 打不开时                   |
+| ---------------------------------- | ------------------------------------------------------------------- | -------------------------- |
+| `icons.duckduckgo.com`             | 搜索结果和链接旁的网站图标                                          | 显示默认图标               |
+| `hub-apac-1.lobeobjects.space`     | 设置页底部的视频、Composio 和技能图标                               | 图片和视频不显示           |
+| `esm.sh`                           | 部分 Mermaid 图表的备用加载                                         | 这类图表不显示             |
+| `cdn.tailwindcss.com`、CodeSandbox | Artifacts 里 React 组件的预览                                       | 预览加载不出来             |
+| ⚠ `proxy.corsfix.com`              | 导出截图时转发消息里的外链图片                                      | 截图里缺少外链图片         |
+| ⚠ `view.officeapps.live.com`       | Office 文件预览：微软的服务器下载用户的文件来生成预览，文件内容出境 | 预览打不开，可以下载后查看 |
+| `cdn.jsdelivr.net`、`pypi.org`     | 浏览器里运行 Python（Pyodide）                                      | Python 运行不了            |
+| `cdn.jsdelivr.net`（服务端）       | 把对话导出成 PDF 时下载中文字体                                     | PDF 导出失败               |
+| GitHub releases（桌面版）          | 首次运行时下载 agent-browser                                        | 桌面版的浏览器自动化不可用 |

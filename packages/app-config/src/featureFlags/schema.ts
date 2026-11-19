@@ -75,7 +75,8 @@ export const DEFAULT_FEATURE_FLAGS: IFeatureFlags = {
 
   ai_image: true,
 
-  check_updates: true,
+  // Biber: the check compares against @lobehub/chat releases, which are not Biber's
+  check_updates: false,
   welcome_suggest: true,
   token_counter: true,
 
@@ -91,7 +92,8 @@ export const DEFAULT_FEATURE_FLAGS: IFeatureFlags = {
 
   market: true,
   speech_to_text: true,
-  changelog: true,
+  // Biber: the changelog is LobeHub's, fetched from GitHub and LobeHub's CDN
+  changelog: false,
 
   // the flags below can only be used with commercial license
   // if you want to use it in the commercial usage
