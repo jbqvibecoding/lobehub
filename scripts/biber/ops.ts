@@ -7,6 +7,7 @@
  *   bunx tsx scripts/biber/ops.ts stripe prices [--apply]
  *   bunx tsx scripts/biber/ops.ts doctor
  *   bunx tsx scripts/biber/ops.ts refund <order number> [--reason TEXT]
+ *   bunx tsx scripts/biber/ops.ts proactive stats [--days 7]
  *
  * `bot set` stores a shared bot's credentials encrypted with KEY_VAULTS_SECRET, then reads them
  * back the way the server does, so a row the server cannot use is reported at once. For Telegram
@@ -21,6 +22,10 @@
  * `refund` refunds a WeChat Pay or Alipay order in full (the order number is the `out_trade_no` the
  * payer sees in WeChat or Alipay) and takes back what it bought: the plan it bought ends that much
  * earlier, or at once. Asking again for the same order cannot refund it twice.
+ *
+ * `proactive stats` shows what became of the messages Biber sent unprompted over the last days,
+ * per kind and per routine: how many went out, and how many were opened, answered, waved away with
+ * "Not now", or ignored for a day. Messages still within their first day are counted apart.
  *
  * `doctor` checks this deployment against its region, reaches the database and Redis, and makes
  * one call to each configured outside service that changes nothing there, to prove its keys.
@@ -37,6 +42,7 @@ import {
   MESSENGER_PLATFORMS,
   type MessengerPlatform,
 } from '@/config/messenger';
+import { ProactiveMessageModel, summarizeProactiveStats } from '@/database/models/proactiveMessage';
 import { SystemBotProviderModel } from '@/database/models/systemBotProvider';
 import { serverDB } from '@/database/server';
 import { getAgentRuntimeRedisClient } from '@/server/modules/AgentRuntime/redis';
@@ -340,6 +346,38 @@ const refund = async (args: string[]) => {
   );
 };
 
+const proactiveStats = async (args: string[]) => {
+  const days = Number(flag(args, 'days') ?? 7);
+  if (!Number.isInteger(days) || days < 1) throw new Error('--days takes a whole number of days');
+
+  const now = new Date();
+  await ProactiveMessageModel.ignoreOverdue(serverDB, now);
+  const rows = summarizeProactiveStats(
+    await ProactiveMessageModel.countByState(serverDB, new Date(now.getTime() - days * 86_400_000)),
+  ).sort((a, b) => b.sent - a.sent);
+
+  console.log(`Unprompted messages, last ${days} day(s)`);
+  if (rows.length === 0) {
+    console.log('  none sent');
+    return;
+  }
+  console.log(
+    `  ${'kind'.padEnd(26)}${'sent'.padStart(6)}${'opened'.padStart(8)}${'replied'.padStart(9)}${'not now'.padStart(9)}${'ignored'.padStart(9)}${'waiting'.padStart(9)}`,
+  );
+  for (const row of rows) {
+    const kind = row.routineId ? `${row.kind}: ${row.routineId}` : row.kind;
+    // A row whose messages are all still waiting has nothing to rate yet
+    const percent = (rate: number) =>
+      row.sent === row.awaiting ? '–' : `${Math.round(rate * 100)}%`;
+    console.log(
+      `  ${kind.padEnd(26)}${String(row.sent).padStart(6)}${percent(row.openRate).padStart(8)}${percent(row.replyRate).padStart(9)}${percent(row.dismissRate).padStart(9)}${percent(row.ignoreRate).padStart(9)}${String(row.awaiting).padStart(9)}`,
+    );
+  }
+  console.log(
+    '  Rates leave out messages still within their first day (waiting); – means none yet.',
+  );
+};
+
 const main = async () => {
   const [command, sub, ...rest] = process.argv.slice(2);
   if (command === 'bot' && sub === 'set') return botSet(rest);
@@ -347,8 +385,9 @@ const main = async () => {
   if (command === 'stripe' && sub === 'prices') return stripePrices(rest);
   if (command === 'doctor') return doctor();
   if (command === 'refund') return refund([sub, ...rest].filter(Boolean));
+  if (command === 'proactive' && sub === 'stats') return proactiveStats(rest);
   console.log(
-    'Usage: ops.ts bot set <platform> | bot list | stripe prices [--apply] | doctor | refund <order> (see the comment at the top)',
+    'Usage: ops.ts bot set <platform> | bot list | stripe prices [--apply] | doctor | refund <order> | proactive stats [--days 7] (see the comment at the top)',
   );
   process.exitCode = 1;
 };

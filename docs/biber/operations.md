@@ -4,14 +4,14 @@
 
 ## 1. 每套部署都要有的
 
-| 设置                        | 说明                                                                                                                                                                       |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `APP_REGION`                | `global` 或 `cn`。生产环境必须设置，否则服务拒绝启动                                                                                                                       |
-| `APP_URL`                   | 对外地址。回调地址和绑定链接都由它生成                                                                                                                                     |
-| `DATABASE_URL`、`REDIS_URL` | PostgreSQL 和 Redis。绑定令牌、访问令牌缓存依赖 Redis                                                                                                                      |
-| `KEY_VAULTS_SECRET`         | 加密存进数据库的凭据（共享机器人的密钥）用它加密                                                                                                                           |
-| `AUTH_SECRET`               | 登录会话签名                                                                                                                                                               |
-| `CRON_SECRET`               | 定时任务调用内部地址时带的密钥，见第 5 节 "后台运行的审批过期"。`/api/workflows/*`（例行任务的调度等）在没有 QStash 签名密钥时只认它；两样都没有，生产环境拒绝调用这些地址 |
+| 设置                        | 说明                                                                                                                                             |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `APP_REGION`                | `global` 或 `cn`。生产环境必须设置，否则服务拒绝启动                                                                                             |
+| `APP_URL`                   | 对外地址。回调地址和绑定链接都由它生成                                                                                                           |
+| `DATABASE_URL`、`REDIS_URL` | PostgreSQL 和 Redis。绑定令牌、访问令牌缓存依赖 Redis                                                                                            |
+| `KEY_VAULTS_SECRET`         | 加密存进数据库的凭据（共享机器人的密钥）用它加密                                                                                                 |
+| `AUTH_SECRET`               | 登录会话签名                                                                                                                                     |
+| `CRON_SECRET`               | 定时调用内部地址时带的密钥，见第 13 节。`/api/workflows/*`（例行任务的调度、主动检查等）认它或 QStash 签名；两样都没配，生产环境拒绝调用这些地址 |
 
 国内版启动时会拒绝这些配置：Stripe 密钥、`SANDBOX_PROVIDER=market`、境外模型厂商的密钥（`OPENAI_API_KEY`、`ANTHROPIC_API_KEY` 等），
 把境外厂商设为默认的 `DEFAULT_AGENT_CONFIG`，以及会把请求发到境外的设置，详见第 11 节。
@@ -149,11 +149,8 @@ bunx tsx scripts/biber/ops.ts bot list
 ### 后台运行的审批过期
 
 任务、定时任务、API 启动的运行，用户登记了手机时，会暂停并请手机审批（[决策记录](./decisions.md) 第 5 条）。
-请求 24 小时内没人回答，就按拒绝处理，运行继续。这个清理由 cron 触发，每套部署都要配，建议每小时一次：
-
-```sh
-curl -fsS -H "Authorization: Bearer $CRON_SECRET" < APP_URL > /api/agent/approvals/expire
-```
+请求 24 小时内没人回答，就按拒绝处理，运行继续。这个清理靠定时调用 `GET /api/agent/approvals/expire`，
+每套部署都要配，建议每小时一次，见第 13 节：
 
 - 需要服务端设置 `CRON_SECRET`。没设置时，这个地址拒绝所有请求。
 - 每次最多处理最早的 100 个请求，返回 `{"expired":…,"failed":…,"found":…}`。
@@ -178,6 +175,7 @@ curl -fsS -H "Authorization: Bearer $CRON_SECRET" < APP_URL > /api/agent/approva
 `bunx tsx scripts/biber/ops.ts doctor` 在部署的环境变量下运行。它检查：
 
 - 本区的配置规则；
+- 定时调用的鉴权：生产环境至少配了 `CRON_SECRET` 或 QStash 签名密钥之一（见第 13 节）；
 - 数据库（已执行的迁移数）和 Redis；
 - 每个已配置的外部服务，各做一次不改变对方任何东西的调用来验证密钥：Telegram 读机器人信息，
   微信服务号取访问令牌，Stripe 核对 6 个价格都在且金额与目录一致，微信支付和支付宝查一笔不存在的订单。
@@ -232,6 +230,7 @@ curl -fsS -H "Authorization: Bearer $CRON_SECRET" < APP_URL > /api/agent/approva
 | `apns.ts`                | 中国大陆版 | iPhone 登记 APNs 设备令牌 → 运行暂停等审批 → 手机经 APNs 收到推送，带团队密钥签的 ES256 令牌和国内版的 bundle id → 推送带 "批准 / 拒绝" 按钮、要回答的调用、中文标题 → 苹果说已失效的令牌被删掉，下一条推送不再发给它                                                                                                                 |
 | `routines.ts`            | 国际版     | 新账号看到三个例行任务都没开 → 打开晨报后给 Biber 建了按手机时区运行的计划任务 → 手动运行一次并结算 → 关掉后不再按计划运行，任务保留                                                                                                                                                                                                  |
 | `memories.ts`            | 国际版     | Agent 记下的偏好出现在手机上 → 别的账号忘不掉它 → 在手机上忘掉后 Agent 也检索不到 → 全部忘掉后列表清空 → Agent 不能把密码存成记忆 → 身份和高优先级偏好每次运行都原样交给模型 → 在手机上撤销一次整理后，记下的消失，那段对话打上不再整理的标记，别的账号撤销不了                                                                       |
+| `proactive.ts`           | 两个版本   | 明天开始的活动变成 "来自 Biber" 对话里的一条提醒，推送带 "这次不用" 按钮，账本记为已发出 → 手机点开后记为已打开 → 两小时内再检查不发 → 免打扰时段不发 → 例行任务的结果推送到手机，点开是那个任务 → 不带密钥调工作流地址被拒。国内版还确认这条消息过了内容安全                                                                         |
 
 准备：
 
@@ -256,6 +255,9 @@ curl -fsS -H "Authorization: Bearer $CRON_SECRET" < APP_URL > /api/agent/approva
      它会把请求的时间改早一天，所以要用 `SMOKE_DATABASE_URL` 指向服务端的数据库。
    - `memories.ts` 也要用 `SMOKE_DATABASE_URL` 指向服务端的数据库：整理记忆靠 Upstash 工作流，本地不运行，
      所以脚本直接写入一条整理留下的撤销记录。
+   - `proactive.ts` 要求服务端设 `CRON_SECRET` 和 `EXPO_BASE_URL=http://127.0.0.1:4020`，运行时带上 `SMOKE_CRON_SECRET`
+     和指向服务端数据库的 `SMOKE_DATABASE_URL`：记忆整理在本地不运行，脚本直接往数据库写一条活动，并把上次检查的时间改早。
+     国内版运行时再带 `APP_REGION=cn`、`SMOKE_MODEL_PROVIDER=deepseek`、`SMOKE_MODEL=deepseek-chat`。
    - `SMOKE_ALIPAY_SIGNING_KEY=<那把私钥的 PEM 文件> bunx tsx scripts/biber/smoke/mainland.ts`。
    - `wechat-bot.ts` 先按脚本开头的说明用 `bot set wechat` 存一个指向本地替身的服务号，
      再带上同样的 `SMOKE_WECHAT_TOKEN`、`SMOKE_WECHAT_AES_KEY` 运行。
@@ -371,3 +373,80 @@ Electron 本身已由 `apps/desktop/.npmrc` 和 `electron-builder.mjs` 从 npmmi
 **没有验证过的：** 上面的国内镜像地址按 npmmirror 公开的镜像配置和阿里云的说明填写。开发环境连不上这些镜像，
 没有实际下载过；第一次在境内构建时，请留意下载是否成功。浏览器里运行 Python 用的 Pyodide 没有找到可靠的境内完整镜像，
 仍从 jsDelivr 加载（见第 11 节）。
+
+## 13. 定时调用
+
+服务端自己不计时。例行任务、Biber 主动发的消息和几项清理，都要由外部按时调用下面的地址。
+
+| 地址                                           | 方法 | 建议频率   | 作用                                                     | 不配的后果                                         |
+| ---------------------------------------------- | ---- | ---------- | -------------------------------------------------------- | -------------------------------------------------- |
+| `/api/workflows/task/schedule-dispatch`        | POST | 每 5 分钟  | 找出到点的计划任务（含晨报等例行任务）并运行             | 例行任务和用户建的定时任务都不会运行               |
+| `/api/workflows/proactive/tick`                | POST | 每 15 分钟 | 主动检查：替用户决定这会儿要不要说一句，见第 14 节       | Biber 不会主动发消息，没反应的消息也不会记为被忽略 |
+| `/api/agent/approvals/expire`                  | GET  | 每小时     | 24 小时没人回答的后台审批按拒绝处理，见第 5 节           | 等审批的任务一直停在 "运行中"                      |
+| `/api/workflows/task/watchdog`                 | POST | 每 10 分钟 | 超过心跳时限仍在运行中的任务标为失败，并给用户留一条简报 | 卡住的任务一直显示 "运行中"                        |
+| `/api/workflows/task/scheduled-topic-dispatch` | POST | 每 10 分钟 | 因模型限流推迟的对话，到时间后接着运行                   | 被限流打断的对话不会自动继续                       |
+
+**鉴权：** 调用带 `Authorization: Bearer <CRON_SECRET>`。`/api/workflows/*` 也接受 QStash 的签名
+（配了 `QSTASH_CURRENT_SIGNING_KEY` 和 `QSTASH_NEXT_SIGNING_KEY` 时）；两样都没配，生产环境返回 503，开发环境不检查。
+`/api/agent/approvals/expire` 只认 `CRON_SECRET`。`ops.ts doctor` 会检查生产环境至少配了其中一样。
+
+**国际版：** 用 QStash 时，在 Upstash 控制台给这些地址建 Schedule，频率同上；也可以和国内版一样用 cron。
+
+**国内版：** 一般不接 QStash（要接只能用境内的 `QSTASH_URL`，见第 11 节）。用系统 cron 或云上的定时触发
+（如函数计算的定时触发器）调用。不接 QStash 时，`AGENT_RUNTIME_MODE` 不设或设为 `local`：队列模式要靠 QStash
+把到点的任务分发出去，本地模式在本进程里直接运行。crontab 的写法，`APP_URL` 和 `CRON_SECRET` 换成实际值：
+
+```sh
+*/5 * * * * curl -fsS -X POST -H "Authorization: Bearer CRON_SECRET" "APP_URL/api/workflows/task/schedule-dispatch"
+*/15 * * * * curl -fsS -X POST -H "Authorization: Bearer CRON_SECRET" "APP_URL/api/workflows/proactive/tick"
+0 * * * * curl -fsS -H "Authorization: Bearer CRON_SECRET" "APP_URL/api/agent/approvals/expire"
+*/10 * * * * curl -fsS -X POST -H "Authorization: Bearer CRON_SECRET" "APP_URL/api/workflows/task/watchdog"
+*/10 * * * * curl -fsS -X POST -H "Authorization: Bearer CRON_SECRET" "APP_URL/api/workflows/task/scheduled-topic-dispatch"
+```
+
+部署多台服务端时只配一处，不要每台都调。
+
+## 14. 主动消息
+
+Biber 在用户没问的时候发的消息有两种：用户打开的例行任务的结果，以及按记忆里的安排发的提醒和跟进。
+为什么这样定见 [决策记录](./decisions.md) 第 18 条。
+
+**送到哪：** 消息写进每个用户一个的 "来自 Biber" 对话，同时推送到手机。推送的通知类别是 `proactive`，
+带 "这次不用" 按钮；国内安卓厂商通道没有按钮，只能点开。例行任务的结果点开是那个任务，提醒和跟进点开是 "来自 Biber" 对话。
+
+**说什么：** 主动检查从记忆里的活动（`user_memories_activities` 的开始和结束时间）生成 "Biber 记着要说的事"：
+
+- 3 天内要开始的事，提前提醒，过了开始时间作废；
+- 2 天内刚结束的事，问一句结果如何。
+
+这些活动由 Agent 在对话里用记忆工具记下，或由后台从过去的对话里整理出来。后台整理靠 Upstash 工作流，
+没接 QStash 的部署只有前一种来源。
+
+没有要说的事就不调用模型，不会找话闲聊。有事时调用一次系统助手的 `topic` 模型（`SYSTEM_AGENT` 的 `topic=` 或 `default=`）
+写这条消息，平台付费的调用照常计入额度。国内版发出前过内容安全，审核不通过或审核服务出错都不发。
+
+**多久说一次：** 用户在手机 "账户 → 主动消息" 里设置，默认 "适中"。
+
+| 档位         | 说什么     | 每天最多 |
+| ------------ | ---------- | -------- |
+| 关闭         | 不主动说   | 0        |
+| 少           | 只说提醒   | 1 条     |
+| 适中（默认） | 提醒和跟进 | 3 条     |
+
+不论档位：
+
+- 两条之间至少隔 2 小时；用户 10 分钟内发过消息时不插话；
+- 免打扰时段默认 22:00–08:00，按用户的时区，用户可以改，也可以 "安静 7 天"；
+- 连续 3 条没反应后，每天最多 1 条，直到用户点开、回复或点 "这次不用"；
+- 某一种消息 30 天里有结果的至少 4 条、其中超过一半点了 "这次不用"，就不再发这一种。
+
+例行任务是用户自己定的时间，不占这里的额度，也不受免打扰影响。
+
+**时区：** 手机登记推送时一并上报；没有就用网页设置里的时区；再没有，国内版按 Asia/Shanghai，国际版按 UTC。
+
+**统计：** `bunx tsx scripts/biber/ops.ts proactive stats [--days 7]` 按种类和例行任务列出发出数，
+以及打开、回复、"这次不用" 和被忽略的比例。发出后 24 小时内没反应的算 "等待中"，不计入比率；超过 24 小时记为被忽略。
+点了 "这次不用" 或回复的也算打开过。
+
+**容量：** 主动检查每次最多处理 200 个用户：有要说的事，或记忆里有快开始、刚结束的活动的，按上次检查时间从早到晚排。
+每 15 分钟一次时每小时 800 个；这样的用户更多时，缩短调用间隔。

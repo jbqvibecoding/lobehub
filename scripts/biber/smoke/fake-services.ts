@@ -77,6 +77,33 @@ export const decideReply = (
   return { text: toolAnswered ? 'The code ran.' : 'Hello from the fake model.' };
 };
 
+/**
+ * The JSON the fake model gives for structured output the server asks for by schema name, whether
+ * as a forced tool call (DeepSeek) or a JSON schema (OpenAI): a routine's brief, and a message
+ * Biber sends on its own about the first item it is offered.
+ */
+export const decideStructuredReply = (
+  name: string,
+  messages: ModelRequest['messages'],
+): Record<string, unknown> | undefined => {
+  const prompt = messages.map((message) => textOf(message.content)).join('\n');
+  switch (name) {
+    case 'task_topic_brief': {
+      return { summary: 'The interview at ten comes first.', title: 'Three things today' };
+    }
+    case 'task_topic_brief_judge': {
+      return { emit: true, reason: 'smoke' };
+    }
+    case 'proactive_message': {
+      const id = /- id: (\S+)/.exec(prompt)?.[1];
+      const about = /about: (.+)/.exec(prompt)?.[1];
+      return id
+        ? { content: `Heads up: ${about}.`, reason: '', skip: false, thoughtId: id }
+        : { content: '', reason: 'nothing to say', skip: true, thoughtId: '' };
+    }
+  }
+};
+
 const sse = (res: ServerResponse, chunks: object[]) => {
   res.writeHead(200, { 'Cache-Control': 'no-cache', 'Content-Type': 'text/event-stream' });
   for (const chunk of chunks) res.write(`data: ${JSON.stringify(chunk)}\n\n`);
@@ -168,13 +195,50 @@ export const startFakeModel = async (port: number) => {
       );
       return;
     }
+    if (path.endsWith('/responses')) {
+      // OpenAI's structured output goes through the Responses API
+      const input: ModelRequest['messages'] = body.input ?? [];
+      const schemaName: string | undefined = body.text?.format?.name;
+      const structured = schemaName && decideStructuredReply(schemaName, input);
+      const text = structured ? JSON.stringify(structured) : 'Hello from the fake model.';
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          created_at: Math.floor(Date.now() / 1000),
+          id: `resp_${Date.now()}`,
+          model: body.model,
+          object: 'response',
+          output: [
+            {
+              content: [{ annotations: [], text, type: 'output_text' }],
+              id: `msg_${Date.now()}`,
+              role: 'assistant',
+              status: 'completed',
+              type: 'message',
+            },
+          ],
+          output_text: text,
+          status: 'completed',
+          usage: { input_tokens: 40, output_tokens: 5, total_tokens: 45 },
+        }),
+      );
+      return;
+    }
     if (!path.endsWith('/chat/completions')) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: { message: `fake model does not serve ${path}` } }));
       return;
     }
-    const reply = decideReply(request);
-    if (body.stream === false) {
+    const schemaName: string | undefined =
+      body.tool_choice?.function?.name ?? body.response_format?.json_schema?.name;
+    const structured = schemaName && decideStructuredReply(schemaName, request.messages);
+    const reply: ReturnType<typeof decideReply> = structured
+      ? body.tool_choice
+        ? { toolCall: { arguments: JSON.stringify(structured), name: schemaName! } }
+        : { text: JSON.stringify(structured) }
+      : decideReply(request);
+    // Like the real API, a request that does not ask for a stream gets one JSON answer
+    if (body.stream !== true) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(
         JSON.stringify({
