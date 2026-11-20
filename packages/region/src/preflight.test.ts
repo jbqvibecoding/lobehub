@@ -9,6 +9,7 @@ const MAINLAND = {
   FEATURE_FLAGS: '-market',
   NODE_ENV: 'production',
   SEARCH_PROVIDERS: 'bocha',
+  SYSTEM_AGENT: 'default=deepseek/deepseek-chat',
   TELEMETRY_DISABLED: '1',
 };
 
@@ -65,6 +66,7 @@ describe('regionDeploymentProblems', () => {
       expect.stringContaining('Add -market to FEATURE_FLAGS'),
       expect.stringContaining('SEARCH_PROVIDERS is not set'),
       expect.stringContaining('CRAWLER_IMPLS is not set'),
+      expect.stringContaining('SYSTEM_AGENT has no default'),
     ]);
   });
 
@@ -92,6 +94,16 @@ describe('regionDeploymentProblems', () => {
     ['Resend', { EMAIL_SERVICE_PROVIDER: 'Resend' }, 'Use nodemailer'],
     ['Google sign-in', { AUTH_SSO_PROVIDERS: 'apple,google' }, 'includes google'],
     ['Composio', { COMPOSIO_API_KEY: 'key' }, 'Composio'],
+    [
+      'system tasks on OpenAI',
+      { SYSTEM_AGENT: 'topic=deepseek/deepseek-chat' },
+      'SYSTEM_AGENT has no default',
+    ],
+    [
+      'an overseas model for a system task',
+      { SYSTEM_AGENT: 'default=deepseek/deepseek-chat，topic=openai/gpt-4o-mini' },
+      'SYSTEM_AGENT gives topic to openai',
+    ],
     [
       'Vercel Edge Config',
       { VERCEL_EDGE_CONFIG: 'https://edge-config.vercel.com/x' },

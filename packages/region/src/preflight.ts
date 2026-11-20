@@ -56,6 +56,26 @@ export const regionDeploymentProblems = (env: DeploymentEnv): string[] => {
     );
   }
 
+  // System tasks (topic titles, task briefs, proactive messages) default to an OpenAI model
+  const systemAgentPairs = (env.SYSTEM_AGENT ?? '')
+    .replaceAll('，', ',')
+    .split(',')
+    .map((pair) => pair.split('=').map((part) => part.trim()))
+    .filter((pair) => pair.length === 2 && pair[0] && pair[1]);
+  if (!systemAgentPairs.some(([key]) => key === 'default')) {
+    problems.push(
+      'SYSTEM_AGENT has no default, so system tasks (topic titles, task briefs, messages Biber sends on its own) use OpenAI, which the mainland edition does not offer. Set e.g. SYSTEM_AGENT=default=deepseek/deepseek-chat.',
+    );
+  }
+  for (const [key, value] of systemAgentPairs) {
+    const provider = value.split('/')[0];
+    if (!isModelProviderAvailable(region, provider)) {
+      problems.push(
+        `SYSTEM_AGENT gives ${key} to ${provider}, which the mainland edition does not offer. Pick one from MAINLAND_MODEL_PROVIDERS, e.g. ${key}=deepseek/deepseek-chat.`,
+      );
+    }
+  }
+
   if (env.SANDBOX_PROVIDER?.trim() === 'market') {
     problems.push(
       'SANDBOX_PROVIDER=market runs code and files on LobeHub Market outside mainland China. Use openbot or onlyboxes.',

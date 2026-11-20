@@ -19,7 +19,9 @@
 
 国内版只提供境内厂商的模型（DeepSeek、通义千问、智谱、Kimi、豆包等，清单是 `@lobechat/region` 的
 `MAINLAND_MODEL_PROVIDERS`），平台密钥用这些厂商的，例如 `DEEPSEEK_API_KEY`。默认模型已经是 DeepSeek。
-系统助手（起标题、记忆提取等）和文件向量化用到的模型也要配成境内厂商，否则这些功能会因为模型不可用而失败。
+系统助手（起标题、任务简报、Biber 主动发的消息、记忆提取等）和文件向量化用到的模型也要配成境内厂商，否则这些功能会因为模型不可用而失败。
+系统助手用 `SYSTEM_AGENT` 设置，例如 `SYSTEM_AGENT=default=deepseek/deepseek-chat`。国内版没有 `default` 或用了境外厂商时拒绝启动；
+用户在设置里自己选过的模型优先。
 
 国内版还要接内容安全（阿里云内容安全的 "文本审核增强版"）：配 `ALIYUN_GREEN_ACCESS_KEY_ID`、`ALIYUN_GREEN_ACCESS_KEY_SECRET`，
 `ALIYUN_GREEN_ENDPOINT` 默认是上海的 `https://green-cip.cn-shanghai.aliyuncs.com`。AccessKey 建议用只授权
@@ -239,7 +241,8 @@ curl -fsS -H "Authorization: Bearer $CRON_SECRET" < APP_URL > /api/agent/approva
    - 国际版：`OPENAI_API_KEY` 设任意值，`OPENAI_PROXY_URL=http://127.0.0.1:4010/v1`，
      `EXPO_BASE_URL=http://127.0.0.1:4020`。
    - 中国大陆版：`DEEPSEEK_API_KEY` 设任意值，`DEEPSEEK_PROXY_URL=http://127.0.0.1:4010/v1`（国内版不提供 OpenAI）；
-     第 11 节的必填设置：`TELEMETRY_DISABLED=1`、`FEATURE_FLAGS=-market`、`SEARCH_PROVIDERS=bocha`、`CRAWLER_IMPLS=naive`；
+     第 11 节的必填设置：`TELEMETRY_DISABLED=1`、`FEATURE_FLAGS=-market`、`SEARCH_PROVIDERS=bocha`、`CRAWLER_IMPLS=naive`、
+     `SYSTEM_AGENT=default=deepseek/deepseek-chat`；
      `ALIYUN_GREEN_ACCESS_KEY_ID`、`ALIYUN_GREEN_ACCESS_KEY_SECRET` 设任意值，`ALIYUN_GREEN_ENDPOINT=http://127.0.0.1:4090`；
      `ALIYUN_SMS_*` 设任意值，并设 `ALIYUN_SMS_ENDPOINT=http://127.0.0.1:4030`；
      `ALIPAY_PUBLIC_KEY` 设成一把本地 RSA 密钥的公钥。

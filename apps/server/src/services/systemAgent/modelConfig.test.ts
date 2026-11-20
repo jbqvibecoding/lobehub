@@ -50,4 +50,19 @@ describe('resolveSystemAgentModelConfig', () => {
 
     expect(result).toEqual({ model: 'private-model', provider: 'openai-compatible' });
   });
+
+  it('uses the deployment’s SYSTEM_AGENT when the user chose nothing, and the user’s choice over it', async () => {
+    const deploymentConfig = { model: 'deepseek-chat', provider: 'deepseek' };
+
+    expect(await resolveSystemAgentModelConfig({ deploymentConfig, taskKey: 'topic' })).toEqual(
+      deploymentConfig,
+    );
+    expect(
+      await resolveSystemAgentModelConfig({
+        deploymentConfig,
+        taskConfig: { model: 'qwen-plus', provider: 'qwen' },
+        taskKey: 'topic',
+      }),
+    ).toEqual({ model: 'qwen-plus', provider: 'qwen' });
+  });
 });

@@ -15,6 +15,8 @@ import debug from 'debug';
 
 import { UserModel } from '@/database/models/user';
 import type { LobeChatDatabase } from '@/database/type';
+import { appEnv } from '@/envs/app';
+import { parseSystemAgent } from '@/server/globalConfig/parseSystemAgent';
 import { initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
 
 import { resolveSystemAgentModelConfig } from './modelConfig';
@@ -179,7 +181,7 @@ export class SystemAgentService {
 
   /**
    * Get the model/provider config for a specific systemAgent task type.
-   * Falls back to DEFAULT_SYSTEM_AGENT_CONFIG when user has no custom settings.
+   * Falls back to the deployment's SYSTEM_AGENT, then DEFAULT_SYSTEM_AGENT_CONFIG.
    */
   private async getTaskModelConfig(
     taskKey: UserSystemAgentConfigKey,
@@ -189,7 +191,11 @@ export class SystemAgentService {
     const systemAgent = settings?.systemAgent as Partial<UserSystemAgentConfig> | undefined;
 
     const taskConfig = systemAgent?.[taskKey];
-    return resolveSystemAgentModelConfig({ taskConfig, taskKey });
+    // Server-side tasks never see the client's merged defaults, so read the deployment's here
+    const deploymentConfig = (
+      parseSystemAgent(appEnv.SYSTEM_AGENT) as Partial<UserSystemAgentConfig>
+    )[taskKey];
+    return resolveSystemAgentModelConfig({ deploymentConfig, taskConfig, taskKey });
   }
 
   /**
