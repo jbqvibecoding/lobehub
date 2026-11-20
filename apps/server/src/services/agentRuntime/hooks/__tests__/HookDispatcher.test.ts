@@ -290,6 +290,29 @@ describe('HookDispatcher', () => {
       expect(global.fetch).toHaveBeenCalled();
     });
 
+    it('authenticates the fallback with CRON_SECRET for our own endpoints only', async () => {
+      vi.stubEnv('CRON_SECRET', 'cron-secret');
+      vi.stubEnv('APP_URL', 'https://app.example.com');
+      const headersOf = (index: number) =>
+        (vi.mocked(global.fetch).mock.calls[index][1] as RequestInit).headers as Record<
+          string,
+          string
+        >;
+
+      await deliverWebhook(
+        { delivery: 'qstash', url: '/api/workflows/task/on-topic-complete' },
+        {},
+      );
+      await deliverWebhook({ delivery: 'qstash', url: 'https://example.com/hook' }, {});
+      vi.unstubAllEnvs();
+
+      expect(vi.mocked(global.fetch).mock.calls[0][0]).toBe(
+        'https://app.example.com/api/workflows/task/on-topic-complete',
+      );
+      expect(headersOf(0).Authorization).toBe('Bearer cron-secret');
+      expect(headersOf(1).Authorization).toBeUndefined();
+    });
+
     it("throws instead of unsigned-fetching when fallback is 'none' and the token is missing", async () => {
       await expect(
         deliverWebhook(

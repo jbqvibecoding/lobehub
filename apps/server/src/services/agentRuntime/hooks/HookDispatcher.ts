@@ -26,9 +26,19 @@ export async function deliverWebhook(
   const { url, delivery = 'fetch', fallback = 'fetch' } = webhook;
 
   // Resolve URL: relative paths joined with INTERNAL_APP_URL or APP_URL
-  const resolvedUrl = url.startsWith('http')
-    ? url
-    : urlJoin(process.env.INTERNAL_APP_URL || process.env.APP_URL || '', url);
+  const isOwnEndpoint = !url.startsWith('http');
+  const resolvedUrl = isOwnEndpoint
+    ? urlJoin(process.env.INTERNAL_APP_URL || process.env.APP_URL || '', url)
+    : url;
+  // Our own workflow endpoints take CRON_SECRET in place of a QStash signature; never send it elsewhere
+  const fetchDeliver = (target: string, body: Record<string, unknown>) =>
+    fetchWebhook(
+      target,
+      body,
+      isOwnEndpoint && process.env.CRON_SECRET
+        ? { Authorization: `Bearer ${process.env.CRON_SECRET}` }
+        : {},
+    );
 
   if (delivery === 'qstash') {
     try {
@@ -66,11 +76,15 @@ export async function deliverWebhook(
   }
 }
 
-async function fetchDeliver(url: string, payload: Record<string, unknown>): Promise<void> {
+async function fetchWebhook(
+  url: string,
+  payload: Record<string, unknown>,
+  headers: Record<string, string>,
+): Promise<void> {
   try {
     const res = await fetch(url, {
       body: JSON.stringify(payload),
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...headers },
       method: 'POST',
     });
     log('Webhook delivered via fetch: %s (status: %d)', url, res.status);

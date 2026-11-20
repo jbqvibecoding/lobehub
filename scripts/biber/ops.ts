@@ -208,6 +208,25 @@ const doctor = async () => {
       if (!redis) throw new Error('REDIS_URL is not set; link tokens and token caches need it');
       return `answers ${await redis.ping()}`;
     }),
+    // Routines, proactive messages and expired approvals all run from scheduled calls
+    await probe('scheduled calls', async () => {
+      const signed = !!process.env.QSTASH_CURRENT_SIGNING_KEY;
+      const secret = !!process.env.CRON_SECRET;
+      if (process.env.QSTASH_TOKEN && !signed) {
+        throw new Error(
+          'QSTASH_TOKEN is set without QSTASH_CURRENT_SIGNING_KEY, so QStash calls cannot be verified',
+        );
+      }
+      if (!signed && !secret) {
+        throw new Error(
+          'Set CRON_SECRET for your scheduler (or QStash signing keys); workflow endpoints refuse every call without one',
+        );
+      }
+      return [signed && 'QStash signatures', secret && 'CRON_SECRET']
+        .filter(Boolean)
+        .join(' and ')
+        .concat(' accepted');
+    }),
   );
 
   // Shared bots: the row decodes, and where a call changes nothing, the keys work
