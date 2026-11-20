@@ -94,7 +94,7 @@ describe('notifyPendingApprovals', () => {
       expect.objectContaining({
         categoryId: 'approval',
         content: 'Send email · gmail-mcp',
-        data: { toolMessageId: 'tool-msg-1' },
+        data: { kind: 'approval', toolMessageId: 'tool-msg-1' },
       }),
     );
   });

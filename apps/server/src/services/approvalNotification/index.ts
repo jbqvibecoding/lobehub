@@ -76,7 +76,9 @@ export const notifyPendingApprovals = async (
       : undefined;
   const result = await push.deliver({
     actionUrl,
-    ...(toolMessageId && { categoryId: APPROVAL_PUSH_CATEGORY, data: { toolMessageId } }),
+    ...(toolMessageId && { categoryId: APPROVAL_PUSH_CATEGORY }),
+    // `kind` tells the phone this is an approval, unlike routine results and proactive messages
+    data: { kind: 'approval', ...(toolMessageId && { toolMessageId }) },
     content: TEXT.en.summary(tools),
     notificationId,
     title: TEXT.en.title,

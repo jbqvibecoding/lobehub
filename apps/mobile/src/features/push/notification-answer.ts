@@ -82,26 +82,30 @@ export const answerFromNotification = async (
 };
 
 /**
- * Keeps the notification tray in step with what still waits: a notification whose call was
- * answered (here, on the web, in a chat, or by timeout) goes away, all of them go once nothing
- * waits, and the app icon's badge shows the count.
+ * Whether a notification asks for an approval. Pushes from before `kind` was added are all
+ * approvals; routine results and proactive messages say what they are.
+ */
+export const isApprovalNotification = (data: Record<string, unknown> | null | undefined) =>
+  data?.kind === undefined || data.kind === 'approval';
+
+/**
+ * Keeps the approvals in the notification tray in step with what still waits: a notification
+ * whose call was answered (here, on the web, in a chat, or by timeout) goes away, a pause over
+ * several calls goes once nothing waits, and the app icon's badge shows the count. Routine results
+ * and other messages stay until the user deals with them.
  */
 export const syncNotificationTray = async (pending: Pick<PendingApproval, 'id'>[]) => {
-  if (pending.length === 0) {
-    await Notifications.dismissAllNotificationsAsync();
-  } else {
-    const waiting = new Set(pending.map((item) => item.id));
-    const presented = await Notifications.getPresentedNotificationsAsync();
-    await Promise.all(
-      presented
-        .filter((notification) => {
-          const id = notification.request.content.data?.toolMessageId;
-          return typeof id === 'string' && !waiting.has(id);
-        })
-        .map((notification) =>
-          Notifications.dismissNotificationAsync(notification.request.identifier),
-        ),
-    );
-  }
+  const waiting = new Set(pending.map((item) => item.id));
+  const presented = await Notifications.getPresentedNotificationsAsync();
+  await Promise.all(
+    presented
+      .filter(({ request }) => {
+        const data = request.content.data;
+        if (!isApprovalNotification(data)) return false;
+        const id = data?.toolMessageId;
+        return typeof id === 'string' ? !waiting.has(id) : pending.length === 0;
+      })
+      .map(({ request }) => Notifications.dismissNotificationAsync(request.identifier)),
+  );
   await Notifications.setBadgeCountAsync(pending.length);
 };

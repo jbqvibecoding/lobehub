@@ -16,6 +16,19 @@ import {
   readNotificationAnswer,
   registerApprovalCategory,
 } from './notification-answer';
+import {
+  type ProactiveTap,
+  readProactiveTap,
+  registerProactiveCategory,
+} from './proactive-notification';
+
+/** Tells the server what the user did with a message Biber sent unprompted; best effort. */
+const reportProactiveTap = (tap: ProactiveTap) =>
+  api
+    .mutation(tap.report === 'dismiss' ? 'proactive.dismiss' : 'proactive.opened', {
+      id: tap.outcomeId,
+    })
+    .catch(() => undefined);
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -52,9 +65,11 @@ const noticeFor = (answer: NotificationAnswer, outcome: NotificationAnswerOutcom
 };
 
 /**
- * Every notification Biber sends is about something waiting for the user, so a notification
- * refreshes the list and a tap opens it. A tap on Approve or Reject also answers the call, once
- * the user is known to be signed in; signed out, the tap only opens the app.
+ * A notification refreshes the approvals and activity lists. A tap on an approval opens the list,
+ * and a tap on Approve or Reject also answers the call. A tap on a routine result or a message
+ * Biber sent unprompted opens its task or chat and reports the open; "Not now" reports that the
+ * message was unwanted. Answers and reports go out once the user is known to be signed in;
+ * signed out, the tap only opens the app.
  *
  * `signedIn` is undefined while the stored session loads: taps wait for it.
  */
@@ -62,6 +77,7 @@ export const useNotificationRouting = (signedIn: boolean | undefined) => {
   const queryClient = useQueryClient();
   const respond = useRespondToApproval(api);
   const waiting = useRef<NotificationAnswer[]>([]);
+  const waitingReports = useRef<ProactiveTap[]>([]);
   const signedInRef = useRef(signedIn);
   signedInRef.current = signedIn;
   const respondRef = useRef(respond.mutateAsync);
@@ -69,6 +85,7 @@ export const useNotificationRouting = (signedIn: boolean | undefined) => {
 
   useEffect(() => {
     registerApprovalCategory().catch(() => undefined);
+    registerProactiveCategory().catch(() => undefined);
 
     const refresh = () =>
       Promise.all([
@@ -87,6 +104,15 @@ export const useNotificationRouting = (signedIn: boolean | undefined) => {
       handledResponses.add(key);
 
       refresh();
+
+      const proactive = readProactiveTap(response);
+      if (proactive) {
+        if (proactive.href) router.navigate(proactive.href);
+        if (signedInRef.current === undefined) waitingReports.current.push(proactive);
+        else if (signedInRef.current) reportProactiveTap(proactive);
+        return;
+      }
+
       router.navigate('/');
 
       const tapped = readNotificationAnswer(response);
@@ -115,7 +141,9 @@ export const useNotificationRouting = (signedIn: boolean | undefined) => {
   useEffect(() => {
     if (signedIn === undefined) return;
     const answers = waiting.current.splice(0);
+    const reports = waitingReports.current.splice(0);
     if (!signedIn) return;
+    for (const report of reports) reportProactiveTap(report);
     for (const pendingAnswer of answers) {
       answerFromNotification(pendingAnswer, respondRef.current).then((outcome) =>
         showApprovalNotice(noticeFor(pendingAnswer, outcome)),

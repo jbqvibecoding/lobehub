@@ -1628,6 +1628,31 @@ table oidc_sessions {
   }
 }
 
+table proactive_messages {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id text [not null]
+  agent_id text
+  kind text [not null]
+  routine_id text
+  thought_id uuid
+  task_id text
+  brief_id text
+  topic_id text
+  message_id text
+  notification_id text
+  title text
+  state text [not null, default: 'sent']
+  sent_at "timestamp with time zone" [not null, default: `now()`]
+  opened_at "timestamp with time zone"
+  dismissed_at "timestamp with time zone"
+  replied_at "timestamp with time zone"
+
+  indexes {
+    (user_id, sent_at) [name: 'proactive_messages_user_sent_idx']
+    (state, sent_at) [name: 'proactive_messages_state_sent_idx']
+  }
+}
+
 table push_tokens {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id text [not null]

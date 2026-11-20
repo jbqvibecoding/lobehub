@@ -33,6 +33,7 @@ import { TopicModel } from '@/database/models/topic';
 import { VerifyRunModel } from '@/database/models/verifyRun';
 import type { LobeChatDatabase } from '@/database/type';
 import { initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
+import { deliverRoutineResult } from '@/server/services/proactive/delivery';
 import { SystemAgentService } from '@/server/services/systemAgent';
 import { TaskResultBridgeService } from '@/server/services/taskResultBridge';
 import { createTaskSchedulerModule } from '@/server/services/taskScheduler';
@@ -770,7 +771,7 @@ export class TaskLifecycleService {
       // default actions — see DEFAULT_BRIEF_ACTIONS comment.
       const actions = briefType === 'result' ? null : (DEFAULT_BRIEF_ACTIONS[briefType] ?? null);
 
-      await this.briefModel.create({
+      const brief = await this.briefModel.create({
         actions,
         agentId: currentTask.assigneeAgentId || undefined,
         artifacts,
@@ -784,6 +785,11 @@ export class TaskLifecycleService {
       });
 
       log('synthesize: brief created task=%s topic=%s type=%s', taskIdentifier, topicId, briefType);
+
+      // Biber: a starter routine's result goes to the user's phone (no-op for other tasks)
+      await deliverRoutineResult(this.db, this.userId, { brief, task: currentTask }).catch(
+        (error) => console.warn('[TaskLifecycle] routine result delivery failed:', error),
+      );
     } catch (e) {
       console.warn('[TaskLifecycle] brief synthesis failed:', e);
     }

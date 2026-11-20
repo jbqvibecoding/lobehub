@@ -48,6 +48,17 @@ const tap = (actionIdentifier: string, toolMessageId = 'tool-1') =>
     },
   }) as unknown as Notifications.NotificationResponse;
 
+const proactiveTap = (actionIdentifier: string, data: Record<string, string>) =>
+  ({
+    actionIdentifier,
+    notification: {
+      request: {
+        content: { body: 'Three things today', data, title: 'Morning brief' },
+        identifier: `notification-${(nextId += 1)}`,
+      },
+    },
+  }) as unknown as Notifications.NotificationResponse;
+
 const emitTap = (response: Notifications.NotificationResponse) =>
   act(() => (Notifications as any).__emit('response', response));
 
@@ -73,13 +84,20 @@ beforeEach(() => {
 afterEach(() => act(() => showApprovalNotice(null)));
 
 describe('useNotificationRouting', () => {
-  it('registers the Approve / Reject category', async () => {
+  it('registers the Approve / Reject category and the Not now category', async () => {
     await renderRouting(true);
 
     expect(Notifications.setNotificationCategoryAsync).toHaveBeenCalledWith(
       'approval',
       expect.any(Array),
     );
+    expect(Notifications.setNotificationCategoryAsync).toHaveBeenCalledWith('proactive', [
+      expect.objectContaining({
+        buttonTitle: 'Not now',
+        identifier: 'not-now',
+        options: { opensAppToForeground: false },
+      }),
+    ]);
   });
 
   it('opens the list on a tap on the notification itself, without answering', async () => {
@@ -118,6 +136,67 @@ describe('useNotificationRouting', () => {
       toolMessageId: 'tool-3',
     });
     expect(Notifications.clearLastNotificationResponse).toHaveBeenCalled();
+  });
+
+  it('opens a routine result’s task and reports the open', async () => {
+    await renderRouting(true);
+
+    await emitTap(
+      proactiveTap('expo.modules.notifications.actions.DEFAULT', {
+        kind: 'routine',
+        outcomeId: 'outcome-1',
+        taskId: 'task-9',
+      }),
+    );
+
+    expect(router.navigate).toHaveBeenCalledWith({
+      params: { id: 'task-9' },
+      pathname: '/tasks/[id]',
+    });
+    await waitFor(() =>
+      expect(api.mutation).toHaveBeenCalledWith('proactive.opened', { id: 'outcome-1' }),
+    );
+  });
+
+  it('opens a proactive message’s chat, and reports Not now without opening anything', async () => {
+    await renderRouting(true);
+
+    await emitTap(
+      proactiveTap('expo.modules.notifications.actions.DEFAULT', {
+        kind: 'proactive',
+        outcomeId: 'outcome-2',
+        topicId: 'topic-3',
+      }),
+    );
+    expect(router.navigate).toHaveBeenCalledWith({
+      params: { topicId: 'topic-3' },
+      pathname: '/chat/[topicId]',
+    });
+
+    jest.mocked(router.navigate).mockClear();
+    await emitTap(proactiveTap('not-now', { kind: 'proactive', outcomeId: 'outcome-4' }));
+
+    await waitFor(() =>
+      expect(api.mutation).toHaveBeenCalledWith('proactive.dismiss', { id: 'outcome-4' }),
+    );
+    expect(router.navigate).not.toHaveBeenCalled();
+  });
+
+  it('reports a proactive tap once the session has loaded, and not when signed out', async () => {
+    const { rerender } = await renderRouting(undefined);
+    await emitTap(proactiveTap('not-now', { kind: 'routine', outcomeId: 'outcome-5' }));
+    expect(api.mutation).not.toHaveBeenCalled();
+
+    await rerender({ signedIn: true });
+    await waitFor(() =>
+      expect(api.mutation).toHaveBeenCalledWith('proactive.dismiss', { id: 'outcome-5' }),
+    );
+
+    jest.mocked(api.mutation).mockClear();
+    const signedOut = await renderRouting(undefined);
+    await emitTap(proactiveTap('not-now', { kind: 'routine', outcomeId: 'outcome-6' }));
+    await signedOut.rerender({ signedIn: false });
+    expect(api.mutation).not.toHaveBeenCalled();
   });
 
   it('waits for the stored session before answering, and drops the tap when signed out', async () => {

@@ -141,10 +141,22 @@ describe('syncNotificationTray', () => {
     expect(Notifications.setBadgeCountAsync).toHaveBeenCalledWith(2);
   });
 
-  it('clears the tray and the badge once nothing waits', async () => {
+  it('clears the approvals and the badge once nothing waits, but keeps other messages', async () => {
+    jest
+      .mocked(Notifications.getPresentedNotificationsAsync)
+      .mockResolvedValueOnce([
+        presented('n-answered', { kind: 'approval', toolMessageId: 'tool-gone' }),
+        presented('n-several', { kind: 'approval', notificationId: 'x' }),
+        presented('n-old', { notificationId: 'y' }),
+        presented('n-brief', { kind: 'routine', outcomeId: 'o-1', taskId: 'task-1' }),
+        presented('n-nudge', { kind: 'proactive', outcomeId: 'o-2', topicId: 'topic-1' }),
+      ] as any);
+
     await syncNotificationTray([]);
 
-    expect(Notifications.dismissAllNotificationsAsync).toHaveBeenCalled();
+    expect(
+      jest.mocked(Notifications.dismissNotificationAsync).mock.calls.map(([id]) => id),
+    ).toEqual(['n-answered', 'n-several', 'n-old']);
     expect(Notifications.setBadgeCountAsync).toHaveBeenCalledWith(0);
   });
 });

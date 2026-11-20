@@ -38,6 +38,7 @@ import { activityRouter } from './activity';
 import { approvalRouter } from './approval';
 import { chatRouter } from './chat';
 import { memoriesRouter } from './memories';
+import { proactiveRouter } from './proactive';
 import { routinesRouter } from './routines';
 
 export const mobileRouter = router({
@@ -67,6 +68,7 @@ export const mobileRouter = router({
   message: messageRouter,
   messenger: messengerRouter,
   plugin: pluginRouter,
+  proactive: proactiveRouter,
   pushToken: pushTokenRouter,
   routines: routinesRouter,
   session: sessionRouter,
