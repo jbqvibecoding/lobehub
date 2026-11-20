@@ -87,6 +87,14 @@ export class ProactiveSettingsModel {
     return row;
   }
 
+  /** Remembers the "From Biber" chat without counting a message against the budget. */
+  async setTopic(topicId: string) {
+    await this.db
+      .insert(proactiveSettings)
+      .values({ topicId, userId: this.userId })
+      .onConflictDoUpdate({ set: { topicId }, target: proactiveSettings.userId });
+  }
+
   /** Counts a sent message against the budget of the user's local day `budgetDate`. */
   async recordSend({
     budgetDate,

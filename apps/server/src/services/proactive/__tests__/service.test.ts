@@ -224,4 +224,22 @@ describe('ProactiveService.dueUsers', () => {
 
     expect(await ProactiveService.dueUsers(db, new Date())).toEqual([userId]);
   });
+
+  it('waits for a note’s time, and leaves out reminders the user asked for', async () => {
+    const note = (id: string, source: 'agent' | 'asked', dueInHours: number) => ({
+      dueAt: new Date(Date.now() + dueInHours * HOUR),
+      kind: 'follow_up' as const,
+      seed: 'How did it go?',
+      source,
+      sourceRef: `agent:${id}`,
+      userId,
+    });
+    await db
+      .insert(proactiveThoughts)
+      .values([note('later', 'agent', 5), note('asked', 'asked', -1)]);
+    expect(await ProactiveService.dueUsers(db, new Date())).toEqual([]);
+
+    await db.insert(proactiveThoughts).values(note('due', 'agent', -1));
+    expect(await ProactiveService.dueUsers(db, new Date())).toEqual([userId]);
+  });
 });

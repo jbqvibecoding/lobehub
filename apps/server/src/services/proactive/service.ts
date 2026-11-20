@@ -1,5 +1,4 @@
 import { BUILTIN_AGENT_SLUGS } from '@lobechat/builtin-agents';
-import { isMainlandRegion } from '@lobechat/region';
 import debug from 'debug';
 import { and, desc, eq, gt, inArray, isNotNull, max, ne, sql } from 'drizzle-orm';
 
@@ -8,20 +7,17 @@ import { MessageModel } from '@/database/models/message';
 import { ProactiveMessageModel } from '@/database/models/proactiveMessage';
 import { ProactiveSettingsModel } from '@/database/models/proactiveSettings';
 import { ProactiveThoughtModel } from '@/database/models/proactiveThought';
-import { TopicModel } from '@/database/models/topic';
-import { UserModel } from '@/database/models/user';
 import {
   messages,
   proactiveMessages,
-  type ProactiveSettingsItem,
   userMemories,
   userMemoriesActivities,
 } from '@/database/schemas';
 import type { LobeChatDatabase } from '@/database/type';
-import { regionEnv } from '@/envs/region';
 import { reviewModelReply } from '@/server/services/contentSafety';
 import { SystemAgentService } from '@/server/services/systemAgent';
 
+import { fromBiberTopic, resolveTimeZone } from './biber';
 import { bannedKinds, ignoredStreak, selectCandidates } from './candidates';
 import { composeProactiveMessage } from './compose';
 import { deliverProactiveMessage } from './delivery';
@@ -42,18 +38,6 @@ export type ProactiveRunResult =
       reason: 'blocked' | 'busy' | 'model_skipped' | 'no_agent' | 'no_candidates' | TimingVerdict;
       sent: false;
     };
-
-const TOPIC_TITLE = { en: 'From Biber', zh: '来自 Biber' };
-
-const validTimeZone = (timeZone: string | null | undefined) => {
-  if (!timeZone) return undefined;
-  try {
-    new Intl.DateTimeFormat('en', { timeZone });
-    return timeZone;
-  } catch {
-    return undefined;
-  }
-};
 
 /**
  * Runs Biber's proactive check for one user: keeps the pending-to-say list and the results ledger
@@ -89,7 +73,7 @@ export class ProactiveService {
     await thoughts.addNew(deriveThoughts(await this.rememberedActivities(now), now, biber.id));
     await thoughts.expireOverdue(now);
 
-    const timeZone = await this.timeZoneOf(settings);
+    const timeZone = await resolveTimeZone(this.db, this.userId, settings.timeZone);
     const today = localTime(now, timeZone).date;
     const recent = await ledger.recent(20);
     const verdict = decideTiming({
@@ -128,7 +112,11 @@ export class ProactiveService {
     if ((await reviewModelReply(composed.content)) === 'hidden') return this.skip('blocked');
 
     const thought = candidates.find((candidate) => candidate.id === composed.thoughtId)!;
-    const topicId = await this.biberTopic(settings, biber.id, locale);
+    const topicId = await fromBiberTopic(this.db, this.userId, {
+      agentId: biber.id,
+      locale,
+      topicId: settings.topicId,
+    });
     const message = await new MessageModel(this.db, this.userId).create({
       agentId: biber.id,
       content: composed.content,
@@ -247,35 +235,10 @@ export class ProactiveService {
     return row?.at ?? null;
   }
 
-  /** The phone's time zone, else the web's, else the edition's home. */
-  private async timeZoneOf(settings: ProactiveSettingsItem) {
-    const fromPhone = validTimeZone(settings.timeZone);
-    if (fromPhone) return fromPhone;
-
-    const userSettings = await new UserModel(this.db, this.userId).getUserSettings();
-    const fromWeb = validTimeZone(
-      (userSettings?.general as { timezone?: string } | undefined)?.timezone,
-    );
-
-    return fromWeb ?? (isMainlandRegion(regionEnv.APP_REGION) ? 'Asia/Shanghai' : 'UTC');
-  }
-
-  /** The "From Biber" chat, made the first time Biber writes. */
-  private async biberTopic(settings: ProactiveSettingsItem, agentId: string, locale: string) {
-    const topics = new TopicModel(this.db, this.userId);
-    if (settings.topicId && (await topics.findById(settings.topicId))) return settings.topicId;
-
-    const topic = await topics.create({
-      agentId,
-      title: locale.toLowerCase().startsWith('zh') ? TOPIC_TITLE.zh : TOPIC_TITLE.en,
-      trigger: 'proactive',
-    });
-    return topic.id;
-  }
-
   /**
-   * Users worth a check now, longest unchecked first: not turned off, and with something open on
-   * their pending-to-say list or an activity in memory that starts soon or just ended.
+   * Users worth a check now, longest unchecked first: not turned off, and with something due on
+   * their pending-to-say list or an activity in memory that starts soon or just ended. Reminders
+   * the user asked for are sent on their own (see `asked.ts`), so they do not count here.
    */
   static async dueUsers(db: LobeChatDatabase, now: Date, limit = 200) {
     const ahead = new Date(now.getTime() + REMIND_AHEAD_MS);
@@ -288,7 +251,11 @@ export class ProactiveService {
       where coalesce(s.level, 'standard') <> 'off'
         and (
           exists (
-            select 1 from proactive_thoughts t where t.user_id = u.id and t.status = 'open'
+            select 1 from proactive_thoughts t
+            where t.user_id = u.id
+              and t.status = 'open'
+              and t.source <> 'asked'
+              and (t.due_at is null or t.due_at <= ${now})
           )
           or exists (
             select 1 from user_memories_activities a

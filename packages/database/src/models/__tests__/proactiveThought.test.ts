@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getTestDB } from '../../core/getTestDB';
 import { ProactiveSettingsModel } from '../../models/proactiveSettings';
-import { ProactiveThoughtModel } from '../../models/proactiveThought';
+import { NOTE_LIMIT, NoteLimitError, ProactiveThoughtModel } from '../../models/proactiveThought';
+import { proactiveThoughts } from '../../schemas/proactive';
 import { users } from '../../schemas/user';
 import type { LobeChatDatabase } from '../../type';
 
@@ -15,7 +16,7 @@ const HOUR = 60 * 60 * 1000;
 const draft = (sourceRef: string, overrides = {}) => ({
   kind: 'reminder' as const,
   seed: 'Dentist appointment',
-  source: 'activity',
+  source: 'activity' as const,
   sourceRef,
   ...overrides,
 });
@@ -64,9 +65,82 @@ describe('ProactiveThoughtModel', () => {
     expect(await model.drop(current.id)).toBe(false);
     expect((await model.listOpen()).map((thought) => thought.id)).toEqual([endless.id]);
   });
+
+  it('keeps at most NOTE_LIMIT open notes from chats per user, not counting memory', async () => {
+    const model = new ProactiveThoughtModel(serverDB, userId);
+    const notes = Array.from({ length: NOTE_LIMIT }, (_, i) =>
+      draft(`agent:${i}`, { source: i % 2 ? 'agent' : 'asked' }),
+    );
+    await serverDB.insert(proactiveThoughts).values(notes.map((note) => ({ ...note, userId })));
+    await model.addNew([draft('activity:x:reminder')]);
+
+    await expect(model.addNote(draft('agent:one-more', { source: 'agent' }))).rejects.toThrow(
+      NoteLimitError,
+    );
+    // Another user's list is their own
+    await expect(
+      new ProactiveThoughtModel(serverDB, otherUserId).addNote(
+        draft('agent:a', { source: 'agent' }),
+      ),
+    ).resolves.toMatchObject({ status: 'open', userId: otherUserId });
+
+    const note = (await model.listOpen()).find((thought) => thought.source !== 'activity')!;
+    await model.drop(note.id);
+    await expect(
+      model.addNote(draft('agent:fits-again', { source: 'agent' })),
+    ).resolves.toMatchObject({ status: 'open' });
+  });
+
+  it('takes due asked reminders across users once, reopens a failed one, expires late ones', async () => {
+    const now = new Date();
+    const asked = (sourceRef: string, dueInHours: number, expiresInHours = dueInHours + 6) =>
+      draft(sourceRef, {
+        dueAt: new Date(now.getTime() + dueInHours * HOUR),
+        expiresAt: new Date(now.getTime() + expiresInHours * HOUR),
+        source: 'asked' as const,
+      });
+    const mine = new ProactiveThoughtModel(serverDB, userId);
+    const [due, later, stale] = await mine.addNew([
+      asked('agent:due', -1),
+      asked('agent:later', 2),
+      asked('agent:stale', -8, -2),
+    ]);
+    const [othersDue] = await new ProactiveThoughtModel(serverDB, otherUserId).addNew([
+      asked('agent:other', -0.5),
+    ]);
+    await mine.addNew([
+      draft('agent:own', { dueAt: new Date(now.getTime() - HOUR), source: 'agent' }),
+    ]);
+
+    const taken = await ProactiveThoughtModel.takeDueAsked(serverDB, now, 10);
+    expect(taken.map((thought) => thought.id).sort()).toEqual([due.id, othersDue.id].sort());
+    expect(taken.every((thought) => thought.status === 'done')).toBe(true);
+    expect(await ProactiveThoughtModel.takeDueAsked(serverDB, now, 10)).toEqual([]);
+
+    await mine.reopen(due.id);
+    expect((await ProactiveThoughtModel.takeDueAsked(serverDB, now, 10)).map((t) => t.id)).toEqual([
+      due.id,
+    ]);
+
+    expect(await ProactiveThoughtModel.expireOverdueAsked(serverDB, now)).toEqual([
+      { id: stale.id },
+    ]);
+    expect(await mine.findOpen(later.id)).toMatchObject({ id: later.id });
+  });
 });
 
 describe('ProactiveSettingsModel', () => {
+  it('remembers the From Biber chat without counting a send', async () => {
+    const model = new ProactiveSettingsModel(serverDB, userId);
+    await model.setTopic('topic-1');
+
+    expect(await model.find()).toMatchObject({
+      lastSentAt: null,
+      spentToday: 0,
+      topicId: 'topic-1',
+    });
+  });
+
   it('gives the defaults until the user changes something', async () => {
     const model = new ProactiveSettingsModel(serverDB, userId);
     expect(await model.preferences()).toMatchObject({

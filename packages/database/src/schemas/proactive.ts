@@ -48,6 +48,13 @@ export type ProactiveThoughtUrgency = 'immediate' | 'window';
 export type ProactiveThoughtStatus = 'done' | 'dropped' | 'expired' | 'open';
 
 /**
+ * Where a thought came from: derived from a dated `activity` in the user's memory, noted by the
+ * `agent` in a chat on its own initiative, or `asked` for by the user ("remind me at 3"). Asked
+ * reminders go out at their time, outside the limits on unprompted messages.
+ */
+export type ProactiveThoughtSource = 'activity' | 'agent' | 'asked';
+
+/**
  * Proactive thoughts - the pending-to-say list: things Biber means to bring up when the moment is
  * right, such as a reminder before something on the user's calendar or a follow-up after it. Each
  * is said at most once: one per user and `sourceRef`, whatever its status, so a thought that was
@@ -66,12 +73,13 @@ export const proactiveThoughts = pgTable(
     kind: text('kind').$type<ProactiveThoughtKind>().notNull(),
     /** What to bring up, in one line for the model; at most 200 characters */
     seed: text('seed').notNull(),
-    /** Where it came from, e.g. `activity` */
-    source: text('source').notNull(),
+    source: text('source').$type<ProactiveThoughtSource>().notNull(),
     /** What it came from, as a dedupe key, e.g. `activity:<id>:reminder` */
     sourceRef: text('source_ref').notNull(),
     /** When the thing it is about happens or ended, for wording like "tomorrow at 10" */
     occursAt: timestamptz('occurs_at'),
+    /** Not to be said before this; none means as soon as the moment is right */
+    dueAt: timestamptz('due_at'),
 
     urgency: text('urgency').$type<ProactiveThoughtUrgency>().notNull().default('window'),
     /** 0 to 1: among thoughts of the same urgency, higher goes first */
@@ -85,6 +93,7 @@ export const proactiveThoughts = pgTable(
   (t) => [
     uniqueIndex('proactive_thoughts_user_source_ref_unique').on(t.userId, t.sourceRef),
     index('proactive_thoughts_status_idx').on(t.status),
+    index('proactive_thoughts_status_due_idx').on(t.status, t.dueAt),
   ],
 );
 
@@ -93,9 +102,9 @@ export type ProactiveThoughtItem = typeof proactiveThoughts.$inferSelect;
 
 /**
  * What Biber reached out about unprompted: a routine's result, a reminder before something on the
- * user's calendar, or a follow-up after it.
+ * user's calendar, a follow-up after it, or a reminder the user asked for at a time of their own.
  */
-export type ProactiveMessageKind = 'follow_up' | 'reminder' | 'routine';
+export type ProactiveMessageKind = 'asked' | 'follow_up' | 'reminder' | 'routine';
 
 /**
  * What became of a message the user did not ask for. It only moves forward, in this order:

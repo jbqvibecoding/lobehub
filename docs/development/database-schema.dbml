@@ -1677,6 +1677,7 @@ table proactive_thoughts {
   source text [not null]
   source_ref text [not null]
   occurs_at "timestamp with time zone"
+  due_at "timestamp with time zone"
   urgency text [not null, default: 'window']
   weight real [not null, default: 0.5]
   expires_at "timestamp with time zone"
@@ -1687,6 +1688,7 @@ table proactive_thoughts {
   indexes {
     (user_id, source_ref) [name: 'proactive_thoughts_user_source_ref_unique', unique]
     status [name: 'proactive_thoughts_status_idx']
+    (status, due_at) [name: 'proactive_thoughts_status_due_idx']
   }
 }
 

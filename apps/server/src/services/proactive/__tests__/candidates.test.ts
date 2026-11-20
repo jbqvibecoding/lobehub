@@ -8,6 +8,7 @@ const now = new Date('2026-11-20T06:00:00Z');
 const thought = (overrides: Partial<ProactiveThoughtItem>): ProactiveThoughtItem => ({
   agentId: null,
   createdAt: now,
+  dueAt: null,
   expiresAt: null,
   id: 'thought',
   kind: 'reminder',
@@ -52,6 +53,18 @@ describe('selectCandidates', () => {
     ).toEqual(['follow-up']);
     expect(selectCandidates(thoughts, { banned: new Set(), level: 'off', now })).toEqual([]);
   });
+
+  it('waits for a note’s time, and leaves reminders the user asked for to go out on their own', () => {
+    const notes = [
+      thought({ dueAt: new Date(now.getTime() + 60_000), id: 'later', source: 'agent' }),
+      thought({ dueAt: now, id: 'due', source: 'agent' }),
+      thought({ dueAt: new Date(now.getTime() - 60_000), id: 'asked', source: 'asked' }),
+    ];
+
+    expect(
+      selectCandidates(notes, { banned: new Set(), level: 'standard', now }).map((item) => item.id),
+    ).toEqual(['due']);
+  });
 });
 
 describe('bannedKinds', () => {
@@ -70,14 +83,24 @@ describe('bannedKinds', () => {
 
     expect(bannedKinds(ledger)).toEqual(new Set(['follow_up']));
   });
+
+  it('does not judge Biber by reminders the user asked for', () => {
+    const asked = Array.from({ length: 5 }, () => ({
+      kind: 'asked' as const,
+      state: 'dismissed' as const,
+    }));
+
+    expect(bannedKinds(asked)).toEqual(new Set());
+  });
 });
 
 describe('ignoredStreak', () => {
-  it('counts ignored messages in a row, skipping routines and messages still within their day', () => {
+  it('counts ignored messages in a row, skipping user-timed ones and those still within their day', () => {
     expect(
       ignoredStreak([
         { kind: 'reminder', state: 'sent' },
         { kind: 'reminder', state: 'ignored' },
+        { kind: 'asked', state: 'opened' },
         { kind: 'routine', state: 'opened' },
         { kind: 'follow_up', state: 'ignored' },
         { kind: 'reminder', state: 'opened' },

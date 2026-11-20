@@ -68,7 +68,7 @@ export const buildComposePrompt = (input: ComposeInput) => {
   const items = input.candidates.map((thought) =>
     [
       `- id: ${thought.id}`,
-      `  kind: ${thought.kind === 'reminder' ? 'reminder (coming up)' : 'follow-up (just happened)'}`,
+      `  kind: ${thought.kind === 'reminder' ? 'reminder (coming up)' : 'follow-up (ask how it went)'}`,
       `  when: ${describeWhen(thought.occursAt, input)}`,
       `  about: ${thought.seed}`,
     ].join('\n'),
