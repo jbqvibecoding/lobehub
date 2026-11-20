@@ -7,6 +7,7 @@ import { type Palette, useColors } from '@/theme/colors';
 
 import { LinkedChatsView } from './linked-chats';
 import { MemoriesList } from './memories';
+import { ProactiveSettingsView } from './proactive';
 
 export const LinkedChatsScreen = () => {
   const styles = createStyles(useColors());
@@ -27,6 +28,13 @@ export const MemoriesScreen = () => (
   <>
     <Stack.Screen options={{ title: t('memoriesTitle') }} />
     <MemoriesList api={api} />
+  </>
+);
+
+export const ProactiveScreen = () => (
+  <>
+    <Stack.Screen options={{ title: t('proactiveTitle') }} />
+    <ProactiveSettingsView api={api} />
   </>
 );
 

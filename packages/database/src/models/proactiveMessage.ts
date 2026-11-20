@@ -103,6 +103,15 @@ export class ProactiveMessageModel {
       .limit(limit);
   }
 
+  /** The user's messages sent since `since`, for ruling out kinds they keep dismissing. */
+  async listSince(since: Date) {
+    return this.db
+      .select()
+      .from(proactiveMessages)
+      .where(and(this.ownership(), gte(proactiveMessages.sentAt, since)))
+      .orderBy(desc(proactiveMessages.sentAt));
+  }
+
   /** Every user's messages left without any reaction for a day become ignored. */
   static async ignoreOverdue(db: LobeChatDatabase, now = new Date(), userId?: string) {
     const cutoff = new Date(now.getTime() - IGNORE_AFTER_HOURS * 60 * 60 * 1000);

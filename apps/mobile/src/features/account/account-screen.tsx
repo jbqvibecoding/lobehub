@@ -23,11 +23,12 @@ import { usePlan } from './use-plan';
 
 const SETTINGS: {
   hint: StringKey;
-  href: '/chat-apps' | '/computer' | '/memories';
+  href: '/chat-apps' | '/computer' | '/memories' | '/proactive';
   title: StringKey;
 }[] = [
   { hint: 'linkedChatsEntryHint', href: '/chat-apps', title: 'linkedChatsTitle' },
   { hint: 'memoriesEntryHint', href: '/memories', title: 'memoriesTitle' },
+  { hint: 'proactiveEntryHint', href: '/proactive', title: 'proactiveTitle' },
   { hint: 'computerEntryHint', href: '/computer', title: 'computerTitle' },
 ];
 

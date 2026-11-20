@@ -27,6 +27,8 @@ export interface ProactiveDelivery {
   /** One delivery per key: a retried run or a second tick does not notify twice */
   dedupeKey: string;
   kind: ProactiveMessageKind;
+  /** What the ledger keeps as the message's title when it differs from the push title */
+  ledgerTitle?: string;
   messageId?: string;
   routineId?: string;
   target: ProactivePushTarget;
@@ -70,7 +72,7 @@ export const deliverProactiveMessage = async (
     routineId: delivery.routineId,
     taskId: delivery.taskId,
     thoughtId: delivery.thoughtId,
-    title: delivery.title,
+    title: delivery.ledgerTitle ?? delivery.title,
     topicId: delivery.topicId,
   });
 

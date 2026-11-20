@@ -1,3 +1,4 @@
+import { getCalendars } from 'expo-localization';
 import { Stack } from 'expo-router/stack';
 import { useEffect } from 'react';
 import {
@@ -30,6 +31,9 @@ export const ApprovalsScreen = () => {
   useEffect(() => {
     // Without a push token the list still works; it just does not ring
     registerForPush(api).catch(() => undefined);
+    // Quiet hours and reminder times follow the phone's time zone
+    const timeZone = getCalendars()[0]?.timeZone;
+    if (timeZone) api.mutation('proactive.updateSettings', { timeZone }).catch(() => undefined);
   }, []);
 
   useEffect(() => {

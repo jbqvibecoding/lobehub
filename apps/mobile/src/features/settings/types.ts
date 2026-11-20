@@ -45,3 +45,24 @@ export interface MemoryExtraction {
 /** What `memories.undoExtraction` did. */
 export type ExtractionUndo =
   { undone: false } | { forgotten: number; notRestored: string[]; restored: number; undone: true };
+
+/** How much Biber speaks up unprompted. */
+export type ProactiveLevel = 'off' | 'quiet' | 'standard';
+
+/** The user's proactive settings (`proactive.getSettings`); dates arrive as `Date`. */
+export interface ProactiveSettings {
+  cooldownUntil: Date | null;
+  level: ProactiveLevel;
+  quietEnd: number;
+  quietStart: number;
+  timeZone: string | null;
+}
+
+/** Something Biber means to bring up (`proactive.listThoughts`). */
+export interface ProactiveThought {
+  expiresAt: Date | null;
+  id: string;
+  kind: 'follow_up' | 'reminder';
+  occursAt: Date | null;
+  seed: string;
+}

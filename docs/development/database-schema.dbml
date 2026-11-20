@@ -1653,6 +1653,43 @@ table proactive_messages {
   }
 }
 
+table proactive_settings {
+  user_id text [pk, not null]
+  level text [not null, default: 'standard']
+  quiet_start integer [not null, default: 22]
+  quiet_end integer [not null, default: 8]
+  time_zone text
+  cooldown_until "timestamp with time zone"
+  budget_date text
+  spent_today integer [not null, default: 0]
+  last_sent_at "timestamp with time zone"
+  last_attempt_at "timestamp with time zone"
+  topic_id text
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+}
+
+table proactive_thoughts {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id text [not null]
+  agent_id text
+  kind text [not null]
+  seed text [not null]
+  source text [not null]
+  source_ref text [not null]
+  occurs_at "timestamp with time zone"
+  urgency text [not null, default: 'window']
+  weight real [not null, default: 0.5]
+  expires_at "timestamp with time zone"
+  status text [not null, default: 'open']
+  surfaced_at "timestamp with time zone"
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (user_id, source_ref) [name: 'proactive_thoughts_user_source_ref_unique', unique]
+    status [name: 'proactive_thoughts_status_idx']
+  }
+}
+
 table push_tokens {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id text [not null]

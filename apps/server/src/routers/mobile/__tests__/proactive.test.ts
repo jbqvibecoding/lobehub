@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NotificationModel } from '@/database/models/notification';
 import { ProactiveMessageModel } from '@/database/models/proactiveMessage';
+import { ProactiveThoughtModel } from '@/database/models/proactiveThought';
 
 import { cleanupTestUser, createTestUser } from '../../lambda/__tests__/integration/setup';
 import { proactiveRouter } from '../proactive';
@@ -69,6 +70,59 @@ describe('mobile proactiveRouter', () => {
     expect(await caller.opened({ id: message.id })).toEqual({ state: 'dismissed' });
 
     await cleanupTestUser(testDB, userId);
+  });
+
+  it('changes the user’s settings, pauses for a while and resumes, and refuses unknown zones', async () => {
+    const userId = await createTestUser(testDB);
+    const caller = callerFor(userId);
+
+    expect(await caller.getSettings()).toMatchObject({ level: 'standard', quietStart: 22 });
+
+    const paused = await caller.updateSettings({
+      level: 'quiet',
+      quietForDays: 7,
+      timeZone: 'Asia/Shanghai',
+    });
+    expect(paused).toMatchObject({ level: 'quiet', timeZone: 'Asia/Shanghai' });
+    expect(paused.cooldownUntil!.getTime()).toBeGreaterThan(Date.now() + 6 * 24 * 60 * 60 * 1000);
+
+    expect((await caller.updateSettings({ quietForDays: null })).cooldownUntil).toBeNull();
+    await expect(caller.updateSettings({ timeZone: 'Mars/Olympus' })).rejects.toThrow();
+
+    await cleanupTestUser(testDB, userId);
+  });
+
+  it('lists what Biber means to say, soonest first, and drops only the user’s own', async () => {
+    const userId = await createTestUser(testDB);
+    const otherId = await createTestUser(testDB);
+    const [later, sooner] = await new ProactiveThoughtModel(testDB, userId).addNew([
+      {
+        kind: 'follow_up',
+        occursAt: new Date(Date.now() + 9e7),
+        seed: 'Flight',
+        source: 'activity',
+        sourceRef: 'a',
+      },
+      {
+        kind: 'reminder',
+        occursAt: new Date(Date.now() + 1e7),
+        seed: 'Dentist',
+        source: 'activity',
+        sourceRef: 'b',
+      },
+    ]);
+    const caller = callerFor(userId);
+
+    expect((await caller.listThoughts()).map((thought) => thought.seed)).toEqual([
+      'Dentist',
+      'Flight',
+    ]);
+    expect(await callerFor(otherId).dropThought({ id: sooner.id })).toEqual({ dropped: false });
+    expect(await caller.dropThought({ id: sooner.id })).toEqual({ dropped: true });
+    expect((await caller.listThoughts()).map((thought) => thought.id)).toEqual([later.id]);
+
+    await cleanupTestUser(testDB, userId);
+    await cleanupTestUser(testDB, otherId);
   });
 
   it('refuses to report on another user’s message', async () => {
