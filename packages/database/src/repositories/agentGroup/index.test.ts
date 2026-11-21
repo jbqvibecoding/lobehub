@@ -518,6 +518,62 @@ describe('AgentGroupRepository', () => {
     });
   });
 
+  describe('createHostedGroup', () => {
+    const biber = 'agent-biber';
+
+    beforeEach(async () => {
+      await serverDB.insert(agents).values([
+        { id: biber, slug: BUILTIN_AGENT_SLUGS.inbox, userId, virtual: true },
+        { id: 'expert-1', title: 'Researcher', userId },
+        { id: 'expert-2', title: 'Writer', userId },
+        { id: 'stranger', title: 'Not yours', userId: otherUserId },
+      ]);
+    });
+
+    it('makes the user’s assistant the host, with no virtual supervisor of its own', async () => {
+      const { group, supervisorAgentId } = await agentGroupRepo.createHostedGroup({
+        hostAgentId: biber,
+        memberIds: ['expert-1', 'expert-2', 'expert-1', biber],
+        title: 'Biber, Researcher, Writer',
+      });
+
+      expect(supervisorAgentId).toBe(biber);
+      const detail = await agentGroupRepo.findByIdWithAgents(group.id);
+      expect(detail?.supervisorAgentId).toBe(biber);
+      expect(detail?.agents.map((agent) => agent.id)).toEqual([biber, 'expert-1', 'expert-2']);
+      expect(
+        (await serverDB.select().from(agents)).filter((agent) => agent.title === 'Supervisor'),
+      ).toEqual([]);
+    });
+
+    it('refuses an agent that is not the user’s', async () => {
+      await expect(
+        agentGroupRepo.createHostedGroup({
+          hostAgentId: biber,
+          memberIds: ['stranger'],
+          title: 'Nope',
+        }),
+      ).rejects.toThrow('access denied');
+      expect(await serverDB.select().from(chatGroups)).toEqual([]);
+    });
+
+    it('never deletes the host when it leaves a group or the group goes', async () => {
+      const { group } = await agentGroupRepo.createHostedGroup({
+        hostAgentId: biber,
+        memberIds: ['expert-1'],
+        title: 'Biber, Researcher',
+      });
+
+      expect(
+        (await agentGroupRepo.checkAgentsBeforeRemoval(group.id, [biber])).virtualAgents,
+      ).toEqual([]);
+      await agentGroupRepo.removeAgentsFromGroup(group.id, [biber, 'expert-1']);
+      expect((await serverDB.select().from(agents)).map((agent) => agent.id).sort()).toEqual(
+        [biber, 'expert-1', 'expert-2', 'stranger'].sort(),
+      );
+    });
+  });
+
   describe('checkAgentsBeforeRemoval', () => {
     beforeEach(async () => {
       // Create a group

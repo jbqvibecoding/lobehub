@@ -13,10 +13,12 @@ vi.mock('@/database/core/db-adaptor', () => ({
 }));
 
 const mockExecAgent = vi.fn();
+const mockExecGroupAgent = vi.fn();
 const mockInterruptTask = vi.fn();
 vi.mock('@/server/services/aiAgent', () => ({
   AiAgentService: vi.fn().mockImplementation(() => ({
     execAgent: mockExecAgent,
+    execGroupAgent: mockExecGroupAgent,
     interruptTask: mockInterruptTask,
   })),
 }));
@@ -68,6 +70,7 @@ const say = (
 beforeEach(async () => {
   testDB = await getTestDB();
   mockExecAgent.mockReset();
+  mockExecGroupAgent.mockReset();
   mockInterruptTask.mockReset();
   mockGetOperationStatus.mockReset();
 });
@@ -173,5 +176,174 @@ describe('mobile chatRouter.stop', () => {
     });
     expect(mockInterruptTask).toHaveBeenCalledWith({ operationId: 'op-3', topicId: chat.topicId });
     await cleanupTestUser(testDB, chat.userId);
+  });
+});
+
+describe('mobile chatRouter group chats', () => {
+  /** A user with two experts and a group Biber hosts with them. */
+  const groupWithExperts = async () => {
+    const userId = await createTestUser(testDB);
+    const [researcher, writer] = await testDB
+      .insert(agents)
+      .values([
+        { avatar: '🔎', title: 'Researcher', userId },
+        { avatar: '✍️', title: 'Writer', userId },
+      ])
+      .returning();
+    const caller = callerFor(userId);
+    const { groupId } = await caller.startGroup({
+      expertIds: [researcher.id, writer.id],
+      locale: 'en-US',
+    });
+    return { caller, groupId, researcher, userId, writer };
+  };
+
+  it('starts a group Biber hosts, named after the experts in it', async () => {
+    const { caller, groupId, researcher, writer } = await groupWithExperts();
+
+    const { members } = await caller.group({ groupId });
+    expect(members.map(({ isHost, title }) => ({ isHost, title }))).toEqual([
+      { isHost: true, title: 'Biber' },
+      { isHost: false, title: 'Researcher' },
+      { isHost: false, title: 'Writer' },
+    ]);
+    expect(members.slice(1).map((member) => member.id)).toEqual([researcher.id, writer.id]);
+    const [group] = await testDB.query.chatGroups.findMany();
+    expect(group.title).toBe('Biber, Researcher, Writer');
+  });
+
+  it('lets the one expert the user mentioned answer directly', async () => {
+    const { caller, groupId, researcher } = await groupWithExperts();
+    mockExecAgent.mockResolvedValue({ operationId: 'op-1' });
+
+    const { topicId } = await caller.send({
+      groupId,
+      mentions: [researcher.id],
+      text: '@Researcher what changed in the EU AI Act this year?',
+    });
+
+    expect(mockExecGroupAgent).not.toHaveBeenCalled();
+    expect(mockExecAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: researcher.id,
+        appContext: { groupId, topicId },
+        userInterventionConfig: { approvalMode: 'manual' },
+      }),
+    );
+    const topic = await testDB.query.topics.findFirst({ where: (t, { eq }) => eq(t.id, topicId) });
+    expect(topic?.groupId).toBe(groupId);
+  });
+
+  it('hands everything else to Biber, with how to host and who was mentioned', async () => {
+    const { caller, groupId, researcher, writer } = await groupWithExperts();
+    mockExecGroupAgent.mockResolvedValue({ operationId: 'op-2', topicId: 'topic-new' });
+    const host = (await caller.group({ groupId })).members[0];
+
+    expect(await caller.send({ groupId, text: 'Plan a launch post' })).toEqual({
+      operationId: 'op-2',
+      topicId: 'topic-new',
+    });
+    expect(mockExecGroupAgent).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        agentId: host.id,
+        groupId,
+        instructions: expect.stringContaining('Hosting this group chat'),
+        userInterventionConfig: { approvalMode: 'manual' },
+      }),
+    );
+
+    await caller.send({ groupId, mentions: [researcher.id, writer.id], text: 'Both of you?' });
+    expect(mockExecGroupAgent.mock.lastCall![0].instructions).toContain(
+      'The user addressed @Researcher, @Writer',
+    );
+    expect(mockExecAgent).not.toHaveBeenCalled();
+  });
+
+  it('refuses a mention of someone not in the group, or Biber itself', async () => {
+    const { caller, groupId, userId } = await groupWithExperts();
+    const [outsider] = await testDB
+      .insert(agents)
+      .values({ title: 'Outsider', userId })
+      .returning();
+    const host = (await caller.group({ groupId })).members[0];
+
+    for (const mention of [outsider.id, host.id]) {
+      await expect(caller.send({ groupId, mentions: [mention], text: 'hello' })).rejects.toThrow(
+        'not in the group',
+      );
+    }
+    expect(mockExecAgent).not.toHaveBeenCalled();
+    expect(mockExecGroupAgent).not.toHaveBeenCalled();
+  });
+
+  it('reads a group chat back with who said what', async () => {
+    const { caller, groupId, researcher, userId } = await groupWithExperts();
+    const host = (await caller.group({ groupId })).members[0];
+    const [topic] = await testDB
+      .insert(topics)
+      .values({ agentId: host.id, groupId, title: 'Launch', userId })
+      .returning();
+    const line = (
+      id: string,
+      role: 'assistant' | 'user',
+      agentId: string,
+      content: string,
+      at: string,
+    ) =>
+      testDB.insert(messages).values({
+        agentId,
+        content,
+        createdAt: new Date(at),
+        groupId,
+        id,
+        role,
+        topicId: topic.id,
+        userId,
+      });
+    await line('g-user', 'user', host.id, 'Plan a launch post', '2026-11-21T09:00:00Z');
+    await line('g-biber', 'assistant', host.id, 'Asking Researcher.', '2026-11-21T09:00:01Z');
+    await line(
+      'g-expert',
+      'assistant',
+      researcher.id,
+      'Here are three angles.',
+      '2026-11-21T09:00:02Z',
+    );
+
+    const history = await caller.history({ topicId: topic.id });
+
+    expect(history.groupId).toBe(groupId);
+    expect(history.lines.map(({ agentId, kind, text }: any) => ({ agentId, kind, text }))).toEqual([
+      { agentId: undefined, kind: 'user', text: 'Plan a launch post' },
+      { agentId: host.id, kind: 'assistant', text: 'Asking Researcher.' },
+      { agentId: researcher.id, kind: 'assistant', text: 'Here are three angles.' },
+    ]);
+    expect(history.speakers[researcher.id]).toMatchObject({ avatar: '🔎', title: 'Researcher' });
+    expect(history.speakers[host.id]).toMatchObject({ isHost: true, title: 'Biber' });
+  });
+
+  it('changes who is in the group, but Biber stays', async () => {
+    const { caller, groupId, researcher, userId, writer } = await groupWithExperts();
+    const [seo] = await testDB.insert(agents).values({ title: 'SEO', userId }).returning();
+    const host = (await caller.group({ groupId })).members[0];
+
+    const { members } = await caller.updateGroup({
+      addExpertIds: [seo.id],
+      groupId,
+      removeExpertIds: [writer.id],
+    });
+    expect(members.map((member) => member.id)).toEqual([host.id, researcher.id, seo.id]);
+    await expect(caller.updateGroup({ groupId, removeExpertIds: [host.id] })).rejects.toThrow(
+      'stays',
+    );
+  });
+
+  it('keeps one user’s group to themselves', async () => {
+    const { groupId } = await groupWithExperts();
+    const stranger = callerFor(await createTestUser(testDB));
+
+    await expect(stranger.group({ groupId })).rejects.toThrow('No such group');
+    await expect(stranger.send({ groupId, text: 'hi' })).rejects.toThrow();
+    expect(mockExecGroupAgent).not.toHaveBeenCalled();
   });
 });

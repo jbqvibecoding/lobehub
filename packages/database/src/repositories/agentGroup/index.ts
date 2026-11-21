@@ -74,6 +74,8 @@ export interface CreateGroupWithSupervisorResult {
   supervisorAgentId: string;
 }
 
+const BUILTIN_SLUGS = new Set<string>(Object.values(BUILTIN_AGENT_SLUGS));
+
 /**
  * Agent Group Repository - provides agent group detail data
  */
@@ -484,6 +486,60 @@ export class AgentGroupRepository {
   }
 
   /**
+   * Create a chat group hosted by an existing agent of the user's (Biber), instead of a new
+   * virtual supervisor: the host joins with role `supervisor`, the members as participants. Only
+   * the user's own agents join; the host is never also a member.
+   */
+  async createHostedGroup({
+    hostAgentId,
+    memberIds,
+    title,
+  }: {
+    hostAgentId: string;
+    memberIds: string[];
+    title: string;
+  }): Promise<CreateGroupWithSupervisorResult> {
+    const ids = [...new Set(memberIds)].filter((id) => id !== hostAgentId);
+    const owned = await this.db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(this.agentOwnership(), inArray(agents.id, [hostAgentId, ...ids])));
+    const ownedIds = new Set(owned.map((row) => row.id));
+    if (!ownedIds.has(hostAgentId) || ids.some((id) => !ownedIds.has(id))) {
+      throw new Error('Agent not found or access denied');
+    }
+
+    const [group] = await this.db
+      .insert(chatGroups)
+      .values({ title, userId: this.userId, workspaceId: this.workspaceId ?? null })
+      .returning();
+
+    const insertedAgents = await this.db
+      .insert(chatGroupsAgents)
+      .values([
+        {
+          agentId: hostAgentId,
+          chatGroupId: group.id,
+          order: -1,
+          role: 'supervisor',
+          userId: this.userId,
+          workspaceId: this.workspaceId ?? null,
+        },
+        ...ids.map((agentId, index) => ({
+          agentId,
+          chatGroupId: group.id,
+          order: index,
+          role: 'participant',
+          userId: this.userId,
+          workspaceId: this.workspaceId ?? null,
+        })),
+      ])
+      .returning();
+
+    return { agents: insertedAgents, group, supervisorAgentId: hostAgentId };
+  }
+
+  /**
    * Check which agents are virtual before removing them from a group.
    * This allows the frontend to show a confirmation dialog for virtual agents.
    *
@@ -516,7 +572,9 @@ export class AgentGroupRepository {
     const nonVirtualAgentIds: string[] = [];
 
     for (const agent of agentDetails) {
-      if (agent.virtual) {
+      // A builtin agent (Biber hosting the group) is virtual too, but it is the user's own
+      // assistant, not a copy made for this group: removing it from a group never deletes it
+      if (agent.virtual && !BUILTIN_SLUGS.has(agent.slug ?? '')) {
         const meta = normalizeInboxAgentMeta(
           { avatar: agent.avatar, title: agent.title },
           { slug: agent.slug },

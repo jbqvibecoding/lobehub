@@ -3898,8 +3898,24 @@ export class AiAgentService {
    * 1. Create topic with groupId (if needed)
    * 2. Delegate to execAgent for the rest
    */
-  async execGroupAgent(params: ExecGroupAgentParams): Promise<ExecGroupAgentResult> {
-    const { agentId, groupId, message, topicId: inputTopicId, newTopic } = params;
+  async execGroupAgent(
+    params: ExecGroupAgentParams & {
+      /** Appended to the supervisor's system role for this run, e.g. how Biber hosts */
+      instructions?: string;
+      /** How calls that need approval are handled; unattended unless the caller says otherwise */
+      userInterventionConfig?: UserInterventionConfig;
+    },
+  ): Promise<ExecGroupAgentResult> {
+    const {
+      agentId,
+      files,
+      groupId,
+      instructions,
+      message,
+      topicId: inputTopicId,
+      newTopic,
+      userInterventionConfig,
+    } = params;
 
     log(
       'execGroupAgent: agentId=%s, groupId=%s, message=%s',
@@ -3940,8 +3956,11 @@ export class AiAgentService {
       agentId,
       appContext: { groupId, orchestrationRole: 'supervisor', topicId },
       autoStart: true,
+      ...(files?.length && { fileIds: files }),
+      ...(instructions && { instructions }),
       prompt: message,
       trigger: RequestTrigger.Chat,
+      ...(userInterventionConfig && { userInterventionConfig }),
     });
 
     log(

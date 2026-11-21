@@ -12,6 +12,7 @@ import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { AgentRuntimeService } from '@/server/services/agentRuntime';
 import { AiAgentService } from '@/server/services/aiAgent';
+import { GROUP_MEMBER_LIMIT, GroupChatService } from '@/server/services/experts/groupChat';
 import { describeApprovalCall } from '@/server/services/toolApproval/describe';
 
 const log = debug('lobe-server:mobile:chat');
@@ -24,6 +25,7 @@ const chatProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) => 
     ctx: {
       agentRuntimeService: new AgentRuntimeService(ctx.serverDB, ctx.userId, { workspaceId }),
       aiAgentService: new AiAgentService(ctx.serverDB, ctx.userId, { workspaceId }),
+      groupChat: new GroupChatService(ctx.serverDB, ctx.userId, workspaceId),
       messageModel: new MessageModel(ctx.serverDB, ctx.userId, workspaceId),
       topicModel: new TopicModel(ctx.serverDB, ctx.userId, workspaceId),
     },
@@ -37,9 +39,12 @@ const chatProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) => 
  */
 export type ChatRunState = 'idle' | 'running' | 'waiting';
 
-/** One line of a conversation on the phone: what was said, and what the agent did. */
+/**
+ * One line of a conversation on the phone: what was said, and what the agent did. In a group chat,
+ * `agentId` says who answered (see `speakers`).
+ */
 export type ChatLine =
-  | { createdAt: Date; id: string; kind: 'user' | 'assistant'; text: string }
+  | { agentId?: string; createdAt: Date; id: string; kind: 'user' | 'assistant'; text: string }
   | {
       apiName?: string;
       arguments?: string;
@@ -63,26 +68,90 @@ const toolStatus = (row: {
   return row.pluginError ? 'failed' : 'done';
 };
 
+/** Who speaks in a conversation, by agent id, for the name and avatar above their messages. */
+export type ChatSpeakers = Record<
+  string,
+  { avatar: string | null; backgroundColor: string | null; isHost?: boolean; title: string }
+>;
+
+/** The group's own orchestration calls: the experts' answers that follow them say it all. */
+const GROUP_TOOL = 'lobe-group-management';
+
+const expertIds = z.array(z.string().max(64)).max(GROUP_MEMBER_LIMIT);
+
 /**
- * Chat on the phone: send a message to an agent (Biber by default), read the conversation back,
- * and stop a run. Runs started here wait for the user's answer on any call that needs approval,
- * as the web app does; the phone answers through `approval.respond`.
+ * Chat on the phone: send a message to an agent (Biber by default) or to a group Biber hosts with
+ * the user's experts, read the conversation back, and stop a run. Runs started here wait for the
+ * user's answer on any call that needs approval, as the web app does; the phone answers through
+ * `approval.respond`.
  */
 export const chatRouter = router({
-  history: chatProcedure
-    .input(z.object({ topicId: z.string() }))
-    .query(async ({ ctx, input }): Promise<{ lines: ChatLine[]; run: ChatRunState }> => {
+  /** Starts a group chat Biber hosts with some of the user's experts. */
+  startGroup: chatProcedure
+    .use(withScopedPermission('message:create'))
+    .input(
+      z.object({
+        expertIds: expertIds.min(1),
+        locale: z.string().max(20).optional(),
+        title: z.string().max(100).optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      ctx.groupChat.start({
+        expertIds: input.expertIds,
+        locale: input.locale ?? 'en-US',
+        title: input.title,
+      }),
+    ),
+
+  /** Who is in a group chat, Biber first. */
+  group: chatProcedure
+    .input(z.object({ groupId: z.string() }))
+    .query(async ({ ctx, input }) => ({ members: await ctx.groupChat.members(input.groupId) })),
+
+  /** Adds or removes experts; Biber hosts and stays. */
+  updateGroup: chatProcedure
+    .use(withScopedPermission('message:create'))
+    .input(
+      z.object({
+        addExpertIds: expertIds.optional(),
+        groupId: z.string(),
+        removeExpertIds: expertIds.optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => ({ members: await ctx.groupChat.update(input) })),
+
+  history: chatProcedure.input(z.object({ topicId: z.string() })).query(
+    async ({
+      ctx,
+      input,
+    }): Promise<{
+      groupId?: string;
+      lines: ChatLine[];
+      run: ChatRunState;
+      speakers: ChatSpeakers;
+    }> => {
       const topic = await ctx.topicModel.findById(input.topicId);
       if (!topic) throw new TRPCError({ code: 'NOT_FOUND', message: 'No such conversation' });
+      const groupId = topic.groupId ?? undefined;
 
-      const rows = (await ctx.messageModel.query({ topicId: input.topicId })) as any[];
+      const rows = (await ctx.messageModel.query({ groupId, topicId: input.topicId })) as any[];
       const lines: ChatLine[] = [];
       for (const row of rows) {
         if (row.role === 'user' || row.role === 'assistant') {
           const text = typeof row.content === 'string' ? row.content.trim() : '';
-          if (text) lines.push({ createdAt: row.createdAt, id: row.id, kind: row.role, text });
+          if (text) {
+            lines.push({
+              ...(groupId && row.role === 'assistant' && row.agentId && { agentId: row.agentId }),
+              createdAt: row.createdAt,
+              id: row.id,
+              kind: row.role,
+              text,
+            });
+          }
           continue;
         }
+        if (groupId && row.plugin?.identifier === GROUP_TOOL) continue;
         if (row.role === 'tool' && row.plugin?.apiName) {
           const { apiName, arguments: args, identifier, type } = row.plugin;
           lines.push({
@@ -113,28 +182,56 @@ export const chatRouter = router({
         else if (status?.isActive) run = 'running';
       }
 
-      return { lines, run };
-    }),
+      const speakers: ChatSpeakers = {};
+      if (groupId) {
+        for (const member of await ctx.groupChat.members(groupId)) {
+          speakers[member.id] = {
+            avatar: member.avatar,
+            backgroundColor: member.backgroundColor,
+            isHost: member.isHost,
+            title: member.title,
+          };
+        }
+      }
+
+      return { ...(groupId && { groupId }), lines, run, speakers };
+    },
+  ),
 
   /**
-   * Sends a message. Without a conversation it starts one with `agentId`, or with Biber when no
-   * agent is named; with one, it continues there.
+   * Sends a message. Without a conversation it starts one with `agentId`, with the group in
+   * `groupId`, or with Biber when neither is named; with one, it continues there. In a group,
+   * `mentions` are the experts the user addressed.
    */
   send: chatProcedure
     .use(withScopedPermission('message:create'))
     .input(
       z.object({
         agentId: z.string().optional(),
+        groupId: z.string().optional(),
+        mentions: expertIds.optional(),
         text: z.string().trim().min(1).max(8000),
         topicId: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       let agentId = input.agentId;
+      let groupId = input.groupId;
       if (input.topicId) {
         const topic = await ctx.topicModel.findById(input.topicId);
         if (!topic) throw new TRPCError({ code: 'NOT_FOUND', message: 'No such conversation' });
         agentId = topic.agentId ?? agentId;
+        groupId = topic.groupId ?? undefined;
+      }
+
+      if (groupId) {
+        log('send: group=%s topic=%s', groupId, input.topicId ?? 'new');
+        return ctx.groupChat.send({
+          groupId,
+          mentions: input.mentions,
+          text: input.text,
+          topicId: input.topicId,
+        });
       }
 
       log('send: topic=%s agent=%s', input.topicId ?? 'new', agentId ?? 'biber');
