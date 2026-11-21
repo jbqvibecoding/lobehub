@@ -3,7 +3,8 @@
  *
  * - an OpenAI-compatible model that, when a request offers the cloud computer's code tool and the
  *   user asked to run code, calls that tool (likewise Biber's reminders tool, see `reminderFor`);
- *   once the tool has answered, it replies in text;
+ *   once the tool has answered, it replies in text. Running as an expert it answers "Researcher
+ *   here: …"; hosting a group, Biber hands "ask the researcher …" to the researcher with `speak`;
  * - Expo's push service, recording every notification it is asked to send.
  *
  * Point the server at them with OPENAI_PROXY_URL=http://127.0.0.1:<model>/v1 and
@@ -16,7 +17,39 @@ import { deflateSync } from 'node:zlib';
 
 export const CODE_TOOL = 'lobe-cloud-sandbox____executeCode';
 export const REMIND_TOOL = 'lobe-reminders____addReminder';
+export const SPEAK_TOOL = 'lobe-group-management____speak';
 const HOUR = 60 * 60 * 1000;
+
+/** The expert names the fake model knows, in both languages, as their prompts introduce them. */
+const EXPERT_NAMES: Record<string, string[]> = {
+  Researcher: ['Researcher', '研究员'],
+  Writer: ['Writer', '写手'],
+};
+
+/** Which expert a request runs as: their prompt opens with "You are Researcher, …". */
+const expertSpeaking = (messages: ModelRequest['messages']) => {
+  const system = messages
+    .filter((message) => message.role === 'system')
+    .map((message) => textOf(message.content))
+    .join('\n');
+  return Object.keys(EXPERT_NAMES).find((name) => system.includes(`You are ${name},`));
+};
+
+/** A group member's id, from the group context in the host's prompt, by any of their names. */
+const memberId = (messages: ModelRequest['messages'], names: string[]) => {
+  const prompt = messages.map((message) => textOf(message.content)).join('\n');
+  for (const name of names) {
+    const patterns = [
+      new RegExp(`name="${name}"[^>]*\\bid="([^"]+)"`),
+      new RegExp(`\\bid="([^"]+)"[^>]*(?:name|title)="${name}"`),
+      new RegExp(`\\bid="([^"]+)"[^>]*>${name}\\b`),
+    ];
+    for (const pattern of patterns) {
+      const found = pattern.exec(prompt)?.[1];
+      if (found) return found;
+    }
+  }
+};
 
 /**
  * What the fake model notes when Biber offers its reminders tool: "Remind me to <x>" asks for a
@@ -85,6 +118,28 @@ export const decideReply = (
   // A refused call comes back as "User reject this tool calling …"
   if (toolResults.some((m) => /user reject/i.test(textOf(m.content)))) {
     return { text: 'Understood, I left the code alone.' };
+  }
+
+  // An expert answers in their own voice, so a smoke run can tell who spoke
+  const expert = expertSpeaking(request.messages);
+  if (expert) return { text: `${expert} here: three sources, all from this year.` };
+
+  // Hosting a group, Biber hands "ask the researcher …" to the researcher, who closes the round
+  const said = textOf(request.messages[lastUser]?.content);
+  if (
+    !toolAnswered &&
+    /ask the researcher|请研究员/i.test(said) &&
+    request.tools.includes(SPEAK_TOOL)
+  ) {
+    const agentId = memberId(request.messages, EXPERT_NAMES.Researcher);
+    if (agentId) {
+      return {
+        toolCall: {
+          arguments: JSON.stringify({ agentId, instruction: said, skipCallSupervisor: true }),
+          name: SPEAK_TOOL,
+        },
+      };
+    }
   }
 
   const reminder = reminderFor(textOf(request.messages[lastUser]?.content));

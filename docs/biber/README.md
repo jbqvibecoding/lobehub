@@ -34,6 +34,8 @@ Biber 是在 LobeHub 之上做的个人 AI 助理：用户在聊天软件里交�
 | 短信登录                                                     | `apps/server/src/services/sms`、`src/libs/better-auth`                              |
 | 云电脑（每个用户一台带浏览器的容器）                         | `apps/computer`、`apps/server/src/services/sandbox/providers/openbot.ts`            |
 | 手机应用（遥控器和审批器）                                   | `apps/mobile`                                                                       |
+| 主动消息与提醒                                               | `apps/server/src/services/proactive`、`packages/builtin-tool-reminders`             |
+| 专家与 Biber 主持的群聊                                      | `apps/server/src/services/experts`                                                  |
 | 支付和应用商店的回调入口                                     | `src/app/(backend)/api/webhooks/{stripe,apple,wechatpay,alipay}`                    |
 
 ## 各版本提供什么
