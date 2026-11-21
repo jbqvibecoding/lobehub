@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import { withScopedPermission } from '@/business/server/trpc-middlewares/rbacPermission';
 import { wsCompatProcedure } from '@/business/server/trpc-middlewares/workspaceAuth';
+import { AgentModel } from '@/database/models/agent';
 import { MessageModel } from '@/database/models/message';
 import { TopicModel } from '@/database/models/topic';
 import { router } from '@/libs/trpc/lambda';
@@ -25,6 +26,7 @@ const chatProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) => 
     ctx: {
       agentRuntimeService: new AgentRuntimeService(ctx.serverDB, ctx.userId, { workspaceId }),
       aiAgentService: new AiAgentService(ctx.serverDB, ctx.userId, { workspaceId }),
+      agentModel: new AgentModel(ctx.serverDB, ctx.userId, workspaceId),
       groupChat: new GroupChatService(ctx.serverDB, ctx.userId, workspaceId),
       messageModel: new MessageModel(ctx.serverDB, ctx.userId, workspaceId),
       topicModel: new TopicModel(ctx.serverDB, ctx.userId, workspaceId),
@@ -104,10 +106,10 @@ export const chatRouter = router({
       }),
     ),
 
-  /** Who is in a group chat, Biber first. */
+  /** A group chat's name and who is in it, Biber first. */
   group: chatProcedure
     .input(z.object({ groupId: z.string() }))
-    .query(async ({ ctx, input }) => ({ members: await ctx.groupChat.members(input.groupId) })),
+    .query(({ ctx, input }) => ctx.groupChat.describe(input.groupId)),
 
   /** Adds or removes experts; Biber hosts and stays. */
   updateGroup: chatProcedure
@@ -126,6 +128,8 @@ export const chatRouter = router({
       ctx,
       input,
     }): Promise<{
+      /** In a chat with one agent: who it is with (see `speakers`). */
+      agentId?: string;
       groupId?: string;
       lines: ChatLine[];
       run: ChatRunState;
@@ -192,9 +196,22 @@ export const chatRouter = router({
             title: member.title,
           };
         }
+        return { groupId, lines, run, speakers };
       }
 
-      return { ...(groupId && { groupId }), lines, run, speakers };
+      const agentId = topic.agentId ?? undefined;
+      if (agentId) {
+        const [agent] = await ctx.agentModel.getAgentAvatarsByIds([agentId]);
+        if (agent) {
+          speakers[agentId] = {
+            avatar: agent.avatar,
+            backgroundColor: agent.backgroundColor,
+            // Biber's title is filled in by the model; another agent may have none
+            title: agent.title || '',
+          };
+        }
+      }
+      return { ...(agentId && { agentId }), lines, run, speakers };
     },
   ),
 

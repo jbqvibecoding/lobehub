@@ -2,10 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { ApiClient } from '@/lib/api-client';
 
-import type { ChatHistory, RecentConversation } from './types';
+import type { ChatHistory, GroupChat, RecentConversation } from './types';
 
 export const conversationsKey = ['chat', 'conversations'] as const;
 export const chatHistoryKey = (topicId: string) => ['chat', 'history', topicId] as const;
+export const groupKey = (groupId: string) => ['chat', 'group', groupId] as const;
 
 /** How often an open conversation looks for news while its run writes, and while it waits. */
 const WHILE_RUNNING_MS = 1500;
@@ -20,23 +21,26 @@ const awaitsReply = (history: ChatHistory | undefined) => {
 
 export const useConversations = (api: ApiClient) =>
   useQuery({
-    queryFn: async () =>
-      ((await api.query('topic.recentTopics', { limit: 30 })) as RecentConversation[]).filter(
-        (conversation) => conversation.type === 'agent',
-      ),
+    queryFn: () => api.query('topic.recentTopics', { limit: 30 }) as Promise<RecentConversation[]>,
     queryKey: conversationsKey,
   });
 
 /**
  * An open conversation. It refreshes itself while its run writes, and more slowly while a call
- * waits for an answer that may come from another device; once the run is done it stops.
+ * waits for an answer that may come from another device; once the run is done it stops. A reader
+ * that only needs who the chat is with passes `poll: false` and shares what the conversation loads.
  */
-export const useChatHistory = (api: ApiClient, topicId: string | undefined) =>
+export const useChatHistory = (
+  api: ApiClient,
+  topicId: string | undefined,
+  { poll = true }: { poll?: boolean } = {},
+) =>
   useQuery({
     enabled: !!topicId,
     queryFn: () => api.query('chat.history', { topicId }) as Promise<ChatHistory>,
     queryKey: chatHistoryKey(topicId ?? ''),
     refetchInterval: (query) => {
+      if (!poll) return false;
       const history = query.state.data;
       if (history?.run === 'running' || awaitsReply(history)) return WHILE_RUNNING_MS;
       if (history?.run === 'waiting') return WHILE_WAITING_MS;
@@ -48,8 +52,13 @@ export const useSendMessage = (api: ApiClient) => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: { agentId?: string; text: string; topicId?: string }) =>
-      api.mutation('chat.send', input) as Promise<{ operationId: string; topicId: string }>,
+    mutationFn: (input: {
+      agentId?: string;
+      groupId?: string;
+      mentions?: string[];
+      text: string;
+      topicId?: string;
+    }) => api.mutation('chat.send', input) as Promise<{ operationId: string; topicId: string }>,
     onSuccess: ({ topicId }) =>
       Promise.all([
         queryClient.invalidateQueries({ queryKey: chatHistoryKey(topicId) }),
@@ -66,5 +75,37 @@ export const useStopRun = (api: ApiClient) => {
       api.mutation('chat.stop', { topicId }) as Promise<{ stopped: boolean }>,
     onSettled: (_result, _error, topicId) =>
       queryClient.invalidateQueries({ queryKey: chatHistoryKey(topicId) }),
+  });
+};
+
+/** A group chat's name and members, Biber first. */
+export const useGroup = (api: ApiClient, groupId: string | undefined) =>
+  useQuery({
+    enabled: !!groupId,
+    queryFn: () => api.query('chat.group', { groupId }) as Promise<GroupChat>,
+    queryKey: groupKey(groupId ?? ''),
+  });
+
+/** Starts a group chat Biber hosts with some of the user's experts. */
+export const useStartGroup = (api: ApiClient) =>
+  useMutation({
+    mutationFn: (input: { expertIds: string[]; locale?: string }) =>
+      api.mutation('chat.startGroup', input) as Promise<{ groupId: string; title: string | null }>,
+  });
+
+/** Adds or removes experts in a group chat; Biber stays. */
+export const useUpdateGroup = (api: ApiClient, groupId: string) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (change: { addExpertIds?: string[]; removeExpertIds?: string[] }) =>
+      api.mutation('chat.updateGroup', { groupId, ...change }) as Promise<
+        Pick<GroupChat, 'members'>
+      >,
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: groupKey(groupId) }),
+        queryClient.invalidateQueries({ queryKey: ['chat', 'history'] }),
+      ]),
   });
 };

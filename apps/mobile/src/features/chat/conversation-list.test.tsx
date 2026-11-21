@@ -25,7 +25,7 @@ const renderList = async (query: jest.Mock) => {
 };
 
 describe('ConversationList', () => {
-  it("lists recent chats with each agent's name, leaving out group chats", async () => {
+  it('lists recent chats with who each one is with, group chats by the group name', async () => {
     const conversations: RecentConversation[] = [
       {
         agent: { id: 'agent-1', title: 'Biber' },
@@ -36,10 +36,26 @@ describe('ConversationList', () => {
       },
       {
         agent: null,
+        group: {
+          id: 'group-1',
+          members: [
+            { avatar: '/avatars/biber.png', backgroundColor: null },
+            { avatar: '🔎', backgroundColor: '#eef' },
+          ],
+          title: 'Launch team',
+        },
         id: 'topic-2',
-        title: 'Team standup',
+        title: 'Launch post',
         type: 'group',
         updatedAt: new Date('2025-01-01T08:00:00Z'),
+      },
+      {
+        agent: null,
+        group: null,
+        id: 'topic-3',
+        title: 'Old group',
+        type: 'group',
+        updatedAt: new Date('2025-01-01T07:00:00Z'),
       },
     ];
     const query = jest.fn(async () => conversations);
@@ -48,7 +64,9 @@ describe('ConversationList', () => {
 
     expect(await screen.findByText('Plan the trip')).toBeOnTheScreen();
     expect(screen.getByText('Biber')).toBeOnTheScreen();
-    expect(screen.queryByText('Team standup')).not.toBeOnTheScreen();
+    expect(screen.getByText('Launch post')).toBeOnTheScreen();
+    expect(screen.getByText('Launch team')).toBeOnTheScreen();
+    expect(screen.getByText('Group chat')).toBeOnTheScreen();
     expect(screen.getByRole('button', { name: 'New chat' })).toBeOnTheScreen();
     expect(query).toHaveBeenCalledWith('topic.recentTopics', { limit: 30 });
   });

@@ -111,12 +111,23 @@ export class GroupChatService {
     return { groupId: group.id, title: group.title };
   }
 
-  /** Who is in the group, the host (Biber) first. */
-  async members(groupId: string): Promise<GroupMember[]> {
+  private async group(groupId: string) {
     const group = await new ChatGroupModel(this.db, this.userId, this.workspaceId).findById(
       groupId,
     );
     if (!group) throw new TRPCError({ code: 'NOT_FOUND', message: 'No such group' });
+    return group;
+  }
+
+  /** The group's name and who is in it. */
+  async describe(groupId: string) {
+    const { title } = await this.group(groupId);
+    return { members: await this.members(groupId), title: title ?? null };
+  }
+
+  /** Who is in the group, the host (Biber) first. */
+  async members(groupId: string): Promise<GroupMember[]> {
+    await this.group(groupId);
 
     const rows = await this.db
       .select({

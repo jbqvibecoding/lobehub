@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { getLocales } from 'expo-localization';
 import { router } from 'expo-router';
 import { useState } from 'react';
@@ -19,8 +19,7 @@ import type { ApiClient } from '@/lib/api-client';
 import { type Palette, useColors } from '@/theme/colors';
 
 import type { Expert } from './types';
-
-export const expertsKey = ['experts'] as const;
+import { expertsKey, useExperts } from './use-experts';
 
 /**
  * The expert roster: specialists the user can add to their team with a tap, chat with on their
@@ -33,10 +32,7 @@ export const ExpertsView = ({ api }: { api: ApiClient }) => {
   const [failed, setFailed] = useState(false);
   const locale = getLocales()[0]?.languageTag;
 
-  const { data, error, isFetching, isLoading, refetch } = useQuery({
-    queryFn: () => api.query('experts.list', { locale }) as Promise<Expert[]>,
-    queryKey: expertsKey,
-  });
+  const { data, error, isFetching, isLoading, refetch } = useExperts(api);
 
   const change = useMutation({
     mutationFn: ({ add, id }: { add: boolean; id: string }) =>

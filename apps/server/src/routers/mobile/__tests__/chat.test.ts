@@ -119,6 +119,17 @@ describe('mobile chatRouter.history', () => {
     await cleanupTestUser(testDB, chat.userId);
   });
 
+  it('says who a one-on-one chat is with', async () => {
+    const chat = await createConversation();
+
+    const history = await callerFor(chat.userId).history({ topicId: chat.topicId });
+
+    expect(history.agentId).toBe(chat.agentId);
+    expect(history.groupId).toBeUndefined();
+    expect(history.speakers[chat.agentId]).toMatchObject({ title: 'Assistant' });
+    await cleanupTestUser(testDB, chat.userId);
+  });
+
   it("does not show someone else's conversation", async () => {
     const chat = await createConversation();
     const stranger = await createConversation();
@@ -201,15 +212,14 @@ describe('mobile chatRouter group chats', () => {
   it('starts a group Biber hosts, named after the experts in it', async () => {
     const { caller, groupId, researcher, writer } = await groupWithExperts();
 
-    const { members } = await caller.group({ groupId });
+    const { members, title } = await caller.group({ groupId });
     expect(members.map(({ isHost, title }) => ({ isHost, title }))).toEqual([
       { isHost: true, title: 'Biber' },
       { isHost: false, title: 'Researcher' },
       { isHost: false, title: 'Writer' },
     ]);
     expect(members.slice(1).map((member) => member.id)).toEqual([researcher.id, writer.id]);
-    const [group] = await testDB.query.chatGroups.findMany();
-    expect(group.title).toBe('Biber, Researcher, Writer');
+    expect(title).toBe('Biber, Researcher, Writer');
   });
 
   it('lets the one expert the user mentioned answer directly', async () => {

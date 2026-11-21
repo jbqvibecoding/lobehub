@@ -13,7 +13,18 @@ import { t } from '@/i18n/strings';
 import type { ApiClient } from '@/lib/api-client';
 import { type Palette, useColors } from '@/theme/colors';
 
+import { AgentAvatar } from './agent-avatar';
+import type { RecentConversation } from './types';
 import { useConversations } from './use-chat';
+
+/** Member avatars shown on a group row, at most */
+const GROUP_AVATARS = 4;
+
+/** Who a conversation is with, as its row names them. */
+const withWhom = (conversation: RecentConversation) =>
+  conversation.type === 'group'
+    ? conversation.group?.title || t('chatGroupFallbackTitle')
+    : (conversation.agent?.title ?? 'Biber');
 
 const formatWhen = (date: Date) =>
   new Date(date).toLocaleString(undefined, {
@@ -23,14 +34,17 @@ const formatWhen = (date: Date) =>
     month: 'short',
   });
 
-/** Recent chats with the user's agents, newest first, and a way to start one with Biber. */
+/**
+ * Recent chats with Biber, the user's experts and their group chats, newest first, and a way to
+ * start a new one.
+ */
 export const ConversationList = ({ api }: { api: ApiClient }) => {
   const colors = useColors();
   const styles = createStyles(colors);
   const { data, error, isFetching, isLoading, refetch } = useConversations(api);
 
   const newChat = (
-    <Link asChild href={{ params: { topicId: 'new' }, pathname: '/chat/[topicId]' }}>
+    <Link asChild href="/chat/start">
       <Pressable role="button" style={styles.newChat}>
         <Text style={styles.newChatLabel}>{t('chatNew')}</Text>
       </Pressable>
@@ -78,9 +92,24 @@ export const ConversationList = ({ api }: { api: ApiClient }) => {
         <Link asChild href={{ params: { topicId: item.id }, pathname: '/chat/[topicId]' }}>
           <Pressable role="button" style={styles.row}>
             <View style={styles.rowHeader}>
-              <Text numberOfLines={1} style={styles.agent}>
-                {item.agent?.title ?? 'Biber'}
-              </Text>
+              <View style={styles.who}>
+                {item.type === 'group' ? (
+                  <View style={styles.avatars}>
+                    {(item.group?.members ?? []).slice(0, GROUP_AVATARS).map((member, index) => (
+                      <AgentAvatar
+                        avatar={member.avatar}
+                        backgroundColor={member.backgroundColor}
+                        key={index}
+                        size={18}
+                        title={index === 0 ? 'Biber' : '?'}
+                      />
+                    ))}
+                  </View>
+                ) : null}
+                <Text numberOfLines={1} style={styles.agent}>
+                  {withWhom(item)}
+                </Text>
+              </View>
               <Text style={styles.when}>{formatWhen(item.updatedAt)}</Text>
             </View>
             <Text numberOfLines={2} style={styles.title}>
@@ -97,6 +126,7 @@ export const ConversationList = ({ api }: { api: ApiClient }) => {
 const createStyles = (colors: Palette) =>
   StyleSheet.create({
     agent: { color: colors.secondaryLabel, flexShrink: 1, fontSize: 13 },
+    avatars: { flexDirection: 'row', gap: 2 },
     centered: { alignItems: 'center', gap: 12, marginTop: 48 },
     inlineError: { color: colors.danger, fontSize: 14, marginBottom: 12 },
     link: { color: colors.accent, fontSize: 16 },
@@ -123,4 +153,5 @@ const createStyles = (colors: Palette) =>
     separator: { height: 8 },
     title: { color: colors.label, fontSize: 16, fontWeight: '600', marginTop: 4 },
     when: { color: colors.secondaryLabel, fontSize: 13 },
+    who: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: 6 },
   });
