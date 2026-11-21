@@ -10,6 +10,7 @@
  * - No dependency on frontend stores (useToolStore, useAgentStore, etc.)
  */
 import { BrowserManifest } from '@lobechat/builtin-tool-browser';
+import { CalendarManifest } from '@lobechat/builtin-tool-calendar';
 import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
@@ -235,7 +236,10 @@ export const createServerAgentToolsEngine = (
   const chatModeRules = {
     [KnowledgeBaseManifest.identifier]: hasEnabledKnowledgeBases,
     [MemoryManifest.identifier]: globalMemoryEnabled,
-    // Biber's reminders and mail: only for the agent whose plugins carry them
+    // Biber's reminders, mail and calendar: only for the agent whose plugins carry them
+    [CalendarManifest.identifier]: (agentConfig.plugins ?? []).includes(
+      CalendarManifest.identifier,
+    ),
     [MailManifest.identifier]: (agentConfig.plugins ?? []).includes(MailManifest.identifier),
     [RemindersManifest.identifier]: (agentConfig.plugins ?? []).includes(
       RemindersManifest.identifier,

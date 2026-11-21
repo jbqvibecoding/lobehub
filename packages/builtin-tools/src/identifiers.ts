@@ -10,6 +10,7 @@ import {
 } from '@lobechat/builtin-tool-agent-signal';
 import { BrowserManifest } from '@lobechat/builtin-tool-browser';
 import { CalculatorManifest } from '@lobechat/builtin-tool-calculator';
+import { CalendarManifest } from '@lobechat/builtin-tool-calendar';
 import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { CredsManifest } from '@lobechat/builtin-tool-creds';
 import { GroupAgentBuilderManifest } from '@lobechat/builtin-tool-group-agent-builder';
@@ -47,6 +48,7 @@ export const builtinToolIdentifiers: string[] = [
   MemoryManifest.identifier,
   NotebookManifest.identifier,
   PageAgentManifest.identifier,
+  CalendarManifest.identifier,
   MailManifest.identifier,
   RemindersManifest.identifier,
   selfFeedbackIntentManifest.identifier,

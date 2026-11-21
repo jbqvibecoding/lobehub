@@ -35,6 +35,7 @@ import { apiKeyRouter } from './apiKey';
 import { asrRouter } from './asr';
 import { botMessageRouter } from './botMessage';
 import { briefRouter } from './brief';
+import { calendarRouter } from './calendar';
 import { changelogRouter } from './changelog';
 import { chunkRouter } from './chunk';
 import { comfyuiRouter } from './comfyui';
@@ -139,6 +140,7 @@ export const lambdaRouter = router({
   pushToken: pushTokenRouter,
   ragEval: ragEvalRouter,
   recent: recentRouter,
+  calendar: calendarRouter,
   mail: mailRouter,
   reminders: remindersRouter,
   search: searchRouter,

@@ -18,6 +18,7 @@ import { agentSignalSkillManagementRuntime } from './agentSignalSkillManagement'
 import { briefRuntime } from './brief';
 import { browserRuntime } from './browser';
 import { calculatorRuntime } from './calculator';
+import { calendarRuntime } from './calendar';
 import { cloudSandboxRuntime } from './cloudSandbox';
 import { credsRuntime } from './creds';
 import { groupManagementRuntime } from './groupManagement';
@@ -71,6 +72,7 @@ registerRuntimes([
   skillStoreRuntime,
   skillsRuntime,
   memoryRuntime,
+  calendarRuntime,
   mailRuntime,
   remindersRuntime,
   activatorRuntime,

@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { CalendarManifest } from '@lobechat/builtin-tool-calendar';
 import { GroupAgentBuilderManifest } from '@lobechat/builtin-tool-group-agent-builder';
 import { GroupManagementManifest } from '@lobechat/builtin-tool-group-management';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
@@ -639,6 +640,13 @@ describe('createServerAgentToolsEngine', () => {
     it('is on for Biber once a mailbox put it in its plugins, in agent and chat mode', () => {
       expect(toolsFor([MailManifest.identifier])).toContain(MailManifest.identifier);
       expect(toolsFor([MailManifest.identifier], 'chat')).toContain(MailManifest.identifier);
+    });
+
+    it('turns the calendar tool on the same way, once a calendar is connected', () => {
+      expect(toolsFor([CalendarManifest.identifier], 'chat')).toContain(
+        CalendarManifest.identifier,
+      );
+      expect(toolsFor([], 'chat')).not.toContain(CalendarManifest.identifier);
     });
 
     it('is off without a mailbox, and for other agents', () => {

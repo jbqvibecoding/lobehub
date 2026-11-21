@@ -2,6 +2,7 @@
  * Tools Engineering - Unified tools processing using ToolsEngine
  */
 import { BrowserManifest } from '@lobechat/builtin-tool-browser';
+import { CalendarManifest } from '@lobechat/builtin-tool-calendar';
 import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
@@ -267,7 +268,10 @@ export const createAgentToolsEngine = (
   const chatModeRules = {
     [KnowledgeBaseManifest.identifier]: kbEnabled,
     [MemoryManifest.identifier]: memoryEnabled,
-    // Biber's reminders and mail: only for the agent whose plugins carry them
+    // Biber's reminders, mail and calendar: only for the agent whose plugins carry them
+    [CalendarManifest.identifier]: [...(pluginIds ?? []), ...userPlugins].includes(
+      CalendarManifest.identifier,
+    ),
     [MailManifest.identifier]: [...(pluginIds ?? []), ...userPlugins].includes(
       MailManifest.identifier,
     ),
