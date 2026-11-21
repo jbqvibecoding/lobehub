@@ -194,6 +194,47 @@ describe('ComposioService.executeComposioTool', () => {
     );
   });
 
+  it('hides one-time codes and sign-in links in what a mail toolkit returns', async () => {
+    mocks.connectorQueryByIdentifiers.mockResolvedValue([activeConnectorRow()]);
+    mocks.toolsExecute.mockResolvedValue({
+      data: {
+        messages: [
+          {
+            messageText:
+              'Your verification code is 482913. Or sign in: https://example.com/login?token=Zx81kQ0pLm2Vb7Ty',
+            subject: 'Sign in',
+          },
+        ],
+      },
+    });
+
+    const result = await service().executeComposioTool({
+      args: {},
+      identifier: 'gmail',
+      toolSlug: 'GMAIL_FETCH_EMAILS',
+    });
+
+    expect(result.content).not.toContain('482913');
+    expect(result.content).not.toContain('Zx81kQ0pLm2Vb7Ty');
+    expect(result.content).toContain('[hidden]');
+    expect(result.content).toContain('Sign in');
+  });
+
+  it('leaves what other toolkits return as it is', async () => {
+    mocks.connectorQueryByIdentifiers.mockResolvedValue([
+      activeConnectorRow({ identifier: 'github' }),
+    ]);
+    mocks.toolsExecute.mockResolvedValue({ data: 'code: 482913' });
+
+    const result = await service().executeComposioTool({
+      args: {},
+      identifier: 'github',
+      toolSlug: 'GITHUB_GET_A_FILE',
+    });
+
+    expect(result.content).toBe('code: 482913');
+  });
+
   it('returns COMPOSIO_CONFIG_NOT_FOUND when neither source has an account', async () => {
     mocks.connectorQueryByIdentifiers.mockResolvedValue([]);
     mocks.pluginFindById.mockResolvedValue(undefined);

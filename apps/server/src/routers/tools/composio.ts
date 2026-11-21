@@ -1,3 +1,4 @@
+import { isMailToolkit, maskMailSecretsIn } from '@lobechat/agent-policy';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -62,7 +63,9 @@ export const composioToolsRouter = router({
       }
 
       const data = result as any;
-      const content = data?.data || data?.result || data;
+      const raw = data?.data || data?.result || data;
+      // One-time codes and sign-in links in the user's mail never reach the model
+      const content = isMailToolkit(input.identifier) ? maskMailSecretsIn(raw) : raw;
       const contentStr = typeof content === 'string' ? content : JSON.stringify(content);
 
       return await MCPService.processToolCallResult({

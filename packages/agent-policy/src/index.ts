@@ -18,7 +18,17 @@ export {
   type ToolCallRequest,
   toolKey,
 } from './engine';
+export { HIDDEN, maskMailSecrets, maskMailSecretsIn } from './inbound';
 export { findSecrets, maskSecrets, type SecretKind } from './outbound';
+export {
+  BUILTIN_OUTBOUND_CALLS,
+  CALENDAR_TOOLKITS,
+  isMailToolkit,
+  isPersonalAccountToolkit,
+  isReadOnlyAccountAction,
+  MAIL_TOOLKITS,
+  stripToolkitPrefix,
+} from './personalAccounts';
 export {
   ALL_CAPABILITIES,
   DEFAULT_TIER_TABLE,

@@ -1,3 +1,4 @@
+import { isMailToolkit, maskMailSecretsIn } from '@lobechat/agent-policy';
 import { COMPOSIO_APP_TYPES } from '@lobechat/const';
 import type { LobeToolManifest } from '@lobechat/context-engine';
 import type { LobeChatDatabase } from '@lobechat/database';
@@ -114,7 +115,9 @@ export class ComposioService {
       log('executeComposioTool: response: %O', result);
 
       const data = result as any;
-      const content = data?.data || data?.result || data;
+      const raw = data?.data || data?.result || data;
+      // One-time codes and sign-in links in the user's mail never reach the model
+      const content = isMailToolkit(identifier) ? maskMailSecretsIn(raw) : raw;
 
       let resultContent = '';
       if (typeof content === 'string') {

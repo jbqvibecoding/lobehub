@@ -1,4 +1,8 @@
-import { classifyTool } from '@lobechat/agent-policy';
+import {
+  classifyTool,
+  isPersonalAccountToolkit,
+  isReadOnlyAccountAction,
+} from '@lobechat/agent-policy';
 import {
   type DynamicInterventionResolver,
   type GlobalInterventionAuditConfig,
@@ -28,8 +32,10 @@ export const isExternalTool = (call: AuditedToolCall) =>
 
 /**
  * A third-party tool call that sends, pays, publishes, merges, deploys or deletes something waits
- * for the user, in every approval mode; headless runs get it back as a blocked result. A tool the
- * user chose to always allow (`identifier/apiName` in the allow list) runs as before.
+ * for the user, in every approval mode; headless runs get it back as a blocked result. On the
+ * user's mailbox and calendar every change waits, since it acts in their name: a draft, a label,
+ * an event. A tool the user chose to always allow (`identifier/apiName` in the allow list) runs as
+ * before.
  *
  * Reads `metadata.toolCall` and `metadata.allowList`, which the agent adds for global audits.
  */
@@ -41,6 +47,7 @@ export const createExternalSensitiveActionAudit = (): DynamicInterventionResolve
     const allowList = (metadata?.allowList as string[] | undefined) ?? [];
     if (allowList.includes(`${call.identifier}/${call.apiName}`)) return false;
 
+    if (isPersonalAccountToolkit(call.identifier)) return !isReadOnlyAccountAction(call.apiName);
     return classifyTool({ name: call.apiName }) === 'sensitive';
   };
 };

@@ -4,7 +4,7 @@
  */
 import type { GrantLevel, PolicyTool, ToolClass } from './types';
 
-const READ_WORDS = new Set([
+export const READ_WORDS = new Set([
   'count',
   'describe',
   'fetch',
@@ -20,7 +20,7 @@ const READ_WORDS = new Set([
   'view',
 ]);
 
-const SENSITIVE_WORDS = new Set([
+export const SENSITIVE_WORDS = new Set([
   'delete',
   'deploy',
   'destroy',
@@ -35,7 +35,7 @@ const SENSITIVE_WORDS = new Set([
 ]);
 
 /** `mergePullRequest` and `merge_pull_request` both become `merge pull request`. */
-const words = (name: string): string[] =>
+export const words = (name: string): string[] =>
   name
     .replaceAll(/([\da-z])([A-Z])/g, '$1_$2')
     .toLowerCase()

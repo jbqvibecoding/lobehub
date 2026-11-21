@@ -70,6 +70,25 @@ describe('composioToolsRouter.executeAction', () => {
     );
   });
 
+  it('hides one-time codes in mail before it goes back to the browser', async () => {
+    mocks.connectorQueryByIdentifiers.mockResolvedValue([
+      { metadata: { composio: { connectedAccountId: 'ca-connector' } } },
+    ]);
+    mocks.toolsExecute.mockResolvedValue({
+      data: { messages: [{ snippet: '您的验证码是482913，5分钟内有效' }] },
+    });
+
+    await caller().executeAction({
+      identifier: 'gmail',
+      toolArgs: {},
+      toolSlug: 'GMAIL_FETCH_EMAILS',
+    });
+
+    const [{ content }] = mocks.processToolCallResult.mock.calls[0];
+    expect(content[0].text).not.toContain('482913');
+    expect(content[0].text).toContain('[hidden]');
+  });
+
   it('throws NOT_FOUND when neither source has a connection', async () => {
     mocks.connectorQueryByIdentifiers.mockResolvedValue([]);
     mocks.pluginFindById.mockResolvedValue(undefined);
