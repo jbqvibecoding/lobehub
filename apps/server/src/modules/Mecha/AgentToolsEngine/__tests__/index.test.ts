@@ -5,6 +5,7 @@ import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
 import { LobeAgentApiName, LobeAgentManifest } from '@lobechat/builtin-tool-lobe-agent';
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
 import { MemoryManifest } from '@lobechat/builtin-tool-memory';
+import { RemindersManifest } from '@lobechat/builtin-tool-reminders';
 import { RemoteDeviceManifest } from '@lobechat/builtin-tool-remote-device';
 import { SkillsApiName, SkillsManifest } from '@lobechat/builtin-tool-skills';
 import { WebBrowsingManifest } from '@lobechat/builtin-tool-web-browsing';
@@ -570,6 +571,33 @@ describe('createServerAgentToolsEngine', () => {
       });
 
       expect(result.enabledToolIds).toContain(MemoryManifest.identifier);
+    });
+  });
+
+  describe('Reminders tool enable rules', () => {
+    const remindersFor = (plugins: string[], toolMode?: 'chat') => {
+      const engine = createServerAgentToolsEngine(createMockContext(), {
+        agentConfig: { chatConfig: toolMode && { toolMode }, plugins },
+        model: 'gpt-4',
+        provider: 'openai',
+      });
+      return engine.generateToolsDetailed({
+        model: 'gpt-4',
+        provider: 'openai',
+        toolIds: plugins,
+      }).enabledToolIds;
+    };
+
+    it('is on for the agent that carries it (Biber), in agent and chat mode', () => {
+      expect(remindersFor([RemindersManifest.identifier])).toContain(RemindersManifest.identifier);
+      expect(remindersFor([RemindersManifest.identifier], 'chat')).toContain(
+        RemindersManifest.identifier,
+      );
+    });
+
+    it('is off for other agents, even in chat mode where it is allowed', () => {
+      expect(remindersFor([])).not.toContain(RemindersManifest.identifier);
+      expect(remindersFor([], 'chat')).not.toContain(RemindersManifest.identifier);
     });
   });
 

@@ -1,4 +1,5 @@
 import { AgentDocumentsIdentifier } from '@lobechat/builtin-tool-agent-documents';
+import { RemindersIdentifier } from '@lobechat/builtin-tool-reminders';
 import { UserInteractionIdentifier } from '@lobechat/builtin-tool-user-interaction';
 
 import type { BuiltinAgentDefinition } from '../../types';
@@ -13,7 +14,12 @@ import { createSystemRole } from './systemRole';
 export const INBOX: BuiltinAgentDefinition = {
   avatar: '/avatars/lobe-ai.png',
   runtime: (ctx) => ({
-    plugins: [AgentDocumentsIdentifier, UserInteractionIdentifier, ...(ctx.plugins || [])],
+    plugins: [
+      AgentDocumentsIdentifier,
+      RemindersIdentifier,
+      UserInteractionIdentifier,
+      ...(ctx.plugins || []),
+    ],
     systemRole: createSystemRole(ctx.userLocale),
   }),
 

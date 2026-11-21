@@ -149,6 +149,7 @@ import { buildCloudHeteroContext } from '@/server/services/heterogeneousAgent/cl
 import { buildRemoteDeviceHeteroContext } from '@/server/services/heterogeneousAgent/remoteDeviceHeteroContext';
 import { MarketService } from '@/server/services/market';
 import { loadUserMemoryForRun } from '@/server/services/memory/userMemory/forRun';
+import { resolveTimeZone } from '@/server/services/proactive/biber';
 import { markdownToTxt } from '@/utils/markdownToTxt';
 
 import { resolveDeviceAccessPolicy } from './deviceAccessPolicy';
@@ -2269,7 +2270,11 @@ export class AiAgentService {
       globalMemoryEnabled = agentMemoryEnabled ?? memorySettings?.enabled !== false;
 
       const generalSettings = settings?.general as { timezone?: string } | undefined;
-      userTimezone = generalSettings?.timezone;
+      // Without a web setting, the phone's zone, else the edition's home: times the user says
+      // ("at 3") must mean theirs, not UTC
+      userTimezone =
+        generalSettings?.timezone ||
+        (await resolveTimeZone(this.db, this.userId).catch(() => undefined));
 
       storedAllowList = (settings?.tool as UserToolConfig | undefined)?.humanIntervention
         ?.allowList;

@@ -22,6 +22,7 @@ import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
 import { MemoryManifest } from '@lobechat/builtin-tool-memory';
 import { MessageManifest } from '@lobechat/builtin-tool-message';
 import { PageAgentManifest } from '@lobechat/builtin-tool-page-agent';
+import { RemindersManifest } from '@lobechat/builtin-tool-reminders';
 import { RemoteDeviceManifest } from '@lobechat/builtin-tool-remote-device';
 import { selfFeedbackIntentManifest } from '@lobechat/builtin-tool-self-iteration';
 import { SkillMaintainerManifest } from '@lobechat/builtin-tool-skill-maintainer';
@@ -109,6 +110,8 @@ export const manualModeExcludeToolIds = [
 export const chatModeAllowedToolIds = [
   KnowledgeBaseManifest.identifier,
   MemoryManifest.identifier,
+  // Biber only: the tools engines enable it in chat mode when the agent's plugins carry it
+  RemindersManifest.identifier,
   WebBrowsingManifest.identifier,
 ];
 
@@ -250,6 +253,14 @@ const builtinToolRegistry: LobeBuiltinTool[] = [
     hidden: true,
     identifier: MemoryManifest.identifier,
     manifest: MemoryManifest,
+    type: 'builtin',
+  },
+  {
+    // Biber's own: the inbox agent carries it in its plugins
+    discoverable: false,
+    hidden: true,
+    identifier: RemindersManifest.identifier,
+    manifest: RemindersManifest,
     type: 'builtin',
   },
   {

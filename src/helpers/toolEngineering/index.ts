@@ -6,6 +6,7 @@ import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
 import { MemoryManifest } from '@lobechat/builtin-tool-memory';
+import { RemindersManifest } from '@lobechat/builtin-tool-reminders';
 import { WebBrowsingManifest } from '@lobechat/builtin-tool-web-browsing';
 import { alwaysOnToolIds, chatModeAllowedToolIds, defaultToolIds } from '@lobechat/builtin-tools';
 import { createEnableChecker, type PluginEnableChecker } from '@lobechat/context-engine';
@@ -230,6 +231,10 @@ export const createAgentToolsEngine = (
   const chatModeRules = {
     [KnowledgeBaseManifest.identifier]: kbEnabled,
     [MemoryManifest.identifier]: memoryEnabled,
+    // Biber's reminders: only for the agent whose plugins carry it
+    [RemindersManifest.identifier]: [...(pluginIds ?? []), ...userPlugins].includes(
+      RemindersManifest.identifier,
+    ),
     [WebBrowsingManifest.identifier]: webBrowsingEnabled,
   };
 
