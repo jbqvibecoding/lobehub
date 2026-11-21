@@ -28,6 +28,8 @@ const TOOL_STATUS = {
 } as const;
 
 interface ConversationProps {
+  /** For a new chat with someone other than Biber, e.g. an expert. */
+  agentId?: string;
   api: ApiClient;
   /** Called with the new conversation once the first message of a new chat is sent. */
   onStarted: (topicId: string) => void;
@@ -40,7 +42,7 @@ interface ConversationProps {
  * call that needs the user's answer is answered right here; while the agent works, it can be
  * stopped. A message that fails to send stays in the box.
  */
-export const Conversation = ({ api, onStarted, topicId }: ConversationProps) => {
+export const Conversation = ({ agentId, api, onStarted, topicId }: ConversationProps) => {
   const colors = useColors();
   const styles = createStyles(colors);
   const queryClient = useQueryClient();
@@ -59,7 +61,11 @@ export const Conversation = ({ api, onStarted, topicId }: ConversationProps) => 
     if (!canSend) return;
     setSendFailed(false);
     try {
-      const started = await send.mutateAsync({ text: draft.trim(), topicId });
+      const started = await send.mutateAsync({
+        text: draft.trim(),
+        topicId,
+        ...(!topicId && agentId && { agentId }),
+      });
       setDraft('');
       if (!topicId) onStarted(started.topicId);
     } catch {

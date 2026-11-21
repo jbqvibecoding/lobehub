@@ -29,12 +29,14 @@ const history = (overrides: Partial<ChatHistory> = {}): ChatHistory => ({
 });
 
 const renderConversation = async ({
+  agentId,
   mutation = jest.fn(async () => ({})),
   onStarted = jest.fn(),
   query = jest.fn(async () => history()),
   // null: a new chat
   topicId = 'topic-1',
 }: {
+  agentId?: string;
   mutation?: jest.Mock;
   onStarted?: jest.Mock;
   query?: jest.Mock;
@@ -52,6 +54,7 @@ const renderConversation = async ({
       }
     >
       <Conversation
+        agentId={agentId}
         api={{ mutation, query } as unknown as ApiClient}
         onStarted={onStarted}
         topicId={topicId ?? undefined}
@@ -117,6 +120,21 @@ describe('Conversation', () => {
     });
     expect(onStarted).toHaveBeenCalledWith('topic-new');
     expect(query).not.toHaveBeenCalledWith('chat.history', expect.anything());
+  });
+
+  it('starts a new chat with an expert when one was chosen', async () => {
+    const user = userEvent.setup();
+    const mutation = jest.fn(async () => ({ operationId: 'op-1', topicId: 'topic-new' }));
+    await renderConversation({ agentId: 'agt_researcher', mutation, topicId: null });
+
+    await user.type(screen.getByLabelText('Message Biber'), 'Find sources on sleep and memory');
+    await user.press(screen.getByRole('button', { name: 'Send' }));
+
+    expect(mutation).toHaveBeenCalledWith('chat.send', {
+      agentId: 'agt_researcher',
+      text: 'Find sources on sleep and memory',
+      topicId: undefined,
+    });
   });
 
   it('answers a call that waits for approval, in place', async () => {

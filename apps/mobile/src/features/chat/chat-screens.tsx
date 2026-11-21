@@ -14,15 +14,23 @@ export const ConversationListScreen = () => (
   </>
 );
 
-/** `/chat/new` starts a chat with Biber; once its first message is sent, it becomes that chat. */
+/**
+ * `/chat/new` starts a chat with Biber, or with the agent in `agentId` (an expert); once its first
+ * message is sent, it becomes that chat.
+ */
 export const ConversationScreen = () => {
-  const { topicId } = useLocalSearchParams<{ topicId: string }>();
+  const { agentId, title, topicId } = useLocalSearchParams<{
+    agentId?: string;
+    title?: string;
+    topicId: string;
+  }>();
   const isNew = topicId === 'new';
 
   return (
     <>
-      <Stack.Screen options={{ title: isNew ? t('chatNew') : '' }} />
+      <Stack.Screen options={{ title: isNew ? (title ?? t('chatNew')) : '' }} />
       <Conversation
+        agentId={isNew ? agentId : undefined}
         api={api}
         onStarted={(started) =>
           router.replace({ params: { topicId: started }, pathname: '/chat/[topicId]' })

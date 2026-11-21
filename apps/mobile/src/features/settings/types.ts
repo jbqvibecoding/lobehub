@@ -71,3 +71,14 @@ export interface ProactiveThought {
   seed: string;
   source: 'activity' | 'agent' | 'asked';
 }
+
+/** One of the experts the user can add to their team (`experts.list`). */
+export interface Expert {
+  /** The user's agent for this expert, once added */
+  agentId: string | null;
+  avatar: string;
+  backgroundColor: string;
+  description: string;
+  id: string;
+  title: string;
+}

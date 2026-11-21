@@ -48,7 +48,7 @@ export const useSendMessage = (api: ApiClient) => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: { text: string; topicId?: string }) =>
+    mutationFn: (input: { agentId?: string; text: string; topicId?: string }) =>
       api.mutation('chat.send', input) as Promise<{ operationId: string; topicId: string }>,
     onSuccess: ({ topicId }) =>
       Promise.all([

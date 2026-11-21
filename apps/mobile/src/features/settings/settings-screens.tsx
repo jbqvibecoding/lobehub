@@ -5,6 +5,7 @@ import { t } from '@/i18n/strings';
 import { api } from '@/lib/api';
 import { type Palette, useColors } from '@/theme/colors';
 
+import { ExpertsView } from './experts';
 import { LinkedChatsView } from './linked-chats';
 import { MemoriesList } from './memories';
 import { ProactiveSettingsView } from './proactive';
@@ -23,6 +24,13 @@ export const LinkedChatsScreen = () => {
     </ScrollView>
   );
 };
+
+export const ExpertsScreen = () => (
+  <>
+    <Stack.Screen options={{ title: t('expertsTitle') }} />
+    <ExpertsView api={api} />
+  </>
+);
 
 export const MemoriesScreen = () => (
   <>
