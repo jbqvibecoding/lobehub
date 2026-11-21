@@ -207,6 +207,12 @@ export const createAgentToolsEngine = (
   pluginIds?: string[],
   /** Conversation context for context-aware builtin manifests (scope, isSubAgent). */
   manifestContext?: BuiltinToolResolveContext,
+  /**
+   * The tool mode of the agent running this turn, resolved by the caller from that agent's own
+   * config (in a group it is the member speaking, not the agent open in the window). `custom`:
+   * exactly `pluginIds`, as on the server; no always-on, default or runtime-managed tools.
+   */
+  toolMode?: 'agent' | 'chat' | 'custom',
 ) => {
   const searchConfig = getSearchConfig(workingModel.model, workingModel.provider);
   const agentState = getAgentStoreState();
@@ -214,6 +220,35 @@ export const createAgentToolsEngine = (
   // entries never reach the tools-engine whitelist.
   const userPlugins = agentSelectors.currentAgentPlugins(agentState);
   const disabledPluginIds = agentSelectors.currentAgentDisabledPlugins(agentState);
+
+  const platformFilter = ({ pluginId }: { pluginId: string }) => {
+    const toolStoreState = getToolStoreState();
+    const installedPlugin = pluginSelectors.getInstalledPluginById(pluginId)(toolStoreState);
+
+    if (
+      !isToolAvailableInCurrentEnv(pluginId, {
+        installedPlugins: installedPlugin ? [installedPlugin] : toolStoreState.installedPlugins,
+      })
+    ) {
+      return false;
+    }
+
+    return undefined; // fall through to rules
+  };
+
+  if (toolMode === 'custom') {
+    return createToolsEngine({
+      defaultToolIds: [],
+      disabledPluginIds,
+      enableChecker: createEnableChecker({
+        allowExplicitActivation: false,
+        platformFilter,
+        rules: Object.fromEntries((pluginIds ?? []).map((id) => [id, true])),
+      }),
+      manifestContext,
+    });
+  }
+
   const isChatMode =
     agentChatConfigSelectors.currentChatConfig(agentState).enableAgentMode === false ||
     !isCanUseFC(workingModel.model, workingModel.provider);
@@ -267,20 +302,7 @@ export const createAgentToolsEngine = (
     manifestContext,
     enableChecker: createEnableChecker({
       allowExplicitActivation: !isChatMode,
-      platformFilter: ({ pluginId }) => {
-        const toolStoreState = getToolStoreState();
-        const installedPlugin = pluginSelectors.getInstalledPluginById(pluginId)(toolStoreState);
-
-        if (
-          !isToolAvailableInCurrentEnv(pluginId, {
-            installedPlugins: installedPlugin ? [installedPlugin] : toolStoreState.installedPlugins,
-          })
-        ) {
-          return false;
-        }
-
-        return undefined; // fall through to rules
-      },
+      platformFilter,
       rules: isChatMode ? chatModeRules : agentModeRules,
     }),
   });

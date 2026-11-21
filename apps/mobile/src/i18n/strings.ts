@@ -104,7 +104,8 @@ const en = {
   expertChat: 'Chat',
   expertChatWith: 'Chat with {{name}}',
   expertRemove: 'Remove',
-  expertRemoveBody: 'Your chats with this expert are deleted too. You can add them again later.',
+  expertRemoveBody:
+    'Your chats with this expert, and their answers in group chats, are deleted too. You can add them again later.',
   expertRemoveTitle: 'Remove {{name}}?',
   expertsEntryHint: 'Specialists you can chat with or bring into a group with Biber',
   expertsError: 'Could not load the experts.',
@@ -385,7 +386,7 @@ const zh: typeof en = {
   expertChat: '对话',
   expertChatWith: '和{{name}}对话',
   expertRemove: '移除',
-  expertRemoveBody: '和这位专家的对话也会一起删除。之后可以再加回来。',
+  expertRemoveBody: '和这位专家的对话、这位专家在群聊里的回答也会一起删除。之后可以再加回来。',
   expertRemoveTitle: '移除{{name}}？',
   expertsEntryHint: '可以单独对话，也可以和 Biber 一起在群里帮你',
   expertsError: '专家列表加载失败。',

@@ -5,7 +5,14 @@ import { AgentModel } from '@/database/models/agent';
 import { agents } from '@/database/schemas';
 import type { LobeChatDatabase } from '@/database/type';
 
-import { expertMarketIdentifier, EXPERTS, findExpert, localized } from './catalog';
+import {
+  EXPERT_CHAT_CONFIG,
+  EXPERT_PLUGINS,
+  expertMarketIdentifier,
+  EXPERTS,
+  findExpert,
+  localized,
+} from './catalog';
 
 const log = debug('lobe-server:experts');
 
@@ -79,9 +86,11 @@ export class ExpertService {
     const agent = await new AgentModel(this.db, this.userId).create({
       avatar: expert.avatar,
       backgroundColor: expert.backgroundColor,
+      // Web search and reading only: experts run unattended in group chats
+      chatConfig: EXPERT_CHAT_CONFIG,
       description: localized(expert.description, locale),
       marketIdentifier: expertMarketIdentifier(expert.id),
-      plugins: [],
+      plugins: EXPERT_PLUGINS,
       systemRole: expert.systemRole,
       title: localized(expert.title, locale),
       // Not virtual: removing it from a group or deleting the group must not delete it

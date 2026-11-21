@@ -309,6 +309,43 @@ describe('toolEngineering', () => {
       expect(result.enabledToolIds).not.toContain('lobe-agent');
     });
 
+    it('custom mode: enables exactly the given plugins, none of the defaults or always-on tools', () => {
+      // The agent open in the window has plugins of its own; the speaking agent's mode decides
+      mockCurrentAgentPlugins = ['search'];
+
+      const toolsEngine = createAgentToolsEngine(
+        { model: 'gpt-4', provider: 'openai' },
+        ['lobe-web-browsing'],
+        undefined,
+        'custom',
+      );
+
+      const result = toolsEngine.generateToolsDetailed({
+        model: 'gpt-4',
+        provider: 'openai',
+        toolIds: ['lobe-web-browsing', 'search', 'lobe-agent'],
+      });
+
+      expect(result.enabledToolIds).toEqual(['lobe-web-browsing']);
+    });
+
+    it('custom mode with no plugins gives no tools', () => {
+      const toolsEngine = createAgentToolsEngine(
+        { model: 'gpt-4', provider: 'openai' },
+        [],
+        undefined,
+        'custom',
+      );
+
+      const result = toolsEngine.generateToolsDetailed({
+        model: 'gpt-4',
+        provider: 'openai',
+        toolIds: [],
+      });
+
+      expect(result.enabledToolIds).toEqual([]);
+    });
+
     it('should use chat-mode defaults when the model does not support function calling', () => {
       mockIsCanUseFC = false;
 

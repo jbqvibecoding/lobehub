@@ -41,7 +41,9 @@ describe('ExpertService', () => {
     expect(again).toEqual({ agentId: first!.agentId, created: false });
     const [agent] = await db.select().from(agents).where(eq(agents.id, first!.agentId));
     expect(agent).toMatchObject({
+      chatConfig: { searchMode: 'auto', toolMode: 'custom' },
       marketIdentifier: expertMarketIdentifier('researcher'),
+      plugins: ['lobe-web-browsing'],
       title: 'Researcher',
       userId,
       virtual: false,

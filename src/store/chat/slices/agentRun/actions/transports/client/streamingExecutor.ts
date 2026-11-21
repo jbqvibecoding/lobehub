@@ -27,6 +27,7 @@ import {
 } from '@lobechat/types';
 import debug from 'debug';
 
+import { resolveToolMode } from '@/helpers/executionTarget';
 import { createAgentToolsEngine } from '@/helpers/toolEngineering';
 import { aiAgentService } from '@/services/aiAgent';
 import { isCanUseVideo, isCanUseVision } from '@/services/chat/helper';
@@ -213,6 +214,11 @@ export class StreamingExecutorActionImpl {
       hasTopicReference,
     );
 
+    // An agent in `custom` tool mode (e.g. a Biber expert speaking in a group) gets exactly its
+    // declared plugins, as on the server: no @-picked or runtime-injected extras
+    const toolMode = resolveToolMode(agentConfig.chatConfig ?? undefined);
+    const toolIds = toolMode === 'custom' ? (pluginIds ?? []) : mergedToolIds;
+
     // Generate tools using ToolsEngine (centralized here, passed to chatService via agentConfig)
     // When disableTools is true (broadcast mode), skipDefaultTools prevents default tools from being added
     const toolsEngine = createAgentToolsEngine(
@@ -223,11 +229,12 @@ export class StreamingExecutorActionImpl {
       // (e.g. a custom MCP connector picked from the @ list) would have its
       // manifest included but be defaulted to disabled by the enable checker, so
       // no function tools are sent. `platformFilter` still gates availability.
-      mergedToolIds,
+      toolIds,
       // Context-aware builtin manifests: lobe-agent hides callSubAgent in group /
       // sub-agent runs. Replaces the former dropSubAgentInGroup + applyPluginFilters
       // isSubAgent hard-coding.
       { isSubAgent, scope },
+      toolMode,
     );
     // When skillActivateMode is 'manual':
     // Exclude only discovery tools (activator, skill-store) so runtime-managed defaults
@@ -239,7 +246,7 @@ export class StreamingExecutorActionImpl {
       model: agentConfigData.model,
       provider: agentConfigData.provider!,
       skipDefaultTools: disableTools || undefined,
-      toolIds: mergedToolIds,
+      toolIds,
     });
 
     const { enabledToolIds, enabledManifests, tools } = composeEnabledTools({

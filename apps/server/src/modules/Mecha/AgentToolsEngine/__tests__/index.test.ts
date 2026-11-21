@@ -13,6 +13,8 @@ import { builtinTools } from '@lobechat/builtin-tools';
 import { ToolsEngine } from '@lobechat/context-engine';
 import { describe, expect, it } from 'vitest';
 
+import { EXPERT_CHAT_CONFIG, EXPERT_PLUGINS } from '@/server/services/experts/catalog';
+
 import { createServerAgentToolsEngine, createServerToolsEngine } from '../index';
 import { type InstalledPlugin, type ServerAgentToolsContext } from '../types';
 
@@ -516,6 +518,29 @@ describe('createServerAgentToolsEngine', () => {
     expect(result.enabledToolIds).not.toContain(LobeAgentManifest.identifier);
     expect(result.enabledToolIds).not.toContain(WebBrowsingManifest.identifier);
     expect(result.enabledToolIds).not.toContain(KnowledgeBaseManifest.identifier);
+  });
+
+  it("a Biber expert gets web search and reading, and none of an ordinary agent's tools", () => {
+    const context = createMockContext();
+    const engine = createServerAgentToolsEngine(context, {
+      agentConfig: { chatConfig: EXPERT_CHAT_CONFIG, plugins: EXPERT_PLUGINS },
+      globalMemoryEnabled: true,
+      hasEnabledKnowledgeBases: true,
+      model: 'gpt-4',
+      provider: 'openai',
+    });
+
+    const result = engine.generateToolsDetailed({
+      model: 'gpt-4',
+      provider: 'openai',
+      toolIds: [
+        WebBrowsingManifest.identifier,
+        LobeAgentManifest.identifier,
+        KnowledgeBaseManifest.identifier,
+      ],
+    });
+
+    expect(result.enabledToolIds).toEqual([WebBrowsingManifest.identifier]);
   });
 
   it('should return undefined tools when model does not support function calling', () => {

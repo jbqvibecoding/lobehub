@@ -10,6 +10,19 @@
  * See NOTICE at the repository root. The prompts are rewritten for Biber's tools: the experts can
  * search and read the web, nothing else, so nothing here asks for files, a sandbox or publishing.
  */
+import { WebBrowsingManifest } from '@lobechat/builtin-tool-web-browsing';
+import type { LobeAgentChatConfig } from '@lobechat/types';
+
+/**
+ * The tools an expert gets: web search and page reading, nothing else. In `custom` tool mode the
+ * tool set is exactly the agent's plugins, so the defaults an ordinary agent gets (the cloud
+ * computer, memory writes, skills, agent management) stay off.
+ */
+export const EXPERT_PLUGINS = [WebBrowsingManifest.identifier];
+export const EXPERT_CHAT_CONFIG = {
+  searchMode: 'auto',
+  toolMode: 'custom',
+} satisfies Partial<LobeAgentChatConfig>;
 
 export interface ExpertText {
   en: string;

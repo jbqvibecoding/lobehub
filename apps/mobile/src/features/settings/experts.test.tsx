@@ -94,7 +94,7 @@ describe('ExpertsView', () => {
 
     expect(alert).toHaveBeenCalledWith(
       'Remove Researcher?',
-      expect.stringContaining('chats with this expert are deleted'),
+      expect.stringContaining('their answers in group chats, are deleted too'),
       expect.any(Array),
     );
     expect(mutation).toHaveBeenCalledWith('experts.remove', { id: 'researcher' });
