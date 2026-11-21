@@ -34,6 +34,7 @@ import { taskTemplateRouter } from '../lambda/taskTemplate';
 import { topicRouter } from '../lambda/topic';
 import { uploadRouter } from '../lambda/upload';
 import { userRouter } from '../lambda/user';
+import { accountsRouter } from './accounts';
 import { activityRouter } from './activity';
 import { approvalRouter } from './approval';
 import { chatRouter } from './chat';
@@ -43,6 +44,7 @@ import { proactiveRouter } from './proactive';
 import { routinesRouter } from './routines';
 
 export const mobileRouter = router({
+  accounts: accountsRouter,
   activity: activityRouter,
   agent: agentRouter,
   agentDocument: agentDocumentRouter,

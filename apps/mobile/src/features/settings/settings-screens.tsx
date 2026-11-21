@@ -5,6 +5,7 @@ import { t } from '@/i18n/strings';
 import { api } from '@/lib/api';
 import { type Palette, useColors } from '@/theme/colors';
 
+import { AccountsView } from './accounts';
 import { ExpertsView } from './experts';
 import { LinkedChatsView } from './linked-chats';
 import { MemoriesList } from './memories';
@@ -21,6 +22,22 @@ export const LinkedChatsScreen = () => {
     >
       <Stack.Screen options={{ title: t('linkedChatsTitle') }} />
       <LinkedChatsView api={api} />
+    </ScrollView>
+  );
+};
+
+export const AccountsScreen = () => {
+  const styles = createStyles(useColors());
+
+  return (
+    <ScrollView
+      contentContainerStyle={styles.content}
+      contentInsetAdjustmentBehavior="automatic"
+      keyboardShouldPersistTaps="handled"
+      style={styles.screen}
+    >
+      <Stack.Screen options={{ title: t('accountsTitle') }} />
+      <AccountsView api={api} />
     </ScrollView>
   );
 };

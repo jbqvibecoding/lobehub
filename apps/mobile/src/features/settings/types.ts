@@ -82,3 +82,33 @@ export interface Expert {
   id: string;
   title: string;
 }
+
+/** A mail or calendar app connected through Composio in the global edition. */
+export type AccountApp = 'gmail' | 'google-calendar' | 'outlook-mail';
+
+/** A mail provider whose servers the service already knows, in the mainland edition. */
+export type MailPreset = '126' | '163' | 'aliyun' | 'exmail' | 'qiye163' | 'qq';
+
+/** Whether a mainland account is connected, and whether it stopped working (`needs_reauth`). */
+export interface ConnectedAccount {
+  connected: boolean;
+  label?: string;
+  needsReconnect: boolean;
+}
+
+/**
+ * What the user can connect under "Email & calendar" (`accounts.list`): Gmail, Google Calendar and
+ * Outlook in the global edition, with Composio's connection status (`ACTIVE`, `INITIATED`,
+ * `EXPIRED` … or `NONE`); a mailbox and a Feishu calendar in the mainland edition.
+ */
+export type AccountsOverview =
+  | {
+      apps: { app: AccountApp; label: string; status: string }[];
+      available: boolean;
+      edition: 'global';
+    }
+  | {
+      calendar: ConnectedAccount & { available: boolean };
+      edition: 'cn';
+      mail: ConnectedAccount & { presets: MailPreset[] };
+    };
