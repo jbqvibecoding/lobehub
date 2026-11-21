@@ -17,6 +17,7 @@ import { groupManagementExecutor } from '@lobechat/builtin-tool-group-management
 import { knowledgeBaseExecutor } from '@lobechat/builtin-tool-knowledge-base/client/executor';
 import { lobeAgentExecutor } from '@lobechat/builtin-tool-lobe-agent/client/executor';
 import { localSystemExecutor } from '@lobechat/builtin-tool-local-system/client/executor';
+import { mailExecutor } from '@lobechat/builtin-tool-mail/client/executor';
 import { memoryExecutor } from '@lobechat/builtin-tool-memory/executor';
 import { remindersExecutor } from '@lobechat/builtin-tool-reminders/client/executor';
 import { taskExecutor } from '@lobechat/builtin-tool-task/client/executor';
@@ -156,6 +157,7 @@ export const registerBuiltinToolExecutors = (): void => {
     browserExecutor,
     localSystemExecutor,
     memoryExecutor,
+    mailExecutor,
     remindersExecutor,
     messageExecutor,
     notebookExecutor,

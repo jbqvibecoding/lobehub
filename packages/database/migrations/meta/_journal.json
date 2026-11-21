@@ -889,6 +889,13 @@
       "when": 1795218514823,
       "tag": "0126_add_proactive_thoughts_due_at",
       "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1795293793441,
+      "tag": "0127_add_personal_accounts",
+      "breakpoints": true
     }
   ],
   "version": "6"

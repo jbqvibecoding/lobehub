@@ -13,6 +13,7 @@ import { BrowserManifest } from '@lobechat/builtin-tool-browser';
 import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
+import { MailManifest } from '@lobechat/builtin-tool-mail';
 import { MemoryManifest } from '@lobechat/builtin-tool-memory';
 import { MessageManifest } from '@lobechat/builtin-tool-message';
 import { RemindersManifest } from '@lobechat/builtin-tool-reminders';
@@ -234,7 +235,8 @@ export const createServerAgentToolsEngine = (
   const chatModeRules = {
     [KnowledgeBaseManifest.identifier]: hasEnabledKnowledgeBases,
     [MemoryManifest.identifier]: globalMemoryEnabled,
-    // Biber's reminders: only for the agent whose plugins carry it
+    // Biber's reminders and mail: only for the agent whose plugins carry them
+    [MailManifest.identifier]: (agentConfig.plugins ?? []).includes(MailManifest.identifier),
     [RemindersManifest.identifier]: (agentConfig.plugins ?? []).includes(
       RemindersManifest.identifier,
     ),

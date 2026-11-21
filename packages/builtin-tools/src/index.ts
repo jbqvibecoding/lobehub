@@ -19,6 +19,7 @@ import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
 import { LobeAgentManifest, resolveLobeAgentManifest } from '@lobechat/builtin-tool-lobe-agent';
 import { LobeDeliveryCheckerManifest } from '@lobechat/builtin-tool-lobe-delivery-checker';
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
+import { MailManifest } from '@lobechat/builtin-tool-mail';
 import { MemoryManifest } from '@lobechat/builtin-tool-memory';
 import { MessageManifest } from '@lobechat/builtin-tool-message';
 import { PageAgentManifest } from '@lobechat/builtin-tool-page-agent';
@@ -110,7 +111,8 @@ export const manualModeExcludeToolIds = [
 export const chatModeAllowedToolIds = [
   KnowledgeBaseManifest.identifier,
   MemoryManifest.identifier,
-  // Biber only: the tools engines enable it in chat mode when the agent's plugins carry it
+  // Biber only: the tools engines enable these in chat mode when the agent's plugins carry them
+  MailManifest.identifier,
   RemindersManifest.identifier,
   WebBrowsingManifest.identifier,
 ];
@@ -253,6 +255,14 @@ const builtinToolRegistry: LobeBuiltinTool[] = [
     hidden: true,
     identifier: MemoryManifest.identifier,
     manifest: MemoryManifest,
+    type: 'builtin',
+  },
+  {
+    // Biber's own, while the user has a mailbox connected (added to its plugins then)
+    discoverable: false,
+    hidden: true,
+    identifier: MailManifest.identifier,
+    manifest: MailManifest,
     type: 'builtin',
   },
   {

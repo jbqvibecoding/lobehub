@@ -25,6 +25,7 @@ import { knowledgeBaseRuntime } from './knowledgeBase';
 import { lobeAgentRuntime } from './lobeAgent';
 import { lobeDeliveryCheckerRuntime } from './lobeDeliveryChecker';
 import { localSystemRuntime } from './localSystem';
+import { mailRuntime } from './mail';
 import { memoryRuntime } from './memory';
 import { messageRuntime } from './message';
 import { notebookRuntime } from './notebook';
@@ -70,6 +71,7 @@ registerRuntimes([
   skillStoreRuntime,
   skillsRuntime,
   memoryRuntime,
+  mailRuntime,
   remindersRuntime,
   activatorRuntime,
   messageRuntime,

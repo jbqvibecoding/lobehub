@@ -362,6 +362,9 @@ export function defineConfig(config: CustomNextConfig) {
       'pdfjs-dist',
       'ajv',
       'oidc-provider',
+      // Mail over IMAP: plain Node libraries that load encodings at runtime
+      'imapflow',
+      'mailparser',
     ],
 
     transpilePackages: ['mermaid'],

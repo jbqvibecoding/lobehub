@@ -4,6 +4,7 @@ import { GroupManagementManifest } from '@lobechat/builtin-tool-group-management
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
 import { LobeAgentApiName, LobeAgentManifest } from '@lobechat/builtin-tool-lobe-agent';
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
+import { MailManifest } from '@lobechat/builtin-tool-mail';
 import { MemoryManifest } from '@lobechat/builtin-tool-memory';
 import { RemindersManifest } from '@lobechat/builtin-tool-reminders';
 import { RemoteDeviceManifest } from '@lobechat/builtin-tool-remote-device';
@@ -623,6 +624,26 @@ describe('createServerAgentToolsEngine', () => {
     it('is off for other agents, even in chat mode where it is allowed', () => {
       expect(remindersFor([])).not.toContain(RemindersManifest.identifier);
       expect(remindersFor([], 'chat')).not.toContain(RemindersManifest.identifier);
+    });
+  });
+
+  describe('Mail tool enable rules', () => {
+    const toolsFor = (plugins: string[], toolMode?: 'chat') =>
+      createServerAgentToolsEngine(createMockContext(), {
+        agentConfig: { chatConfig: toolMode && { toolMode }, plugins },
+        model: 'gpt-4',
+        provider: 'openai',
+      }).generateToolsDetailed({ model: 'gpt-4', provider: 'openai', toolIds: plugins })
+        .enabledToolIds;
+
+    it('is on for Biber once a mailbox put it in its plugins, in agent and chat mode', () => {
+      expect(toolsFor([MailManifest.identifier])).toContain(MailManifest.identifier);
+      expect(toolsFor([MailManifest.identifier], 'chat')).toContain(MailManifest.identifier);
+    });
+
+    it('is off without a mailbox, and for other agents', () => {
+      expect(toolsFor([])).not.toContain(MailManifest.identifier);
+      expect(toolsFor([], 'chat')).not.toContain(MailManifest.identifier);
     });
   });
 

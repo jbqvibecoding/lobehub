@@ -57,6 +57,7 @@ import { klavisRouter } from './klavis';
 import { knowledgeRouter } from './knowledge';
 import { knowledgeBaseRouter } from './knowledgeBase';
 import { llmGenerationTracingRouter } from './llmGenerationTracing';
+import { mailRouter } from './mail';
 import { marketRouter } from './market';
 import { messageRouter } from './message';
 import { messengerRouter } from './messenger';
@@ -138,6 +139,7 @@ export const lambdaRouter = router({
   pushToken: pushTokenRouter,
   ragEval: ragEvalRouter,
   recent: recentRouter,
+  mail: mailRouter,
   reminders: remindersRouter,
   search: searchRouter,
   session: sessionRouter,

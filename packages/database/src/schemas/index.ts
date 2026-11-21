@@ -26,6 +26,7 @@ export * from './messengerInstallation';
 export * from './nextauth';
 export * from './notification';
 export * from './oidc';
+export * from './personalAccount';
 export * from './proactive';
 export * from './pushToken';
 export * from './rag';
