@@ -2,7 +2,8 @@
  * Stand-ins for the services a Biber server calls out to, so a smoke run needs no accounts:
  *
  * - an OpenAI-compatible model that, when a request offers the cloud computer's code tool and the
- *   user asked to run code, calls that tool; once the tool has answered, it replies in text;
+ *   user asked to run code, calls that tool (likewise Biber's reminders tool, see `reminderFor`);
+ *   once the tool has answered, it replies in text;
  * - Expo's push service, recording every notification it is asked to send.
  *
  * Point the server at them with OPENAI_PROXY_URL=http://127.0.0.1:<model>/v1 and
@@ -14,6 +15,30 @@ import { createServer as createHttp2Server } from 'node:http2';
 import { deflateSync } from 'node:zlib';
 
 export const CODE_TOOL = 'lobe-cloud-sandbox____executeCode';
+export const REMIND_TOOL = 'lobe-reminders____addReminder';
+const HOUR = 60 * 60 * 1000;
+
+/**
+ * What the fake model notes when Biber offers its reminders tool: "Remind me to <x>" asks for a
+ * reminder two minutes from now; "my interview is …" makes Biber note a follow-up for tomorrow.
+ */
+const reminderFor = (said: string) => {
+  const asked = /^remind me to (.+?)\.?$/i.exec(said.trim());
+  if (asked) {
+    return {
+      about: asked[1],
+      at: new Date(Date.now() + 2 * 60 * 1000).toISOString(),
+      kind: 'asked',
+    };
+  }
+  if (/my interview is/i.test(said)) {
+    return {
+      about: 'The job interview',
+      at: new Date(Date.now() + 24 * HOUR).toISOString(),
+      kind: 'follow_up',
+    };
+  }
+};
 
 export interface ModelRequest {
   messages: { content?: unknown; role: string }[];
@@ -60,6 +85,12 @@ export const decideReply = (
   // A refused call comes back as "User reject this tool calling …"
   if (toolResults.some((m) => /user reject/i.test(textOf(m.content)))) {
     return { text: 'Understood, I left the code alone.' };
+  }
+
+  const reminder = reminderFor(textOf(request.messages[lastUser]?.content));
+  if (reminder && request.tools.includes(REMIND_TOOL)) {
+    if (toolAnswered) return { text: 'Noted, I will bring it up.' };
+    return { toolCall: { arguments: JSON.stringify(reminder), name: REMIND_TOOL } };
   }
 
   if (!toolAnswered && askedToRunCode && request.tools.includes(CODE_TOOL)) {

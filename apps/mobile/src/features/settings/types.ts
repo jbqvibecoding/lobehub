@@ -58,11 +58,16 @@ export interface ProactiveSettings {
   timeZone: string | null;
 }
 
-/** Something Biber means to bring up (`proactive.listThoughts`). */
+/**
+ * Something Biber means to bring up (`proactive.listThoughts`): from memory (`activity`), noted in
+ * a chat (`agent`), or a reminder the user asked for (`asked`), sent at `dueAt`.
+ */
 export interface ProactiveThought {
+  dueAt: Date | null;
   expiresAt: Date | null;
   id: string;
   kind: 'follow_up' | 'reminder';
   occursAt: Date | null;
   seed: string;
+  source: 'activity' | 'agent' | 'asked';
 }

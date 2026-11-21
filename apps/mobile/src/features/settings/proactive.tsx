@@ -205,11 +205,15 @@ export const ProactiveSettingsView = ({ api }: { api: ApiClient }) => {
           <Text style={styles.meta}>
             {[
               t(
-                thought.kind === 'reminder'
-                  ? 'proactiveThoughtReminder'
-                  : 'proactiveThoughtFollowUp',
+                thought.source === 'asked'
+                  ? 'proactiveThoughtAsked'
+                  : thought.kind === 'reminder'
+                    ? 'proactiveThoughtReminder'
+                    : 'proactiveThoughtFollowUp',
               ),
-              thought.occursAt ? formatWhen(thought.occursAt) : null,
+              (thought.dueAt ?? thought.occursAt)
+                ? formatWhen((thought.dueAt ?? thought.occursAt)!)
+                : null,
             ]
               .filter(Boolean)
               .join(' · ')}

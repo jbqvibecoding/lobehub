@@ -125,6 +125,42 @@ describe('mobile proactiveRouter', () => {
     await cleanupTestUser(testDB, otherId);
   });
 
+  it('lists notes from chats by when they are due, and leaves out asked ones already going out', async () => {
+    const userId = await createTestUser(testDB);
+    await new ProactiveThoughtModel(testDB, userId).addNew([
+      {
+        dueAt: new Date(Date.now() + 5e6),
+        kind: 'reminder',
+        occursAt: new Date(Date.now() + 9e7),
+        seed: 'Pay rent',
+        source: 'agent',
+        sourceRef: 'agent:rent',
+      },
+      {
+        dueAt: new Date(Date.now() + 1e6),
+        kind: 'reminder',
+        seed: 'Call mom',
+        source: 'asked',
+        sourceRef: 'agent:mom',
+      },
+      {
+        dueAt: new Date(Date.now() - 1e3),
+        kind: 'reminder',
+        seed: 'Water the plants',
+        source: 'asked',
+        sourceRef: 'agent:plants',
+      },
+    ]);
+
+    const listed = await callerFor(userId).listThoughts();
+    expect(listed.map(({ seed, source }) => ({ seed, source }))).toEqual([
+      { seed: 'Call mom', source: 'asked' },
+      { seed: 'Pay rent', source: 'agent' },
+    ]);
+
+    await cleanupTestUser(testDB, userId);
+  });
+
   it('refuses to report on another user’s message', async () => {
     const userId = await createTestUser(testDB);
     const otherId = await createTestUser(testDB);

@@ -17,11 +17,24 @@ const defaults: ProactiveSettings = {
 };
 
 const dentist: ProactiveThought = {
+  dueAt: null,
   expiresAt: null,
   id: 'thought-1',
   kind: 'reminder',
   occursAt: new Date('2026-11-21T02:00:00Z'),
   seed: 'Dentist at 10',
+  source: 'activity',
+};
+
+/** A reminder the user asked for: shown at the time it goes out, labelled as theirs. */
+const callMom: ProactiveThought = {
+  dueAt: new Date('2026-11-21T10:00:00Z'),
+  expiresAt: null,
+  id: 'thought-2',
+  kind: 'reminder',
+  occursAt: new Date('2026-11-21T10:00:00Z'),
+  seed: 'Call mom',
+  source: 'asked',
 };
 
 const renderView = async ({
@@ -70,6 +83,13 @@ describe('ProactiveSettingsView', () => {
     expect(screen.getByText('08:00')).toBeOnTheScreen();
     expect(await screen.findByText('Dentist at 10')).toBeOnTheScreen();
     expect(screen.getByText(/^Reminder · /)).toBeOnTheScreen();
+  });
+
+  it('labels a reminder the user asked for, with the time it goes out', async () => {
+    await renderView({ thoughts: async () => [callMom] });
+
+    expect(await screen.findByText('Call mom')).toBeOnTheScreen();
+    expect(screen.getByText(/^You asked · /)).toBeOnTheScreen();
   });
 
   it('saves a new level and moves quiet hours by an hour', async () => {

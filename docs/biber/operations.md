@@ -231,6 +231,7 @@ bunx tsx scripts/biber/ops.ts bot list
 | `routines.ts`            | 国际版     | 新账号看到三个例行任务都没开 → 打开晨报后给 Biber 建了按手机时区运行的计划任务 → 手动运行一次并结算 → 关掉后不再按计划运行，任务保留                                                                                                                                                                                                  |
 | `memories.ts`            | 国际版     | Agent 记下的偏好出现在手机上 → 别的账号忘不掉它 → 在手机上忘掉后 Agent 也检索不到 → 全部忘掉后列表清空 → Agent 不能把密码存成记忆 → 身份和高优先级偏好每次运行都原样交给模型 → 在手机上撤销一次整理后，记下的消失，那段对话打上不再整理的标记，别的账号撤销不了                                                                       |
 | `proactive.ts`           | 两个版本   | 明天开始的活动变成 "来自 Biber" 对话里的一条提醒，推送带 "这次不用" 按钮，账本记为已发出 → 手机点开后记为已打开 → 两小时内再检查不发 → 免打扰时段不发 → 例行任务的结果推送到手机，点开是那个任务 → 不带密钥调工作流地址被拒。国内版还确认这条消息过了内容安全                                                                         |
+| `reminders.ts`           | 两个版本   | 手机对话里说 "Remind me to call mom"，Biber 记下并在手机列表里标为 "你让我提醒" → 到点发出，Biber 关闭、正处免打扰也照发 → 说 "my interview is on Friday"，Biber 自己记一条跟进，没到时间不说 → 到时间后由主动检查说出来 → 手机上删掉的，Agent（和网页对话的接口）也查不到 → 别的账号看不到也删不掉。国内版还确认提醒过了内容安全     |
 
 准备：
 
@@ -258,6 +259,8 @@ bunx tsx scripts/biber/ops.ts bot list
    - `proactive.ts` 要求服务端设 `CRON_SECRET` 和 `EXPO_BASE_URL=http://127.0.0.1:4020`，运行时带上 `SMOKE_CRON_SECRET`
      和指向服务端数据库的 `SMOKE_DATABASE_URL`：记忆整理在本地不运行，脚本直接往数据库写一条活动，并把上次检查的时间改早。
      国内版运行时再带 `APP_REGION=cn`、`SMOKE_MODEL_PROVIDER=deepseek`、`SMOKE_MODEL=deepseek-chat`。
+   - `reminders.ts` 的设置同 `proactive.ts`。国内版用 `SMOKE_MODEL=deepseek-v4-flash`：模型库里只有别的厂商列着
+     `deepseek-chat`，查出来的是 32k 的上下文窗口，第一条消息就会触发对话压缩。
    - `SMOKE_ALIPAY_SIGNING_KEY=<那把私钥的 PEM 文件> bunx tsx scripts/biber/smoke/mainland.ts`。
    - `wechat-bot.ts` 先按脚本开头的说明用 `bot set wechat` 存一个指向本地替身的服务号，
      再带上同样的 `SMOKE_WECHAT_TOKEN`、`SMOKE_WECHAT_AES_KEY` 运行。
@@ -378,13 +381,13 @@ Electron 本身已由 `apps/desktop/.npmrc` 和 `electron-builder.mjs` 从 npmmi
 
 服务端自己不计时。例行任务、Biber 主动发的消息和几项清理，都要由外部按时调用下面的地址。
 
-| 地址                                           | 方法 | 建议频率   | 作用                                                     | 不配的后果                                         |
-| ---------------------------------------------- | ---- | ---------- | -------------------------------------------------------- | -------------------------------------------------- |
-| `/api/workflows/task/schedule-dispatch`        | POST | 每 5 分钟  | 找出到点的计划任务（含晨报等例行任务）并运行             | 例行任务和用户建的定时任务都不会运行               |
-| `/api/workflows/proactive/tick`                | POST | 每 15 分钟 | 主动检查：替用户决定这会儿要不要说一句，见第 14 节       | Biber 不会主动发消息，没反应的消息也不会记为被忽略 |
-| `/api/agent/approvals/expire`                  | GET  | 每小时     | 24 小时没人回答的后台审批按拒绝处理，见第 5 节           | 等审批的任务一直停在 "运行中"                      |
-| `/api/workflows/task/watchdog`                 | POST | 每 10 分钟 | 超过心跳时限仍在运行中的任务标为失败，并给用户留一条简报 | 卡住的任务一直显示 "运行中"                        |
-| `/api/workflows/task/scheduled-topic-dispatch` | POST | 每 10 分钟 | 因模型限流推迟的对话，到时间后接着运行                   | 被限流打断的对话不会自动继续                       |
+| 地址                                           | 方法 | 建议频率   | 作用                                                                            | 不配的后果                                                                      |
+| ---------------------------------------------- | ---- | ---------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `/api/workflows/task/schedule-dispatch`        | POST | 每 5 分钟  | 找出到点的计划任务（含晨报等例行任务）并运行                                    | 例行任务和用户建的定时任务都不会运行                                            |
+| `/api/workflows/proactive/tick`                | POST | 每 5 分钟  | 主动检查：先发到点的 "你让我提醒的"，再替用户决定这会儿要不要说一句，见第 14 节 | 用户让 Biber 提醒的事不会发，Biber 不会主动发消息，没反应的消息也不会记为被忽略 |
+| `/api/agent/approvals/expire`                  | GET  | 每小时     | 24 小时没人回答的后台审批按拒绝处理，见第 5 节                                  | 等审批的任务一直停在 "运行中"                                                   |
+| `/api/workflows/task/watchdog`                 | POST | 每 10 分钟 | 超过心跳时限仍在运行中的任务标为失败，并给用户留一条简报                        | 卡住的任务一直显示 "运行中"                                                     |
+| `/api/workflows/task/scheduled-topic-dispatch` | POST | 每 10 分钟 | 因模型限流推迟的对话，到时间后接着运行                                          | 被限流打断的对话不会自动继续                                                    |
 
 **鉴权：** 调用带 `Authorization: Bearer <CRON_SECRET>`。`/api/workflows/*` 也接受 QStash 的签名
 （配了 `QSTASH_CURRENT_SIGNING_KEY` 和 `QSTASH_NEXT_SIGNING_KEY` 时）；两样都没配，生产环境返回 503，开发环境不检查。
@@ -398,7 +401,7 @@ Electron 本身已由 `apps/desktop/.npmrc` 和 `electron-builder.mjs` 从 npmmi
 
 ```sh
 */5 * * * * curl -fsS -X POST -H "Authorization: Bearer CRON_SECRET" "APP_URL/api/workflows/task/schedule-dispatch"
-*/15 * * * * curl -fsS -X POST -H "Authorization: Bearer CRON_SECRET" "APP_URL/api/workflows/proactive/tick"
+*/5 * * * * curl -fsS -X POST -H "Authorization: Bearer CRON_SECRET" "APP_URL/api/workflows/proactive/tick"
 0 * * * * curl -fsS -H "Authorization: Bearer CRON_SECRET" "APP_URL/api/agent/approvals/expire"
 */10 * * * * curl -fsS -X POST -H "Authorization: Bearer CRON_SECRET" "APP_URL/api/workflows/task/watchdog"
 */10 * * * * curl -fsS -X POST -H "Authorization: Bearer CRON_SECRET" "APP_URL/api/workflows/task/scheduled-topic-dispatch"
@@ -408,22 +411,28 @@ Electron 本身已由 `apps/desktop/.npmrc` 和 `electron-builder.mjs` 从 npmmi
 
 ## 14. 主动消息
 
-Biber 在用户没问的时候发的消息有两种：用户打开的例行任务的结果，以及按记忆里的安排发的提醒和跟进。
-为什么这样定见 [决策记录](./decisions.md) 第 18 条。
+Biber 在用户没问的时候发的消息有三种：用户打开的例行任务的结果，用户在对话里让 Biber 提醒的事，
+以及 Biber 自己想说的提醒和跟进。为什么这样定见 [决策记录](./decisions.md) 第 18、19 条。
 
 **送到哪：** 消息写进每个用户一个的 "来自 Biber" 对话，同时推送到手机。推送的通知类别是 `proactive`，
-带 "这次不用" 按钮；国内安卓厂商通道没有按钮，只能点开。例行任务的结果点开是那个任务，提醒和跟进点开是 "来自 Biber" 对话。
+带 "这次不用" 按钮；国内安卓厂商通道没有按钮，只能点开。例行任务的结果点开是那个任务，其余的点开是 "来自 Biber" 对话。
 
-**说什么：** 主动检查从记忆里的活动（`user_memories_activities` 的开始和结束时间）生成 "Biber 记着要说的事"：
+**说什么：** "Biber 记着要说的事" 有两个来源。
 
-- 3 天内要开始的事，提前提醒，过了开始时间作废；
-- 2 天内刚结束的事，问一句结果如何。
+- **对话里记下的：** Biber 有一个提醒工具（`lobe-reminders`，只给 Biber，其他助理没有）。
+  - 用户说 "提醒我下午 3 点给妈妈打电话"，它记一条 "你让我提醒的"，到点发出 "提醒：给妈妈打电话"。
+    这一条不看档位、额度、两小时间隔和免打扰；检查晚了 6 小时还没发出就作废。
+  - 用户提到之后的安排时，它也可以自己记一条提醒或跟进，并定好什么时候说；到时间后才有资格说，照常受下面的节制。
+  - 每人未完成的最多 50 条。时间由模型给出带时区偏移的绝对时间，服务端按用户的时区把它写回给模型核对。
+- **记忆里的活动**（`user_memories_activities` 的开始和结束时间）：3 天内要开始的事提前提醒，过了开始时间作废；
+  2 天内刚结束的事问一句结果如何。这些活动由 Agent 用记忆工具记下，或由后台从过去的对话里整理出来；
+  后台整理靠 Upstash 工作流，没接 QStash 的部署只有前一种来源。
 
-这些活动由 Agent 在对话里用记忆工具记下，或由后台从过去的对话里整理出来。后台整理靠 Upstash 工作流，
-没接 QStash 的部署只有前一种来源。
+用户在手机 "账户 → 主动消息" 的 "Biber 记着要说的事" 里能看到这些，可以删；在对话里也可以让 Biber 列出或取消。
 
 没有要说的事就不调用模型，不会找话闲聊。有事时调用一次系统助手的 `topic` 模型（`SYSTEM_AGENT` 的 `topic=` 或 `default=`）
-写这条消息，平台付费的调用照常计入额度。国内版发出前过内容安全，审核不通过或审核服务出错都不发。
+写这条消息，平台付费的调用照常计入额度。"你让我提醒的" 文案固定，不调用模型。
+国内版发出前过内容安全，审核不通过或审核服务出错都不发。
 
 **多久说一次：** 用户在手机 "账户 → 主动消息" 里设置，默认 "适中"。
 
@@ -440,13 +449,15 @@ Biber 在用户没问的时候发的消息有两种：用户打开的例行任�
 - 连续 3 条没反应后，每天最多 1 条，直到用户点开、回复或点 "这次不用"；
 - 某一种消息 30 天里有结果的至少 4 条、其中超过一半点了 "这次不用"，就不再发这一种。
 
-例行任务是用户自己定的时间，不占这里的额度，也不受免打扰影响。
+例行任务和 "你让我提醒的" 是用户自己定的时间，不占这里的额度，也不受免打扰影响；它们被忽略也不会让 Biber 降频。
 
 **时区：** 手机登记推送时一并上报；没有就用网页设置里的时区；再没有，国内版按 Asia/Shanghai，国际版按 UTC。
+和 Biber 对话时（手机、聊天软件、任务），网页设置里没有时区就按这个顺序找；网页对话里记提醒时用浏览器的时区。
 
 **统计：** `bunx tsx scripts/biber/ops.ts proactive stats [--days 7]` 按种类和例行任务列出发出数，
-以及打开、回复、"这次不用" 和被忽略的比例。发出后 24 小时内没反应的算 "等待中"，不计入比率；超过 24 小时记为被忽略。
+以及打开、回复、"这次不用" 和被忽略的比例；"你让我提醒的" 单独一行（`asked`）。发出后 24 小时内没反应的算 "等待中"，不计入比率；超过 24 小时记为被忽略。
 点了 "这次不用" 或回复的也算打开过。
 
-**容量：** 主动检查每次最多处理 200 个用户：有要说的事，或记忆里有快开始、刚结束的活动的，按上次检查时间从早到晚排。
-每 15 分钟一次时每小时 800 个；这样的用户更多时，缩短调用间隔。
+**容量：** 主动检查每次先发最多 500 条到点的 "你让我提醒的"，再检查最多 200 个用户：有到期的事要说，
+或记忆里有快开始、刚结束的活动的，按上次检查时间从早到晚排。每 5 分钟一次时每小时 2400 个；这样的用户更多时，缩短调用间隔。
+"你让我提醒的" 最多晚一个调用间隔。

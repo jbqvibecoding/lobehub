@@ -50,13 +50,31 @@ export const proactiveRouter = router({
     new ProactiveSettingsModel(ctx.serverDB, ctx.userId).preferences(),
   ),
 
-  /** What Biber means to bring up, soonest first. */
+  /**
+   * What Biber means to bring up, soonest first: from memory, noted in a chat, or reminders the
+   * user asked for (`source: 'asked'`). An asked reminder whose time has come is on its way, so it
+   * is no longer listed.
+   */
   listThoughts: proactiveProcedure.query(async ({ ctx }) => {
+    const now = Date.now();
     const thoughts = await new ProactiveThoughtModel(ctx.serverDB, ctx.userId).listOpen();
+    const when = (thought: { dueAt: Date | null; occursAt: Date | null }) =>
+      (thought.dueAt ?? thought.occursAt)?.getTime() ?? Infinity;
 
     return thoughts
-      .map(({ expiresAt, id, kind, occursAt, seed }) => ({ expiresAt, id, kind, occursAt, seed }))
-      .sort((a, b) => (a.occursAt?.getTime() ?? Infinity) - (b.occursAt?.getTime() ?? Infinity));
+      .filter(
+        (thought) => thought.source !== 'asked' || !thought.dueAt || thought.dueAt.getTime() > now,
+      )
+      .map(({ dueAt, expiresAt, id, kind, occursAt, seed, source }) => ({
+        dueAt,
+        expiresAt,
+        id,
+        kind,
+        occursAt,
+        seed,
+        source,
+      }))
+      .sort((a, b) => when(a) - when(b));
   }),
 
   opened: proactiveProcedure
