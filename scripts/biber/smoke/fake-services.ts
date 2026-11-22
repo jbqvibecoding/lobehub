@@ -8,7 +8,8 @@
  *   with the user's mailbox and calendar, it reads the latest mail, replies to it, finds free time
  *   and creates an event (see `mailStep` and `calendarStep`);
  *   on its cloud computer, it opens the page a message names and signs in, orders or presses Enter
- *   there (see `computerStep`);
+ *   there (see `computerStep`); with its profile tool, it runs the "About you" interview and
+ *   answers profile checks (see `profileStep`);
  * - Expo's push service, recording every notification it is asked to send;
  * - Feishu's open platform for a user's calendar (`startFakeFeishuApi`).
  *
@@ -29,6 +30,7 @@ export const MAIL_SEND_TOOL = 'lobe-mail____sendMail';
 export const FREE_TIME_TOOL = 'lobe-calendar____findFreeTime';
 export const CREATE_EVENT_TOOL = 'lobe-calendar____createEvent';
 export const computerTool = (api: string) => `lobe-computer____${api}`;
+export const profileTool = (api: string) => `lobe-profile____${api}`;
 const HOUR = 60 * 60 * 1000;
 
 /** Tomorrow at an hour in mainland China (UTC+8, no daylight saving), with its offset. */
@@ -159,6 +161,66 @@ const calendarStep = (request: Pick<ModelRequest, 'messages' | 'tools'>): Reply 
       start: tomorrowInChina(15),
       title: 'Project sync',
     });
+  }
+};
+
+/** What an interview answer saves: "叫我小安" / "call me An", a goal, someone close, a project. */
+const PROFILE_ANSWERS: {
+  pattern: RegExp;
+  section: string;
+  text: (match: RegExpExecArray) => string;
+}[] = [
+  { pattern: /^(?:叫我|call me )(.+?)[!.。！]?$/i, section: 'name', text: (m) => m[1] },
+  { pattern: /^(?:我的目标是|my goal is to )(.+?)[.。]?$/i, section: 'goals', text: (m) => m[1] },
+  { pattern: /^((?:我太太|my wife ).+?)[.。]?$/i, section: 'people', text: (m) => m[1] },
+  { pattern: /^(?:我在做|i am working on )(.+?)[.。]?$/i, section: 'projects', text: (m) => m[1] },
+];
+
+/**
+ * Biber with its profile tool:
+ * - in the "About you" interview (its instructions are in the request), it asks for the first
+ *   section still to ask, saves each answer, and on "先到这" / "that's enough" sums up and
+ *   finishes the interview;
+ * - answering a profile check in the "From Biber" chat, "还是这样" / "still holds" confirms the
+ *   entry the check quoted.
+ */
+const profileStep = (request: Pick<ModelRequest, 'messages' | 'tools'>): Reply | undefined => {
+  if (!request.tools.includes(profileTool('saveEntry'))) return;
+  const lastUser = request.messages.findLastIndex((m) => m.role === 'user');
+  const said = textOf(request.messages[lastUser]?.content).trim();
+  const results = request.messages
+    .slice(lastUser + 1)
+    .filter((m) => m.role === 'tool')
+    .map((m) => textOf(m.content));
+  const prompt = request.messages.map((m) => textOf(m.content)).join('\n');
+
+  if (prompt.includes('<profile_interview>')) {
+    if (/^(?:先到这|that's enough)/i.test(said)) {
+      if (results.length > 0) return { text: 'Here is what I saved. Change it under About you.' };
+      return callTool(profileTool('finishInterview'), {});
+    }
+    if (results.length > 0) return { text: `Got it. ${results[0]}` };
+    for (const answer of PROFILE_ANSWERS) {
+      const match = answer.pattern.exec(said);
+      if (match)
+        return callTool(profileTool('saveEntry'), {
+          section: answer.section,
+          text: answer.text(match),
+        });
+    }
+    const next = /Still to ask: (\w+)/.exec(prompt)?.[1];
+    return { text: next === 'name' ? 'Hi! What should I call you?' : `Next, your ${next}?` };
+  }
+
+  if (/^(?:还是这样|still holds)/i.test(said)) {
+    if (results.length > 0) return { text: 'Good, noted that it still holds.' };
+    const asked = request.messages
+      .slice(0, lastUser)
+      .filter((m) => m.role === 'assistant')
+      .map((m) => textOf(m.content))
+      .join('\n');
+    const id = [...asked.matchAll(/\[([A-Z]+\d+|now|ideal|style)\]/g)].at(-1)?.[1];
+    if (id) return callTool(profileTool('confirmEntries'), { ids: [id] });
   }
 };
 
@@ -338,7 +400,8 @@ export const decideReply = (request: Pick<ModelRequest, 'messages' | 'tools'>): 
     }
   }
 
-  const personal = mailStep(request) ?? calendarStep(request) ?? computerStep(request);
+  const personal =
+    mailStep(request) ?? calendarStep(request) ?? computerStep(request) ?? profileStep(request);
   if (personal) return personal;
 
   const reminder = reminderFor(textOf(request.messages[lastUser]?.content));
