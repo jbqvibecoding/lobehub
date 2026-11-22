@@ -1,4 +1,4 @@
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import {
   ActivityIndicator,
   FlatList,
@@ -11,6 +11,7 @@ import {
 
 import { t } from '@/i18n/strings';
 import type { ApiClient } from '@/lib/api-client';
+import { ProfileInvite } from '@/features/settings/profile';
 import { type Palette, useColors } from '@/theme/colors';
 
 import { AgentAvatar } from './agent-avatar';
@@ -76,6 +77,12 @@ export const ConversationList = ({ api }: { api: ApiClient }) => {
       ListEmptyComponent={emptyState}
       ListHeaderComponent={
         <>
+          <ProfileInvite
+            api={api}
+            onOpenInterview={(topicId) =>
+              router.push({ params: { topicId }, pathname: '/chat/[topicId]' })
+            }
+          />
           {newChat}
           {error && data ? <Text style={styles.inlineError}>{t('chatRefreshError')}</Text> : null}
         </>

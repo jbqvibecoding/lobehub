@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { Stack } from 'expo-router/stack';
 import { ScrollView, StyleSheet } from 'react-native';
 
@@ -9,6 +10,7 @@ import { AccountsView } from './accounts';
 import { ExpertsView } from './experts';
 import { LinkedChatsView } from './linked-chats';
 import { SavedLoginsView } from './logins';
+import { AboutYouView } from './profile';
 import { MemoriesList } from './memories';
 import { ProactiveSettingsView } from './proactive';
 
@@ -55,6 +57,27 @@ export const SavedLoginsScreen = () => {
     >
       <Stack.Screen options={{ title: t('loginsTitle') }} />
       <SavedLoginsView api={api} />
+    </ScrollView>
+  );
+};
+
+export const AboutYouScreen = () => {
+  const styles = createStyles(useColors());
+
+  return (
+    <ScrollView
+      contentContainerStyle={styles.content}
+      contentInsetAdjustmentBehavior="automatic"
+      keyboardShouldPersistTaps="handled"
+      style={styles.screen}
+    >
+      <Stack.Screen options={{ title: t('profileTitle') }} />
+      <AboutYouView
+        api={api}
+        onOpenInterview={(topicId) =>
+          router.push({ params: { topicId }, pathname: '/chat/[topicId]' })
+        }
+      />
     </ScrollView>
   );
 };

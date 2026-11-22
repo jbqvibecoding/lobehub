@@ -24,9 +24,17 @@ import { usePlan } from './use-plan';
 const SETTINGS: {
   hint: StringKey;
   href:
-    '/accounts' | '/chat-apps' | '/computer' | '/experts' | '/logins' | '/memories' | '/proactive';
+    | '/accounts'
+    | '/chat-apps'
+    | '/computer'
+    | '/experts'
+    | '/logins'
+    | '/memories'
+    | '/proactive'
+    | '/profile';
   title: StringKey;
 }[] = [
+  { hint: 'profileEntryHint', href: '/profile', title: 'profileTitle' },
   { hint: 'expertsEntryHint', href: '/experts', title: 'expertsTitle' },
   { hint: 'accountsEntryHint', href: '/accounts', title: 'accountsTitle' },
   { hint: 'linkedChatsEntryHint', href: '/chat-apps', title: 'linkedChatsTitle' },

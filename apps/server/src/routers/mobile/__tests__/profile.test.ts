@@ -113,3 +113,79 @@ describe('mobile profileRouter.startInterview', () => {
     await cleanupTestUser(testDB, otherId);
   });
 });
+
+describe('mobile profileRouter: About you', () => {
+  it('invites a new user once, until they say "Later" or start', async () => {
+    const userId = await createTestUser(testDB);
+    const otherId = await createTestUser(testDB);
+    const caller = callerFor(userId);
+
+    expect(await caller.status()).toEqual({ invite: true });
+    await caller.dismissInvite();
+    expect(await caller.status()).toEqual({ invite: false });
+
+    await callerFor(otherId).startInterview({});
+    expect(await callerFor(otherId).status()).toEqual({ invite: false });
+
+    await cleanupTestUser(testDB, userId);
+    await cleanupTestUser(testDB, otherId);
+  });
+
+  it('does not invite someone Biber already knows something about', async () => {
+    const userId = await createTestUser(testDB);
+    await callerFor(userId).saveEntry({ section: 'name', text: 'An' });
+
+    expect(await callerFor(userId).status()).toEqual({ invite: false });
+
+    await cleanupTestUser(testDB, userId);
+  });
+
+  it('changes, deletes and clears entries through the same rules as Biber', async () => {
+    const userId = await createTestUser(testDB);
+    const caller = callerFor(userId);
+    await new UserProfileService(testDB, userId).saveEntry({ section: 'goals', text: 'Run' });
+
+    expect(await caller.saveEntry({ id: 'G0', section: 'goals', text: 'Swim' })).toMatchObject({
+      id: 'G0',
+      text: 'Swim',
+    });
+    await expect(caller.saveEntry({ section: 'goals', text: '  ' })).rejects.toThrow(
+      'PROFILE_EMPTY',
+    );
+    await expect(
+      caller.saveEntry({ section: 'now', text: 'card 4111 1111 1111 1111' }),
+    ).rejects.toThrow('PROFILE_SECRET');
+    await expect(caller.saveEntry({ section: 'goals', text: 'x'.repeat(501) })).rejects.toThrow(
+      'PROFILE_TOO_LONG',
+    );
+    expect((await caller.get()).entries).toEqual([
+      expect.objectContaining({ id: 'G0', text: 'Swim' }),
+    ]);
+
+    await caller.dropEntry({ id: 'G0' });
+    await expect(caller.dropEntry({ id: 'G0' })).rejects.toThrow('PROFILE_NOT_FOUND');
+    expect((await caller.get()).entries).toEqual([]);
+
+    await caller.saveEntry({ section: 'goals', text: 'Read' });
+    await caller.clear();
+    expect(await caller.get()).toEqual({ entries: [], interview: { inviteDismissed: true } });
+
+    await cleanupTestUser(testDB, userId);
+  });
+
+  it("never shows or changes another user's profile", async () => {
+    const userId = await createTestUser(testDB);
+    const otherId = await createTestUser(testDB);
+    await callerFor(otherId).saveEntry({ section: 'goals', text: 'Theirs' });
+
+    expect((await callerFor(userId).get()).entries).toEqual([]);
+    await expect(callerFor(userId).dropEntry({ id: 'G0' })).rejects.toThrow('PROFILE_NOT_FOUND');
+    await callerFor(userId).clear();
+    expect((await callerFor(otherId).get()).entries).toEqual([
+      expect.objectContaining({ id: 'G0', text: 'Theirs' }),
+    ]);
+
+    await cleanupTestUser(testDB, userId);
+    await cleanupTestUser(testDB, otherId);
+  });
+});

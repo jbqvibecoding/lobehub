@@ -1,5 +1,5 @@
 import { BUILTIN_AGENT_SLUGS } from '@lobechat/builtin-agents';
-import { RequestTrigger } from '@lobechat/types';
+import { RequestTrigger, USER_PROFILE_SECTIONS } from '@lobechat/types';
 import { TRPCError } from '@trpc/server';
 import debug from 'debug';
 import { z } from 'zod';
@@ -42,7 +42,56 @@ const wordsFor = (locale?: string) =>
  * The "About you" interview from the phone: Biber gets to know the user in a conversation of its
  * own, and what it learns goes into their profile.
  */
+/** What the phone shows for why an entry was not saved (see `SAVE_FAILURES` on the phone). */
+const refusal = (outcome: { message: string; ok: false; reason: string }) =>
+  new TRPCError({
+    code: outcome.reason === 'not_found' ? 'NOT_FOUND' : 'BAD_REQUEST',
+    message: `PROFILE_${outcome.reason.toUpperCase()}`,
+  });
+
+const id = z.string().min(1).max(16);
+
 export const profileRouter = router({
+  /** Whether to invite the user to the interview, above the chat list. */
+  status: profileProcedure.query(async ({ ctx }) => ({ invite: await ctx.profile.inviteDue() })),
+
+  /** The user said "Later" to the invite. */
+  dismissInvite: profileProcedure.mutation(async ({ ctx }) => {
+    await ctx.profile.dismissInvite();
+    return { invite: false };
+  }),
+
+  /** "About you": what the user told Biber, and where the interview stands. */
+  get: profileProcedure.query(({ ctx }) => ctx.profile.get()),
+
+  /** Changes an entry's words (it keeps its id), or adds one. */
+  saveEntry: profileProcedure
+    .input(
+      z.object({
+        id: id.optional(),
+        section: z.enum(USER_PROFILE_SECTIONS),
+        text: z.string().max(2000),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const outcome = await ctx.profile.saveEntry(input);
+      if (!outcome.ok) throw refusal(outcome);
+      return outcome.entry;
+    }),
+
+  /** Deletes an entry; its id is not given again. */
+  dropEntry: profileProcedure.input(z.object({ id })).mutation(async ({ ctx, input }) => {
+    const outcome = await ctx.profile.dropEntry(input.id);
+    if (!outcome.ok) throw refusal(outcome);
+    return { id: input.id };
+  }),
+
+  /** Deletes everything the user told Biber about themselves. Memories are not touched. */
+  clear: profileProcedure.mutation(async ({ ctx }) => {
+    await ctx.profile.clear();
+    return { cleared: true };
+  }),
+
   /**
    * Opens the interview: continues its conversation if there is one, or starts it, with a first
    * line from the user so Biber begins. Returns the conversation for the phone to open.

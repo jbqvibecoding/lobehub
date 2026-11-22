@@ -123,3 +123,33 @@ export interface SavedLogin {
   /** The one site it may be typed into, such as https://qq.com */
   site: string;
 }
+
+/** The parts of the user's profile, in the order the "About you" screen and interview go. */
+export const PROFILE_SECTIONS = [
+  'name',
+  'mission',
+  'goals',
+  'challenges',
+  'people',
+  'projects',
+  'now',
+  'ideal',
+  'style',
+] as const;
+
+export type ProfileSection = (typeof PROFILE_SECTIONS)[number];
+
+/** One thing the user told Biber about themselves (`profile.get`). */
+export interface ProfileEntry {
+  /** G0, PE1, now…: kept for good, even when the text changes */
+  id: string;
+  reviewedAt?: string;
+  section: ProfileSection;
+  text: string;
+  updatedAt: string;
+}
+
+export interface Profile {
+  entries: ProfileEntry[];
+  interview: { finishedAt?: string; startedAt?: string; topicId?: string };
+}

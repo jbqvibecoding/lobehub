@@ -76,6 +76,23 @@ export class UserProfileService {
     });
   }
 
+  /**
+   * Whether the phone invites the user to the interview: only someone Biber knows nothing about,
+   * who has neither started it nor said "Later".
+   */
+  async inviteDue() {
+    const { entries, interview } = await this.get();
+    return !entries.length && !interview.startedAt && !interview.inviteDismissed;
+  }
+
+  /** The user said "Later" to the invite; it is not shown again. */
+  async dismissInvite() {
+    await this.model.update((state) => ({
+      result: undefined,
+      state: { ...state, interview: { ...state.interview, inviteDismissed: true } },
+    }));
+  }
+
   /** Records that the interview runs in `topicId` and is under way again. */
   async startInterview(topicId: string) {
     const startedAt = this.now().toISOString();
