@@ -33,6 +33,7 @@ export * from './rag';
 export * from './ragEvals';
 export * from './rbac';
 export * from './relations';
+export * from './savedLogin';
 export * from './session';
 export * from './systemBotProvider';
 export * from './task';

@@ -8,6 +8,7 @@ import { type Palette, useColors } from '@/theme/colors';
 import { AccountsView } from './accounts';
 import { ExpertsView } from './experts';
 import { LinkedChatsView } from './linked-chats';
+import { SavedLoginsView } from './logins';
 import { MemoriesList } from './memories';
 import { ProactiveSettingsView } from './proactive';
 
@@ -38,6 +39,22 @@ export const AccountsScreen = () => {
     >
       <Stack.Screen options={{ title: t('accountsTitle') }} />
       <AccountsView api={api} />
+    </ScrollView>
+  );
+};
+
+export const SavedLoginsScreen = () => {
+  const styles = createStyles(useColors());
+
+  return (
+    <ScrollView
+      contentContainerStyle={styles.content}
+      contentInsetAdjustmentBehavior="automatic"
+      keyboardShouldPersistTaps="handled"
+      style={styles.screen}
+    >
+      <Stack.Screen options={{ title: t('loginsTitle') }} />
+      <SavedLoginsView api={api} />
     </ScrollView>
   );
 };

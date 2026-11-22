@@ -333,6 +333,29 @@ const en = {
   mailSmtpPort: 'SMTP port',
   mailSubmit: 'Connect',
   mailboxTitle: 'Mailbox',
+  loginAdd: 'Add a login',
+  loginDelete: 'Delete',
+  loginDeleteBody: 'Biber can no longer sign in with it. The password is deleted too.',
+  loginDeleteError: 'Could not delete it. Try again.',
+  loginDeleteTitle: 'Delete {{name}}?',
+  loginErrorLimit: 'You have saved as many logins as you can. Delete one first.',
+  loginErrorOther: 'Could not save the login. Try again.',
+  loginErrorSite:
+    'Enter the website as it appears in the address bar, such as qq.com. Only https sites can be saved.',
+  loginFormHint:
+    'Biber never sees the password. It types it only on this website, and only after you approve each sign-in.',
+  loginLabel: 'Name (optional)',
+  loginPassword: 'Password',
+  loginSave: 'Save',
+  loginSaving: 'Saving…',
+  loginSite: 'Website',
+  loginUsername: 'User name or email',
+  loginsEmpty: 'No saved logins yet.',
+  loginsEntryHint: 'Let Biber sign in to websites for you',
+  loginsError: 'Could not load your saved logins.',
+  loginsIntro:
+    'Biber can sign in with these on its cloud computer. Each works only on its own website, and you approve every sign-in.',
+  loginsTitle: 'Saved logins',
 };
 
 const zh: typeof en = {
@@ -654,6 +677,26 @@ const zh: typeof en = {
   mailSmtpPort: 'SMTP 端口',
   mailSubmit: '连接',
   mailboxTitle: '邮箱',
+  loginAdd: '添加登录',
+  loginDelete: '删除',
+  loginDeleteBody: '删除后 Biber 就不能用它登录了，密码也一起删除。',
+  loginDeleteError: '没能删除，请再试一次。',
+  loginDeleteTitle: '删除{{name}}？',
+  loginErrorLimit: '保存的登录已达上限，先删掉一个。',
+  loginErrorOther: '没能保存，请再试一次。',
+  loginErrorSite: '请按地址栏里的样子填写网站，比如 qq.com。只能保存 https 网站。',
+  loginFormHint: 'Biber 看不到密码。它只会在这个网站上替你填，而且每次登录都要你批准。',
+  loginLabel: '名称（可不填）',
+  loginPassword: '密码',
+  loginSave: '保存',
+  loginSaving: '正在保存…',
+  loginSite: '网站',
+  loginUsername: '用户名或邮箱',
+  loginsEmpty: '还没有保存的登录。',
+  loginsEntryHint: '让 Biber 替你登录网站',
+  loginsError: '没能加载保存的登录。',
+  loginsIntro: 'Biber 可以在云电脑上用这些登录。每个只能用在它自己的网站上，每次登录都要你批准。',
+  loginsTitle: '保存的登录',
 };
 
 export type StringKey = keyof typeof en;

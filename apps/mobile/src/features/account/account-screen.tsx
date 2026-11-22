@@ -23,7 +23,8 @@ import { usePlan } from './use-plan';
 
 const SETTINGS: {
   hint: StringKey;
-  href: '/accounts' | '/chat-apps' | '/computer' | '/experts' | '/memories' | '/proactive';
+  href:
+    '/accounts' | '/chat-apps' | '/computer' | '/experts' | '/logins' | '/memories' | '/proactive';
   title: StringKey;
 }[] = [
   { hint: 'expertsEntryHint', href: '/experts', title: 'expertsTitle' },
@@ -32,6 +33,7 @@ const SETTINGS: {
   { hint: 'memoriesEntryHint', href: '/memories', title: 'memoriesTitle' },
   { hint: 'proactiveEntryHint', href: '/proactive', title: 'proactiveTitle' },
   { hint: 'computerEntryHint', href: '/computer', title: 'computerTitle' },
+  { hint: 'loginsEntryHint', href: '/logins', title: 'loginsTitle' },
 ];
 
 export const AccountScreen = () => {

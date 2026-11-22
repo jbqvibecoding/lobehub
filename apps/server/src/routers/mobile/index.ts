@@ -39,6 +39,7 @@ import { activityRouter } from './activity';
 import { approvalRouter } from './approval';
 import { chatRouter } from './chat';
 import { expertsRouter } from './experts';
+import { loginsRouter } from './logins';
 import { memoriesRouter } from './memories';
 import { proactiveRouter } from './proactive';
 import { routinesRouter } from './routines';
@@ -67,6 +68,7 @@ export const mobileRouter = router({
   healthcheck: publicProcedure.query(() => "i'm live!"),
   home: homeRouter,
   knowledgeBase: knowledgeBaseRouter,
+  logins: loginsRouter,
   market: marketRouter,
   memories: memoriesRouter,
   message: messageRouter,

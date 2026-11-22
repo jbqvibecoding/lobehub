@@ -896,6 +896,13 @@
       "when": 1795293793441,
       "tag": "0127_add_personal_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1795336727184,
+      "tag": "0128_add_saved_logins",
+      "breakpoints": true
     }
   ],
   "version": "6"

@@ -112,3 +112,14 @@ export type AccountsOverview =
       edition: 'cn';
       mail: ConnectedAccount & { presets: MailPreset[] };
     };
+
+/** A website login saved for Biber (`logins.list`): never its user name or password. */
+export interface SavedLogin {
+  /** What may be shown of the user name, such as a•••@qq.com; empty when there is none */
+  account: string;
+  id: string;
+  label: string;
+  lastUsedAt: Date | null;
+  /** The one site it may be typed into, such as https://qq.com */
+  site: string;
+}
