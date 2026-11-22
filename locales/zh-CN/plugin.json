@@ -360,6 +360,7 @@
   "builtins.lobe-page-agent.title": "文档",
   "builtins.lobe-profile.apiName.confirmEntries": "确认关于你",
   "builtins.lobe-profile.apiName.dropEntry": "从关于你中删除",
+  "builtins.lobe-profile.apiName.finishInterview": "结束访谈",
   "builtins.lobe-profile.apiName.saveEntry": "记到关于你",
   "builtins.lobe-profile.title": "关于你",
   "builtins.lobe-reminders.apiName.addReminder": "记下稍后要说的事",

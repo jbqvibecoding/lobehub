@@ -160,8 +160,9 @@ export const serverMessagesEngine = async ({
         }
       : undefined,
 
-    // The user's own profile (Biber only: the caller passes it when the profile tool is on)
-    ...(userProfile?.entries.length && { userProfile }),
+    // The user's own profile, and in the "About you" interview how to run it (Biber only: the
+    // caller passes it when the profile tool is on)
+    ...(userProfile && { userProfile }),
 
     // Server-side variable generators (with model/provider context + device paths)
     variableGenerators: {

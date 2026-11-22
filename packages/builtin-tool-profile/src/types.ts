@@ -7,6 +7,9 @@ export const ProfileApiName = {
   /** Delete an entry the user wants gone */
   dropEntry: 'dropEntry',
 
+  /** Mark the "About you" interview as finished */
+  finishInterview: 'finishInterview',
+
   /** Add an entry, or change one by its id */
   saveEntry: 'saveEntry',
 } as const;

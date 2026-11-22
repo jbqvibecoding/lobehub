@@ -49,6 +49,13 @@ export const profileToolActions = (db: LobeChatDatabase, userId: string) => {
       return { content: `Deleted ${id}.`, state: { entry: outcome.entry }, success: true };
     },
 
+    finishInterview: async (): Promise<BuiltinServerRuntimeOutput> => {
+      if (!(await profile.finishInterview())) {
+        return failure('Profile_no_interview', 'There is no "About you" interview to finish.');
+      }
+      return { content: 'The "About you" interview is finished.', success: true };
+    },
+
     saveEntry: async (params: SaveEntryParams): Promise<BuiltinServerRuntimeOutput> => {
       const outcome = await profile.saveEntry(params);
       if (!outcome.ok) return refused(outcome);

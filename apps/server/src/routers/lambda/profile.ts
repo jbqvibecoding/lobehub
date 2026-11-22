@@ -25,6 +25,10 @@ export const profileRouter = router({
     .input(z.object({ id }))
     .mutation(({ ctx, input }) => profileToolActions(ctx.serverDB, ctx.userId).dropEntry(input)),
 
+  finishInterview: procedure.mutation(({ ctx }) =>
+    profileToolActions(ctx.serverDB, ctx.userId).finishInterview(),
+  ),
+
   get: procedure.query(async ({ ctx }) => new UserProfileService(ctx.serverDB, ctx.userId).get()),
 
   saveEntry: procedure

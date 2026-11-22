@@ -41,6 +41,7 @@ import {
   GroupAgentBuilderContextInjector,
   GroupContextInjector,
   HistorySummaryProvider,
+  InterviewGuidanceInjector,
   KnowledgeInjector,
   LocalSystemToolSnapshotInjector,
   ModelInfoProvider,
@@ -287,6 +288,12 @@ export class MessagesEngine {
 
       // The user's own profile, then what memory gathered about them
       new UserProfileInjector({ entries: userProfile?.entries }),
+      // In the "About you" interview: how to run it and what is left to ask
+      new InterviewGuidanceInjector({
+        enabled: !!userProfile?.interview,
+        entries: userProfile?.entries,
+        finishedAt: userProfile?.interview?.finishedAt,
+      }),
       // User memory
       new UserMemoryInjector({ ...userMemory, enabled: isUserMemoryEnabled }),
       // Group context (agent identity and group info for multi-agent chat)

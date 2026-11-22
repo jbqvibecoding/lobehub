@@ -33,6 +33,8 @@ class ProfileExecutor extends BaseExecutor<typeof ProfileApiName> {
 
   dropEntry = (params: DropEntryParams) => this.run(() => profileService.dropEntry(params));
 
+  finishInterview = () => this.run(() => profileService.finishInterview());
+
   saveEntry = (params: SaveEntryParams) => this.run(() => profileService.saveEntry(params));
 }
 

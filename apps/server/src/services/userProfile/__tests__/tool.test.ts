@@ -99,6 +99,23 @@ describe('the profile tool', () => {
     ]);
   });
 
+  it('finishes the interview only once one was started', async () => {
+    const tool = runtimeFor(userId);
+    const profile = new UserProfileService(db, userId);
+
+    expect(await tool.finishInterview({})).toMatchObject({
+      error: { type: 'Profile_no_interview' },
+      success: false,
+    });
+
+    await profile.startInterview('topic-1');
+    expect(await tool.finishInterview({})).toMatchObject({ success: true });
+    expect((await profile.get()).interview).toMatchObject({
+      finishedAt: expect.any(String),
+      topicId: 'topic-1',
+    });
+  });
+
   it('clears everything but keeps the first-run invite away', async () => {
     const profile = new UserProfileService(db, userId);
     await runtimeFor(userId).saveEntry({ section: 'goals', text: 'Run' });

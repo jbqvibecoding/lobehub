@@ -42,6 +42,7 @@ import { expertsRouter } from './experts';
 import { loginsRouter } from './logins';
 import { memoriesRouter } from './memories';
 import { proactiveRouter } from './proactive';
+import { profileRouter } from './profile';
 import { routinesRouter } from './routines';
 
 export const mobileRouter = router({
@@ -75,6 +76,7 @@ export const mobileRouter = router({
   messenger: messengerRouter,
   plugin: pluginRouter,
   proactive: proactiveRouter,
+  profile: profileRouter,
   pushToken: pushTokenRouter,
   routines: routinesRouter,
   session: sessionRouter,

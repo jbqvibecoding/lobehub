@@ -371,6 +371,7 @@ export default {
   'builtins.lobe-mail.title': 'Mail',
   'builtins.lobe-profile.apiName.confirmEntries': 'Confirm about you',
   'builtins.lobe-profile.apiName.dropEntry': 'Delete from about you',
+  'builtins.lobe-profile.apiName.finishInterview': 'Finish the interview',
   'builtins.lobe-profile.apiName.saveEntry': 'Save to about you',
   'builtins.lobe-profile.title': 'About you',
   'builtins.lobe-reminders.apiName.addReminder': 'Note for later',

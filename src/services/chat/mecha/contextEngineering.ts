@@ -363,13 +363,20 @@ export const contextEngineering = async ({
   }
 
   // What the user told Biber about themselves: for the agent that carries the profile tool, and
-  // given whether or not memory is on, since the user said it on purpose.
+  // given whether or not memory is on, since the user said it on purpose. In the "About you"
+  // interview's conversation it comes with how to run the interview.
   let userProfile: UserProfileConfig | undefined;
   if (tools?.includes(ProfileIdentifier)) {
     try {
-      const { entries } = await profileService.get();
-      if (entries.length > 0) userProfile = { entries };
-      log('User profile resolved: %d entries', entries.length);
+      const { entries, interview } = await profileService.get();
+      const inInterview = !!interview.topicId && interview.topicId === topicId;
+      if (entries.length > 0 || inInterview) {
+        userProfile = {
+          entries,
+          ...(inInterview && { interview: { finishedAt: interview.finishedAt } }),
+        };
+      }
+      log('User profile resolved: %d entries (interview: %s)', entries.length, inInterview);
     } catch (error) {
       log('Failed to resolve the user profile:', error);
     }

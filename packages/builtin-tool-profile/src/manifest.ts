@@ -54,6 +54,12 @@ export const ProfileManifest: BuiltinToolManifest = {
       },
     },
     {
+      description:
+        'In the "About you" interview only: mark it finished, once you have listed what you saved and told the user where to change it.',
+      name: ProfileApiName.finishInterview,
+      parameters: { additionalProperties: false, properties: {}, type: 'object' },
+    },
+    {
       description: 'Mark entries the user says still hold as they are, without changing them.',
       name: ProfileApiName.confirmEntries,
       parameters: {

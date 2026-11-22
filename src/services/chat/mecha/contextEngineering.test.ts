@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as isCanUseFCModule from '@/helpers/isCanUseFC';
 import { agentService } from '@/services/agent';
 import { agentDocumentService } from '@/services/agentDocument';
+import { profileService } from '@/services/profile';
 import { useAgentStore } from '@/store/agent';
 
 import * as helpers from '../helper';
@@ -134,6 +135,28 @@ describe('contextEngineering', () => {
     expect(
       hasProfile(await contextEngineering({ messages, model: 'gpt-4', provider: 'openai' })),
     ).toBe(false);
+  });
+
+  it('adds how to run the interview in its own conversation only', async () => {
+    const messages = [{ content: 'Let’s start', role: 'user' }] as UIChatMessage[];
+    const interviewing = (output: { content?: unknown }[]) =>
+      output.some((message) => String(message.content).includes('<profile_interview>'));
+    const profile = {
+      entries: [],
+      interview: { startedAt: '2026-11-22T00:00:00.000Z', topicId: 'topic-interview' },
+    };
+    vi.mocked(profileService.get).mockResolvedValueOnce(profile).mockResolvedValueOnce(profile);
+    const run = (topicId: string) =>
+      contextEngineering({
+        messages,
+        model: 'gpt-4',
+        provider: 'openai',
+        tools: ['lobe-profile'],
+        topicId,
+      });
+
+    expect(interviewing(await run('topic-interview'))).toBe(true);
+    expect(interviewing(await run('topic-other'))).toBe(false);
   });
 
   it('should not fetch agent documents implicitly when agentId is provided', async () => {

@@ -13,6 +13,8 @@ export const profileService = {
 
   dropEntry: (params: DropEntryParams) => lambdaClient.profile.dropEntry.mutate(params),
 
+  finishInterview: () => lambdaClient.profile.finishInterview.mutate(),
+
   get: () => lambdaClient.profile.get.query(),
 
   saveEntry: (params: SaveEntryParams) => lambdaClient.profile.saveEntry.mutate(params),

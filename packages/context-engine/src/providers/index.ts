@@ -18,6 +18,11 @@ export { ForceFinishSummaryInjector } from './ForceFinishSummaryInjector';
 export { GroupAgentBuilderContextInjector } from './GroupAgentBuilderContextInjector';
 export { GroupContextInjector } from './GroupContextInjector';
 export { HistorySummaryProvider } from './HistorySummary';
+export {
+  formatInterviewGuidance,
+  INTERVIEW_ORDER,
+  InterviewGuidanceInjector,
+} from './InterviewGuidanceInjector';
 export { KnowledgeInjector } from './KnowledgeInjector';
 export { LocalSystemToolSnapshotInjector } from './LocalSystemToolSnapshotInjector';
 export { ModelInfoProvider } from './ModelInfoProvider';
@@ -92,6 +97,7 @@ export type {
   GroupMemberInfo as GroupContextMemberInfo,
 } from './GroupContextInjector';
 export type { HistorySummaryConfig } from './HistorySummary';
+export type { InterviewGuidanceInjectorConfig } from './InterviewGuidanceInjector';
 export type { KnowledgeInjectorConfig } from './KnowledgeInjector';
 export type { LocalSystemToolSnapshotInjectorConfig } from './LocalSystemToolSnapshotInjector';
 export type { ModelInfoProviderConfig } from './ModelInfoProvider';

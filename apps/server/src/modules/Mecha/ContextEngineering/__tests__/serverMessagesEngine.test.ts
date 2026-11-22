@@ -422,6 +422,17 @@ describe('serverMessagesEngine', () => {
       expect(String(injection?.content)).toContain('- [G0] Run a full marathon before October');
     });
 
+    it('adds how to run the interview when the conversation is the interview', async () => {
+      const result = await serverMessagesEngine({
+        messages: createBasicMessages(),
+        model: 'gpt-4',
+        provider: 'openai',
+        userProfile: { entries: [], interview: {} },
+      });
+
+      expect(result.some((m: any) => String(m.content).includes('<profile_interview>'))).toBe(true);
+    });
+
     it('adds no profile block when there is none', async () => {
       const result = await serverMessagesEngine({
         messages: createBasicMessages(),

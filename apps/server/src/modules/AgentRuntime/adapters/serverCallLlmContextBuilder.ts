@@ -16,6 +16,7 @@ import type {
   AgentGroupConfig,
   OfficialToolItem,
   OnboardingContext,
+  UserProfileConfig,
 } from '@lobechat/context-engine';
 import { resolveTopicReferences } from '@lobechat/context-engine';
 import type { ChatStreamPayload } from '@lobechat/model-runtime';
@@ -25,7 +26,6 @@ import {
   CONTEXT_ENGINEERING_SPAN_NAME,
   tracer as agentRuntimeTracer,
 } from '@lobechat/observability-otel/modules/agent-runtime';
-import type { UserProfileEntry } from '@lobechat/types';
 import { getActivePluginIds, getDisabledPluginIds } from '@lobechat/types';
 
 import { composioEnv } from '@/config/composio';
@@ -151,13 +151,20 @@ export const buildServerCallLlmContext = async ({
   }
 
   // What the user told Biber about themselves: read on every call, so an entry saved a step ago or
-  // changed on the phone is already there. Only for an agent that carries the profile tool.
-  let userProfile: { entries: UserProfileEntry[] } | undefined;
+  // changed on the phone is already there. Only for an agent that carries the profile tool; in the
+  // "About you" interview's own conversation it comes with how to run the interview.
+  let userProfile: UserProfileConfig | undefined;
   if (resolved.enabledToolIds.includes(ProfileIdentifier) && ctx.serverDB && ctx.userId) {
     try {
-      const { entries } = await new UserProfileService(ctx.serverDB, ctx.userId).get();
-      if (entries.length > 0) userProfile = { entries };
-      log('Resolved %d profile entries', entries.length);
+      const { entries, interview } = await new UserProfileService(ctx.serverDB, ctx.userId).get();
+      const inInterview = !!interview.topicId && interview.topicId === state.metadata?.topicId;
+      if (entries.length > 0 || inInterview) {
+        userProfile = {
+          entries,
+          ...(inInterview && { interview: { finishedAt: interview.finishedAt } }),
+        };
+      }
+      log('Resolved %d profile entries (interview: %s)', entries.length, inInterview);
     } catch (error) {
       log('Failed to resolve the user profile: %O', error);
     }

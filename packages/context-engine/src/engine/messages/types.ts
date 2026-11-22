@@ -176,6 +176,11 @@ export interface UserMemoryConfig {
  */
 export interface UserProfileConfig {
   entries: UserProfileEntry[];
+  /** Set when this conversation is the user's "About you" interview */
+  interview?: {
+    /** When Biber last finished it */
+    finishedAt?: string;
+  };
 }
 
 /**

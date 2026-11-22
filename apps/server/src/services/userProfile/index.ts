@@ -76,6 +76,34 @@ export class UserProfileService {
     });
   }
 
+  /** Records that the interview runs in `topicId` and is under way again. */
+  async startInterview(topicId: string) {
+    const startedAt = this.now().toISOString();
+    await this.model.update((state) => ({
+      result: undefined,
+      state: {
+        ...state,
+        interview: {
+          ...state.interview,
+          finishedAt: undefined,
+          startedAt: state.interview.startedAt ?? startedAt,
+          topicId,
+        },
+      },
+    }));
+    log('interview for %s runs in %s', this.userId, topicId);
+  }
+
+  /** Records that Biber finished the interview; false when none was started. */
+  async finishInterview() {
+    const finishedAt = this.now().toISOString();
+    return this.model.update((state) =>
+      state.interview.startedAt
+        ? { result: true, state: { ...state, interview: { ...state.interview, finishedAt } } }
+        : { result: false },
+    );
+  }
+
   /**
    * Deletes every entry and the record of the interview. The first-run invite stays away: the
    * user has already met it.

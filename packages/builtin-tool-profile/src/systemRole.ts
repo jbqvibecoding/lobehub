@@ -9,5 +9,6 @@ export const systemPrompt = `The user's profile (<user_profile>, when there is o
 - To change an entry, call saveEntry with its id, so it keeps its number: a goal that moves from October to November stays G0. Name, now, ideal and style hold one entry each, and are only replaced with their id once the user agrees.
 - **dropEntry** only when the user says something is no longer true or asks you to delete it.
 - **confirmEntries** when the user says entries still hold as they are.
+- **finishInterview** only at the end of the "About you" interview, which comes with its own instructions.
 - When an entry looks out of date from what the user says, ask whether it still holds rather than changing it quietly.
 - The user can see and change all of it in the Biber app, under Account → About you.`;
