@@ -40,7 +40,8 @@ export const proactiveSettings = pgTable('proactive_settings', {
 
 export type ProactiveSettingsItem = typeof proactiveSettings.$inferSelect;
 
-export type ProactiveThoughtKind = 'follow_up' | 'reminder';
+/** `profile_check`: asking whether something in the user's profile still holds */
+export type ProactiveThoughtKind = 'follow_up' | 'profile_check' | 'reminder';
 
 /** `immediate` loses its point when late (a reminder for tomorrow); `window` keeps for a while */
 export type ProactiveThoughtUrgency = 'immediate' | 'window';
@@ -49,10 +50,11 @@ export type ProactiveThoughtStatus = 'done' | 'dropped' | 'expired' | 'open';
 
 /**
  * Where a thought came from: derived from a dated `activity` in the user's memory, noted by the
- * `agent` in a chat on its own initiative, or `asked` for by the user ("remind me at 3"). Asked
- * reminders go out at their time, outside the limits on unprompted messages.
+ * `agent` in a chat on its own initiative, `asked` for by the user ("remind me at 3"), or an entry
+ * of the user's `profile` gone out of date. Asked reminders go out at their time, outside the
+ * limits on unprompted messages.
  */
-export type ProactiveThoughtSource = 'activity' | 'agent' | 'asked';
+export type ProactiveThoughtSource = 'activity' | 'agent' | 'asked' | 'profile';
 
 /**
  * Proactive thoughts - the pending-to-say list: things Biber means to bring up when the moment is
@@ -102,9 +104,10 @@ export type ProactiveThoughtItem = typeof proactiveThoughts.$inferSelect;
 
 /**
  * What Biber reached out about unprompted: a routine's result, a reminder before something on the
- * user's calendar, a follow-up after it, or a reminder the user asked for at a time of their own.
+ * user's calendar, a follow-up after it, a reminder the user asked for at a time of their own, or
+ * a question whether something in their profile still holds.
  */
-export type ProactiveMessageKind = 'asked' | 'follow_up' | 'reminder' | 'routine';
+export type ProactiveMessageKind = 'asked' | 'follow_up' | 'profile_check' | 'reminder' | 'routine';
 
 /**
  * What became of a message the user did not ask for. It only moves forward, in this order:

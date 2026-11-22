@@ -63,7 +63,9 @@ export const proactiveRouter = router({
 
     return thoughts
       .filter(
-        (thought) => thought.source !== 'asked' || !thought.dueAt || thought.dueAt.getTime() > now,
+        (thought) =>
+          thought.source !== 'profile' &&
+          (thought.source !== 'asked' || !thought.dueAt || thought.dueAt.getTime() > now),
       )
       .map(({ dueAt, expiresAt, id, kind, occursAt, seed, source }) => ({
         dueAt,

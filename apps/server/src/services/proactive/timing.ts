@@ -10,7 +10,7 @@ export const PROACTIVE_LEVELS: Record<
 > = {
   off: { dailyCap: 0, kinds: [] },
   quiet: { dailyCap: 1, kinds: ['reminder'] },
-  standard: { dailyCap: 3, kinds: ['reminder', 'follow_up'] },
+  standard: { dailyCap: 3, kinds: ['reminder', 'follow_up', 'profile_check'] },
 };
 
 /** Two unprompted messages are at least this far apart. */

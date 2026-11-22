@@ -45,6 +45,7 @@ Rules:
 - One or two sentences, like a message from a thoughtful assistant. No greeting, no sign-off.
 - A reminder says what is coming and when, plus one useful nudge if there is an obvious one.
 - A follow-up asks how it went, briefly, and offers help only if it fits.
+- A profile check quotes, in a few words, what the user once told you about themselves and asks whether it still holds. Nothing else.
 - Use only what the item says. Do not invent times, places or people.
 - Do not mention memory, notes, or how you know. Do not repeat or rephrase a recent message.
 - Write in the language of the locale you are given.
@@ -63,12 +64,18 @@ const describeWhen = (when: Date | null, { locale, timeZone }: ComposeInput) =>
       }).format(when)
     : 'unknown';
 
+const KIND_LABELS: Record<ProactiveThoughtItem['kind'], string> = {
+  follow_up: 'follow-up (ask how it went)',
+  profile_check: 'profile check (ask whether it still holds; "when" is when they said it)',
+  reminder: 'reminder (coming up)',
+};
+
 /** The user's half of the prompt: the moment, the items to choose from, and what was said lately. */
 export const buildComposePrompt = (input: ComposeInput) => {
   const items = input.candidates.map((thought) =>
     [
       `- id: ${thought.id}`,
-      `  kind: ${thought.kind === 'reminder' ? 'reminder (coming up)' : 'follow-up (ask how it went)'}`,
+      `  kind: ${KIND_LABELS[thought.kind]}`,
       `  when: ${describeWhen(thought.occursAt, input)}`,
       `  about: ${thought.seed}`,
     ].join('\n'),

@@ -78,7 +78,7 @@ const parseMoment = (value: string | undefined, field: string, timeZone: string)
 };
 
 const kindOf = (thought: ProactiveThoughtItem): ReminderKind =>
-  thought.source === 'asked' ? 'asked' : thought.kind;
+  thought.source === 'asked' ? 'asked' : thought.kind === 'follow_up' ? 'follow_up' : 'reminder';
 
 /**
  * Notes something to bring up later. Asked-for reminders go out at `at`; Biber's own notes become
@@ -200,7 +200,10 @@ export const addReminder = async (
 export const listReminders = async (scope: ReminderScope): Promise<BuiltinServerRuntimeOutput> => {
   const now = scope.now ?? new Date();
   const timeZone = await zoneFor(scope);
-  const open = await new ProactiveThoughtModel(scope.db, scope.userId).listOpen();
+  // Profile checks are not reminders: the user's profile is kept with its own tool
+  const open = (await new ProactiveThoughtModel(scope.db, scope.userId).listOpen()).filter(
+    (thought) => thought.source !== 'profile',
+  );
   const at = (thought: ProactiveThoughtItem) => thought.dueAt ?? thought.occursAt;
   const sorted = [...open].sort(
     (a, b) => (at(a)?.getTime() ?? Infinity) - (at(b)?.getTime() ?? Infinity),

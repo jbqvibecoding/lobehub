@@ -199,4 +199,16 @@ describe('listReminders and cancelReminder', () => {
   it('says plainly when nothing is waiting', async () => {
     expect((await listReminders(scope)).content).toContain('Nothing is waiting to be brought up.');
   });
+
+  it('leaves out profile checks, which are not reminders', async () => {
+    await db.insert(proactiveThoughts).values({
+      kind: 'profile_check',
+      seed: '[G0] (goals) Run a marathon',
+      source: 'profile',
+      sourceRef: 'profile_check:G0:2026-10-01T00:00:00.000Z',
+      userId,
+    });
+
+    expect((await listReminders(scope)).content).toContain('Nothing is waiting to be brought up.');
+  });
 });

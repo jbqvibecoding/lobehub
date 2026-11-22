@@ -10,19 +10,28 @@ import { ProactiveThoughtModel } from '@/database/models/proactiveThought';
 import {
   messages,
   proactiveMessages,
+  proactiveThoughts,
   userMemories,
   userMemoriesActivities,
 } from '@/database/schemas';
 import type { LobeChatDatabase } from '@/database/type';
 import { reviewModelReply } from '@/server/services/contentSafety';
 import { SystemAgentService } from '@/server/services/systemAgent';
+import { UserProfileService } from '@/server/services/userProfile';
 
 import { fromBiberTopic, resolveTimeZone } from './biber';
 import { bannedKinds, ignoredStreak, selectCandidates } from './candidates';
 import { composeProactiveMessage } from './compose';
 import { deliverProactiveMessage } from './delivery';
 import { deriveThoughts, FOLLOW_UP_WITHIN_MS, REMIND_AHEAD_MS } from './derive';
-import { decideTiming, localTime, RETRY_GAP_MS, type TimingVerdict } from './timing';
+import { deriveProfileCheck, PROFILE_CHECK_GAP_MS, PROFILE_FRESH_DAYS } from './profileCheck';
+import {
+  decideTiming,
+  localTime,
+  PROACTIVE_LEVELS,
+  RETRY_GAP_MS,
+  type TimingVerdict,
+} from './timing';
 
 const log = debug('lobe-server:proactive');
 
@@ -71,6 +80,9 @@ export class ProactiveService {
 
     const thoughts = new ProactiveThoughtModel(this.db, this.userId);
     await thoughts.addNew(deriveThoughts(await this.rememberedActivities(now), now, biber.id));
+    if (PROACTIVE_LEVELS[settings.level].kinds.includes('profile_check')) {
+      await this.addProfileCheck(thoughts, now, biber.id);
+    }
     await thoughts.expireOverdue(now);
 
     const timeZone = await resolveTimeZone(this.db, this.userId, settings.timeZone);
@@ -190,6 +202,31 @@ export class ProactiveService {
     }
   }
 
+  /**
+   * At most once a week, the one entry of the user's profile most out of date, to ask whether it
+   * still holds. An entry asked about once is not asked about again until it changes.
+   */
+  private async addProfileCheck(thoughts: ProactiveThoughtModel, now: Date, agentId: string) {
+    const previous = await this.db
+      .select({ createdAt: proactiveThoughts.createdAt, sourceRef: proactiveThoughts.sourceRef })
+      .from(proactiveThoughts)
+      .where(
+        and(eq(proactiveThoughts.userId, this.userId), eq(proactiveThoughts.kind, 'profile_check')),
+      );
+    const since = now.getTime() - PROFILE_CHECK_GAP_MS;
+    if (previous.some((thought) => thought.createdAt.getTime() > since)) return;
+
+    const { entries } = await new UserProfileService(this.db, this.userId).get();
+    const draft = deriveProfileCheck(entries, {
+      agentId,
+      asked: new Set(previous.map((thought) => thought.sourceRef)),
+      now,
+    });
+    if (!draft) return;
+    await thoughts.addNew([draft]);
+    log('profile check for userId=%s: %s', this.userId, draft.sourceRef);
+  }
+
   /** Activities in the user's memory that start soon or ended lately, with what they are. */
   private async rememberedActivities(now: Date) {
     const ahead = new Date(now.getTime() + REMIND_AHEAD_MS);
@@ -237,12 +274,20 @@ export class ProactiveService {
 
   /**
    * Users worth a check now, longest unchecked first: not turned off, and with something due on
-   * their pending-to-say list or an activity in memory that starts soon or just ended. Reminders
-   * the user asked for are sent on their own (see `asked.ts`), so they do not count here.
+   * their pending-to-say list, an activity in memory that starts soon or just ended, or (on the
+   * standard level, at most weekly) an entry of their profile out of date and not yet asked about.
+   * Reminders the user asked for are sent on their own (see `asked.ts`), so they do not count here.
    */
   static async dueUsers(db: LobeChatDatabase, now: Date, limit = 200) {
     const ahead = new Date(now.getTime() + REMIND_AHEAD_MS);
     const behind = new Date(now.getTime() - FOLLOW_UP_WITHIN_MS);
+    // Per section, the moment before which an entry is out of date (see `profileCheck.ts`)
+    const profileCutoffs = Object.fromEntries(
+      Object.entries(PROFILE_FRESH_DAYS).map(([section, days]) => [
+        section,
+        new Date(now.getTime() - days * DAY).toISOString(),
+      ]),
+    );
 
     const result = await db.execute(sql`
       select u.id
@@ -264,6 +309,27 @@ export class ProactiveService {
                 (a.starts_at > ${now} and a.starts_at <= ${ahead})
                 or (coalesce(a.ends_at, a.starts_at) between ${behind} and ${now})
               )
+          )
+          or (
+            coalesce(s.level, 'standard') = 'standard'
+            and not exists (
+              select 1 from proactive_thoughts t
+              where t.user_id = u.id
+                and t.kind = 'profile_check'
+                and t.created_at > ${new Date(now.getTime() - PROFILE_CHECK_GAP_MS)}
+            )
+            and exists (
+              select 1 from user_profiles p, jsonb_array_elements(p.entries) e,
+                lateral (select greatest(e->>'updatedAt', coalesce(e->>'reviewedAt', '')) as as_of) v
+              where p.user_id = u.id
+                and e->>'status' = 'active'
+                and v.as_of < (${JSON.stringify(profileCutoffs)}::jsonb ->> (e->>'section'))
+                and not exists (
+                  select 1 from proactive_thoughts t
+                  where t.user_id = u.id
+                    and t.source_ref = 'profile_check:' || (e->>'id') || ':' || v.as_of
+                )
+            )
           )
         )
       order by s.last_attempt_at asc nulls first

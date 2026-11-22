@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProactiveMessageModel } from '@/database/models/proactiveMessage';
 import { ProactiveSettingsModel } from '@/database/models/proactiveSettings';
+import { UserProfileModel } from '@/database/models/userProfile';
 import {
   messages,
   proactiveThoughts,
@@ -12,6 +13,7 @@ import {
   userMemoriesActivities,
 } from '@/database/schemas';
 import { users } from '@/database/schemas/user';
+import { UserProfileService } from '@/server/services/userProfile';
 
 import type * as Compose from '../compose';
 import { composeProactiveMessage } from '../compose';
@@ -50,6 +52,26 @@ const remember = async (id: string, title: string, hoursFromNow: number) => {
 /** Quiet hours off, so the time of day the tests run at does not matter. */
 const allowAllDay = () =>
   new ProactiveSettingsModel(db, userId).update({ quietEnd: 0, quietStart: 0, timeZone: 'UTC' });
+
+const DAY = 24 * HOUR;
+
+/** Puts entries in the user's profile as they were said `ageDays` ago. */
+const tellProfile = (
+  ...entries: [id: string, section: 'goals' | 'name' | 'people', text: string, ageDays: number][]
+) =>
+  new UserProfileModel(db, userId).update(() => ({
+    result: undefined,
+    state: {
+      entries: entries.map(([id, section, text, ageDays]) => ({
+        id,
+        section,
+        status: 'active' as const,
+        text,
+        updatedAt: new Date(Date.now() - ageDays * DAY).toISOString(),
+      })),
+      interview: {},
+    },
+  }));
 
 const composeWrites = (content: string) =>
   vi.mocked(composeProactiveMessage).mockImplementation(async (_db, _user, input) => ({
@@ -209,7 +231,69 @@ describe('ProactiveService.runForUser', () => {
   });
 });
 
+describe('ProactiveService profile checks', () => {
+  it('asks once whether the stalest entry still holds, then not again that week', async () => {
+    await allowAllDay();
+    await tellProfile(
+      ['name', 'name', 'An', 400],
+      ['G0', 'goals', 'Run a marathon before October', 45],
+      ['PE0', 'people', 'Lin, my wife', 20],
+    );
+    composeWrites('You said you want to run a marathon before October. Still the plan?');
+
+    expect(await new ProactiveService(db, userId).runForUser()).toMatchObject({ sent: true });
+    const [thought] = await db.select().from(proactiveThoughts);
+    expect(thought).toMatchObject({
+      kind: 'profile_check',
+      seed: '[G0] (goals) Run a marathon before October',
+      source: 'profile',
+      status: 'done',
+    });
+    const [entry] = await new ProactiveMessageModel(db, userId).recent();
+    expect(entry).toMatchObject({ kind: 'profile_check', thoughtId: thought.id });
+
+    // Another entry goes out of date, but one check a week is enough
+    await tellProfile(['G1', 'goals', 'Swim', 40], ['G0', 'goals', 'Run a marathon', 45]);
+    const tomorrow = new Date(Date.now() + DAY);
+    expect(await new ProactiveService(db, userId).runForUser(tomorrow)).toEqual({
+      reason: 'no_candidates',
+      sent: false,
+    });
+  });
+
+  it('does not ask about an entry the user just confirmed, nor on the quiet level', async () => {
+    await allowAllDay();
+    await tellProfile(['G0', 'goals', 'Run a marathon', 45]);
+    await new UserProfileService(db, userId).confirmEntries(['G0']);
+    composeWrites('Still the plan?');
+
+    expect(await new ProactiveService(db, userId).runForUser()).toMatchObject({
+      reason: 'no_candidates',
+    });
+
+    await tellProfile(['G0', 'goals', 'Run a marathon', 45]);
+    await new ProactiveSettingsModel(db, userId).update({ level: 'quiet' });
+    expect(
+      await new ProactiveService(db, userId).runForUser(new Date(Date.now() + HOUR)),
+    ).toMatchObject({ reason: 'no_candidates' });
+    expect(await db.select().from(proactiveThoughts)).toEqual([]);
+  });
+});
+
 describe('ProactiveService.dueUsers', () => {
+  it('picks a user with a profile entry out of date, until it has been asked about', async () => {
+    await tellProfile(['G0', 'goals', 'Run a marathon', 10], ['name', 'name', 'An', 400]);
+    expect(await ProactiveService.dueUsers(db, new Date())).toEqual([]);
+
+    await tellProfile(['G0', 'goals', 'Run a marathon', 45]);
+    expect(await ProactiveService.dueUsers(db, new Date())).toEqual([userId]);
+
+    await allowAllDay();
+    composeWrites('Still the plan?');
+    await new ProactiveService(db, userId).runForUser();
+    expect(await ProactiveService.dueUsers(db, new Date(Date.now() + 8 * DAY))).toEqual([]);
+  });
+
   it('picks users with something coming up, and leaves out those who turned it off', async () => {
     const quietUser = 'proactive-quiet-user';
     await db.insert(users).values({ id: quietUser });

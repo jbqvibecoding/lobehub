@@ -26,6 +26,25 @@ describe('buildComposePrompt', () => {
     expect(prompt).toMatch(/when: Sat, Nov 21, 10:00/);
     expect(prompt).toContain('- Your flight leaves at 8.');
   });
+
+  it('labels a profile check as a question whether the entry still holds', () => {
+    const prompt = buildComposePrompt({
+      candidates: [
+        {
+          ...thought,
+          kind: 'profile_check',
+          seed: '[G0] (goals) Run a marathon before October',
+        } as ProactiveThoughtItem,
+      ],
+      locale: 'en-US',
+      now: new Date('2026-11-20T06:00:00Z'),
+      recent: [],
+      timeZone: 'UTC',
+    });
+
+    expect(prompt).toContain('kind: profile check (ask whether it still holds;');
+    expect(prompt).toContain('about: [G0] (goals) Run a marathon before October');
+  });
 });
 
 describe('readComposeReply', () => {
