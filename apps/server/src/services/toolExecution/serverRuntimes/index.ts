@@ -20,6 +20,7 @@ import { browserRuntime } from './browser';
 import { calculatorRuntime } from './calculator';
 import { calendarRuntime } from './calendar';
 import { cloudSandboxRuntime } from './cloudSandbox';
+import { computerRuntime } from './computer';
 import { credsRuntime } from './creds';
 import { groupManagementRuntime } from './groupManagement';
 import { knowledgeBaseRuntime } from './knowledgeBase';
@@ -73,6 +74,7 @@ registerRuntimes([
   skillsRuntime,
   memoryRuntime,
   calendarRuntime,
+  computerRuntime,
   mailRuntime,
   remindersRuntime,
   activatorRuntime,

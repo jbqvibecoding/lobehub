@@ -1,4 +1,5 @@
 import { AgentDocumentsIdentifier } from '@lobechat/builtin-tool-agent-documents';
+import { ComputerIdentifier } from '@lobechat/builtin-tool-computer';
 import { RemindersIdentifier } from '@lobechat/builtin-tool-reminders';
 import { UserInteractionIdentifier } from '@lobechat/builtin-tool-user-interaction';
 
@@ -16,6 +17,8 @@ export const INBOX: BuiltinAgentDefinition = {
   runtime: (ctx) => ({
     plugins: [
       AgentDocumentsIdentifier,
+      // Offered only where the deployment runs cloud computers (the tools engines check)
+      ComputerIdentifier,
       RemindersIdentifier,
       UserInteractionIdentifier,
       ...(ctx.plugins || []),

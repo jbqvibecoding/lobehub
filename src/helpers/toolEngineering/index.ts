@@ -4,6 +4,7 @@
 import { BrowserManifest } from '@lobechat/builtin-tool-browser';
 import { CalendarManifest } from '@lobechat/builtin-tool-calendar';
 import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
+import { ComputerManifest } from '@lobechat/builtin-tool-computer';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
 import { MailManifest } from '@lobechat/builtin-tool-mail';
@@ -265,7 +266,14 @@ export const createAgentToolsEngine = (
     settingsSelectors.memoryEnabled(useUserStore.getState());
   const webBrowsingEnabled = searchConfig.useApplicationBuiltinSearchTool;
 
+  // Biber's browser on its cloud computer: only where this deployment runs one
+  const computerEnabled =
+    [...(pluginIds ?? []), ...userPlugins].includes(ComputerManifest.identifier) &&
+    typeof window !== 'undefined' &&
+    !!window.global_serverConfigStore?.getState()?.serverConfig?.enableCloudComputer;
+
   const chatModeRules = {
+    [ComputerManifest.identifier]: computerEnabled,
     [KnowledgeBaseManifest.identifier]: kbEnabled,
     [MemoryManifest.identifier]: memoryEnabled,
     // Biber's reminders, mail and calendar: only for the agent whose plugins carry them
@@ -298,6 +306,7 @@ export const createAgentToolsEngine = (
       agentChatConfigSelectors.isLocalSystemEnabled(agentState) &&
       labPreferSelectors.enableInAppBrowser(useUserStore.getState()),
     [CloudSandboxManifest.identifier]: agentChatConfigSelectors.isCloudSandboxEnabled(agentState),
+    [ComputerManifest.identifier]: computerEnabled,
     [KnowledgeBaseManifest.identifier]: kbEnabled,
     [LocalSystemManifest.identifier]: agentChatConfigSelectors.isLocalSystemEnabled(agentState),
     [MemoryManifest.identifier]: memoryEnabled,

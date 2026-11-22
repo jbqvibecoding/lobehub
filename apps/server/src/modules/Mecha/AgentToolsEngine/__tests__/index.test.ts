@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { CalendarManifest } from '@lobechat/builtin-tool-calendar';
+import { ComputerManifest } from '@lobechat/builtin-tool-computer';
 import { GroupAgentBuilderManifest } from '@lobechat/builtin-tool-group-agent-builder';
 import { GroupManagementManifest } from '@lobechat/builtin-tool-group-management';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
@@ -13,12 +14,17 @@ import { SkillsApiName, SkillsManifest } from '@lobechat/builtin-tool-skills';
 import { WebBrowsingManifest } from '@lobechat/builtin-tool-web-browsing';
 import { builtinTools } from '@lobechat/builtin-tools';
 import { ToolsEngine } from '@lobechat/context-engine';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { EXPERT_CHAT_CONFIG, EXPERT_PLUGINS } from '@/server/services/experts/catalog';
 
 import { createServerAgentToolsEngine, createServerToolsEngine } from '../index';
 import { type InstalledPlugin, type ServerAgentToolsContext } from '../types';
+
+const cloudComputer = vi.hoisted(() => ({ available: true }));
+vi.mock('@/server/services/computerTools', () => ({
+  isCloudComputerAvailable: () => cloudComputer.available,
+}));
 
 // Mock installed plugins
 const mockInstalledPlugins: InstalledPlugin[] = [
@@ -625,6 +631,34 @@ describe('createServerAgentToolsEngine', () => {
     it('is off for other agents, even in chat mode where it is allowed', () => {
       expect(remindersFor([])).not.toContain(RemindersManifest.identifier);
       expect(remindersFor([], 'chat')).not.toContain(RemindersManifest.identifier);
+    });
+  });
+
+  describe('Cloud computer browser enable rules', () => {
+    const toolsFor = (plugins: string[], toolMode?: 'chat') =>
+      createServerAgentToolsEngine(createMockContext(), {
+        agentConfig: { chatConfig: toolMode && { toolMode }, plugins },
+        model: 'gpt-4',
+        provider: 'openai',
+      }).generateToolsDetailed({ model: 'gpt-4', provider: 'openai', toolIds: plugins })
+        .enabledToolIds;
+
+    it('is on for Biber where the deployment runs cloud computers, in agent and chat mode', () => {
+      cloudComputer.available = true;
+      expect(toolsFor([ComputerManifest.identifier])).toContain(ComputerManifest.identifier);
+      expect(toolsFor([ComputerManifest.identifier], 'chat')).toContain(
+        ComputerManifest.identifier,
+      );
+    });
+
+    it('is off where there is no cloud computer, even for Biber, and for other agents', () => {
+      cloudComputer.available = false;
+      expect(toolsFor([ComputerManifest.identifier])).not.toContain(ComputerManifest.identifier);
+      expect(toolsFor([ComputerManifest.identifier], 'chat')).not.toContain(
+        ComputerManifest.identifier,
+      );
+      cloudComputer.available = true;
+      expect(toolsFor([])).not.toContain(ComputerManifest.identifier);
     });
   });
 

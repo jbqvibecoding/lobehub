@@ -233,6 +233,7 @@
     "@lobechat/builtin-tool-calendar": "workspace:*",
     "@lobechat/builtin-tool-claude-code": "workspace:*",
     "@lobechat/builtin-tool-cloud-sandbox": "workspace:*",
+    "@lobechat/builtin-tool-computer": "workspace:*",
     "@lobechat/builtin-tool-creds": "workspace:*",
     "@lobechat/builtin-tool-group-agent-builder": "workspace:*",
     "@lobechat/builtin-tool-group-management": "workspace:*",

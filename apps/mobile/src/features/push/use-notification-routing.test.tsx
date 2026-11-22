@@ -138,6 +138,16 @@ describe('useNotificationRouting', () => {
     expect(Notifications.clearLastNotificationResponse).toHaveBeenCalled();
   });
 
+  it('opens the cloud computer when Biber asks for the user there, answering nothing', async () => {
+    await renderRouting(true);
+
+    await emitTap(proactiveTap('expo.modules.notifications.actions.DEFAULT', { kind: 'computer' }));
+
+    expect(router.navigate).toHaveBeenCalledWith('/computer');
+    expect(router.navigate).not.toHaveBeenCalledWith('/');
+    expect(api.mutation).not.toHaveBeenCalled();
+  });
+
   it('opens a routine result’s task and reports the open', async () => {
     await renderRouting(true);
 

@@ -41,6 +41,7 @@ import { chunkRouter } from './chunk';
 import { comfyuiRouter } from './comfyui';
 import { composioRouter } from './composio';
 import { computerRouter } from './computer';
+import { computerToolsRouter } from './computerTools';
 import { configRouter } from './config';
 import { connectorRouter } from './connector';
 import { deviceRouter } from './device';
@@ -141,6 +142,7 @@ export const lambdaRouter = router({
   ragEval: ragEvalRouter,
   recent: recentRouter,
   calendar: calendarRouter,
+  computerTools: computerToolsRouter,
   mail: mailRouter,
   reminders: remindersRouter,
   search: searchRouter,

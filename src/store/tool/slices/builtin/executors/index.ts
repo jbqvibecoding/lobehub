@@ -12,6 +12,7 @@ import { browserExecutor } from '@lobechat/builtin-tool-browser/client/executor'
 import { calculatorExecutor } from '@lobechat/builtin-tool-calculator/executor';
 import { calendarExecutor } from '@lobechat/builtin-tool-calendar/client/executor';
 import { cloudSandboxExecutor } from '@lobechat/builtin-tool-cloud-sandbox/executor';
+import { computerExecutor } from '@lobechat/builtin-tool-computer/client/executor';
 import { credsExecutor } from '@lobechat/builtin-tool-creds/executor';
 import { groupAgentBuilderExecutor } from '@lobechat/builtin-tool-group-agent-builder/executor';
 import { groupManagementExecutor } from '@lobechat/builtin-tool-group-management/executor';
@@ -159,6 +160,7 @@ export const registerBuiltinToolExecutors = (): void => {
     localSystemExecutor,
     memoryExecutor,
     calendarExecutor,
+    computerExecutor,
     mailExecutor,
     remindersExecutor,
     messageExecutor,

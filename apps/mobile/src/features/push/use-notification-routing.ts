@@ -66,7 +66,8 @@ const noticeFor = (answer: NotificationAnswer, outcome: NotificationAnswerOutcom
 
 /**
  * A notification refreshes the approvals and activity lists. A tap on an approval opens the list,
- * and a tap on Approve or Reject also answers the call. A tap on a routine result or a message
+ * and a tap on Approve or Reject also answers the call. A tap on Biber asking for help on its cloud
+ * computer opens the cloud computer. A tap on a routine result or a message
  * Biber sent unprompted opens its task or chat and reports the open; "Not now" reports that the
  * message was unwanted. Answers and reports go out once the user is known to be signed in;
  * signed out, the tap only opens the app.
@@ -110,6 +111,12 @@ export const useNotificationRouting = (signedIn: boolean | undefined) => {
         if (proactive.href) router.navigate(proactive.href);
         if (signedInRef.current === undefined) waitingReports.current.push(proactive);
         else if (signedInRef.current) reportProactiveTap(proactive);
+        return;
+      }
+
+      // Biber asking for the user on its cloud computer: open it there
+      if (response.notification.request.content.data?.kind === 'computer') {
+        router.navigate('/computer');
         return;
       }
 

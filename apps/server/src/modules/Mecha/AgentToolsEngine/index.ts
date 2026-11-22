@@ -12,6 +12,7 @@
 import { BrowserManifest } from '@lobechat/builtin-tool-browser';
 import { CalendarManifest } from '@lobechat/builtin-tool-calendar';
 import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
+import { ComputerManifest } from '@lobechat/builtin-tool-computer';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
 import { MailManifest } from '@lobechat/builtin-tool-mail';
@@ -47,6 +48,7 @@ import {
   DEVICE_TOOL_IDENTIFIERS,
   REMOTE_DEVICE_TOOL_IDENTIFIERS,
 } from '@/server/services/aiAgent/deviceToolRegistry';
+import { isCloudComputerAvailable } from '@/server/services/computerTools';
 
 import {
   type ServerAgentToolsContext,
@@ -233,7 +235,12 @@ export const createServerAgentToolsEngine = (
   // its own runtime gate (KB needs enabled bases, memory needs global toggle,
   // web-browsing needs search on). `allowExplicitActivation` is off so the
   // activator can't smuggle anything else in.
+  // Biber's browser on its cloud computer: only where this deployment runs one
+  const computerEnabled =
+    (agentConfig.plugins ?? []).includes(ComputerManifest.identifier) && isCloudComputerAvailable();
+
   const chatModeRules = {
+    [ComputerManifest.identifier]: computerEnabled,
     [KnowledgeBaseManifest.identifier]: hasEnabledKnowledgeBases,
     [MemoryManifest.identifier]: globalMemoryEnabled,
     // Biber's reminders, mail and calendar: only for the agent whose plugins carry them
@@ -260,6 +267,7 @@ export const createServerAgentToolsEngine = (
     ...Object.fromEntries(alwaysOnToolIds.map((id) => [id, true])),
     // System-level rules (may override user selection for specific tools)
     [CloudSandboxManifest.identifier]: runtimeMode === 'cloud',
+    [ComputerManifest.identifier]: computerEnabled,
     [KnowledgeBaseManifest.identifier]: hasEnabledKnowledgeBases,
     // Local-system: the user must have opted into local runtime
     // (`runtimeMode === 'local'`) AND have an online, auto-activated device

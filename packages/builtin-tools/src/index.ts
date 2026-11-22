@@ -13,6 +13,7 @@ import { BrowserManifest } from '@lobechat/builtin-tool-browser';
 import { CalculatorManifest } from '@lobechat/builtin-tool-calculator';
 import { CalendarManifest } from '@lobechat/builtin-tool-calendar';
 import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
+import { ComputerManifest } from '@lobechat/builtin-tool-computer';
 import { CredsManifest } from '@lobechat/builtin-tool-creds';
 import { GroupAgentBuilderManifest } from '@lobechat/builtin-tool-group-agent-builder';
 import { GroupManagementManifest } from '@lobechat/builtin-tool-group-management';
@@ -114,6 +115,7 @@ export const chatModeAllowedToolIds = [
   MemoryManifest.identifier,
   // Biber only: the tools engines enable these in chat mode when the agent's plugins carry them
   CalendarManifest.identifier,
+  ComputerManifest.identifier,
   MailManifest.identifier,
   RemindersManifest.identifier,
   WebBrowsingManifest.identifier,
@@ -265,6 +267,14 @@ const builtinToolRegistry: LobeBuiltinTool[] = [
     hidden: true,
     identifier: CalendarManifest.identifier,
     manifest: CalendarManifest,
+    type: 'builtin',
+  },
+  {
+    // Biber's own, where the deployment runs cloud computers (the tools engines check that)
+    discoverable: false,
+    hidden: true,
+    identifier: ComputerManifest.identifier,
+    manifest: ComputerManifest,
     type: 'builtin',
   },
   {

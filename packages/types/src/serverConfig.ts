@@ -67,6 +67,8 @@ export interface GlobalServerConfig {
    */
   enableBilling?: boolean;
   enableBusinessFeatures?: boolean;
+  /** Whether Biber has a browser on a cloud computer here (an OpenBot computer, configured) */
+  enableCloudComputer?: boolean;
   enableComposio?: boolean;
   /**
    * @deprecated

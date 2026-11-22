@@ -11,6 +11,7 @@ export {
   resolveApproval,
 } from './approval';
 export { parseToolArguments, REDACTED, redactForAudit, toolCallDigest } from './audit';
+export { isActivatingKey, isConsequentialControl } from './browser';
 export {
   decideToolCall,
   PolicyEngine,
