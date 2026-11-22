@@ -7,6 +7,8 @@
  *   here: …"; hosting a group, Biber hands "ask the researcher …" to the researcher with `speak`;
  *   with the user's mailbox and calendar, it reads the latest mail, replies to it, finds free time
  *   and creates an event (see `mailStep` and `calendarStep`);
+ *   on its cloud computer, it opens the page a message names and signs in, orders or presses Enter
+ *   there (see `computerStep`);
  * - Expo's push service, recording every notification it is asked to send;
  * - Feishu's open platform for a user's calendar (`startFakeFeishuApi`).
  *
@@ -26,6 +28,7 @@ export const MAIL_READ_TOOL = 'lobe-mail____readMail';
 export const MAIL_SEND_TOOL = 'lobe-mail____sendMail';
 export const FREE_TIME_TOOL = 'lobe-calendar____findFreeTime';
 export const CREATE_EVENT_TOOL = 'lobe-calendar____createEvent';
+export const computerTool = (api: string) => `lobe-computer____${api}`;
 const HOUR = 60 * 60 * 1000;
 
 /** Tomorrow at an hour in mainland China (UTC+8, no daylight saving), with its offset. */
@@ -159,6 +162,115 @@ const calendarStep = (request: Pick<ModelRequest, 'messages' | 'tools'>): Reply 
   }
 };
 
+/** A ref from a snapshot the model was given, by the element's name. */
+const refNamed = (snapshot: string, name: RegExp) =>
+  [...snapshot.matchAll(/^- (\S+) \w+ "([^"]*)"/gm)].find((match) => name.test(match[2]))?.[1];
+const snapshotIdIn = (snapshot: string) => Number(/snapshotId (\d+)/.exec(snapshot)?.[1]);
+
+/**
+ * With the browser on Biber's cloud computer, on the page the message names:
+ * - "sign in to the test shop at <url>": open it, list the saved logins, sign in with the first;
+ *   "... with a code" then asks the user for the code the site wants and verifies it;
+ * - "place the order at <url>": open it and click Place order, which goes through approval;
+ * - "open the next page at <url>": click Next page, which does not;
+ * - "press enter in the order note at <url>": press Enter in the note field, which is held.
+ */
+const computerStep = (request: Pick<ModelRequest, 'messages' | 'tools'>): Reply | undefined => {
+  if (!request.tools.includes(computerTool('navigate'))) return;
+  const lastUser = request.messages.findLastIndex((m) => m.role === 'user');
+  const said = textOf(request.messages[lastUser]?.content);
+  const url = /https?:\/\/\S+/.exec(said)?.[0];
+  if (!url) return;
+  const results = request.messages
+    .slice(lastUser + 1)
+    .filter((m) => m.role === 'tool')
+    .map((m) => textOf(m.content));
+  const done = results.length;
+  const last = results.at(-1) ?? '';
+
+  if (done === 0) return callTool(computerTool('navigate'), { url });
+
+  if (/^sign in to the test shop/i.test(said)) {
+    if (done === 1) return callTool(computerTool('listLogins'), {});
+    if (done === 2) {
+      const login = /loginId (\S+) · site "([^"]*)" · account "([^"]*)"/.exec(results[1]);
+      if (!login) return { text: 'There is no saved login for it.' };
+      return callTool(computerTool('signIn'), {
+        account: login[3],
+        loginId: login[1],
+        site: login[2],
+      });
+    }
+    const asksForCode = /requestSecret/.test(results[2] ?? '');
+    if (asksForCode && done === 3) return callTool(computerTool('snapshot'), {});
+    if (asksForCode && done === 4) {
+      return callTool(computerTool('requestSecret'), {
+        label: 'the code texted to you',
+        ref: refNamed(results[3], /code/i),
+        snapshotId: snapshotIdIn(results[3]),
+      });
+    }
+    if (asksForCode && done === 5) return callTool(computerTool('snapshot'), {});
+    if (asksForCode && done === 6) {
+      return callTool(computerTool('click'), {
+        ref: refNamed(results[5], /verify/i),
+        snapshotId: snapshotIdIn(results[5]),
+      });
+    }
+    // Only a submitted form whose password field went away counts; any refusal does not
+    if (!asksForCode && !/Submitted, and the password field is gone/.test(results[2] ?? '')) {
+      return { text: 'I could not sign in there.' };
+    }
+    if (asksForCode && !/^"?Clicked/.test(last)) return { text: 'I could not sign in there.' };
+    return { text: asksForCode ? 'Signed in with the code.' : 'Signed in.' };
+  }
+
+  if (done === 1) return callTool(computerTool('snapshot'), {});
+  const snapshotId = snapshotIdIn(results[1]);
+
+  if (/^place the order/i.test(said)) {
+    if (done === 2) {
+      return callTool(computerTool('click'), {
+        ref: refNamed(results[1], /place order/i),
+        snapshotId,
+      });
+    }
+    const held = /ref (\S+), snapshotId (\d+), element "([^"]*)" and site "([^"]*)"/.exec(
+      results[2],
+    );
+    if (done === 3 && held) {
+      return callTool(computerTool('clickWithApproval'), {
+        element: held[3],
+        ref: held[1],
+        site: held[4],
+        snapshotId: Number(held[2]),
+      });
+    }
+    return { text: /Clicked/.test(last) ? 'Ordered.' : 'I could not order it.' };
+  }
+
+  if (/^open the next page/i.test(said)) {
+    if (done === 2) {
+      return callTool(computerTool('click'), {
+        ref: refNamed(results[1], /next page/i),
+        snapshotId,
+      });
+    }
+    return { text: /Clicked/.test(last) ? 'Moved on.' : 'I could not move on.' };
+  }
+
+  if (/^press enter in the order note/i.test(said)) {
+    if (done === 2) {
+      return callTool(computerTool('pressKey'), {
+        key: 'Enter',
+        ref: refNamed(results[1], /note/i),
+        snapshotId,
+      });
+    }
+    return { text: /pressKeyWithApproval/.test(last) ? 'That needs your approval.' : 'Pressed.' };
+  }
+};
+
 export interface ModelRequest {
   messages: { content?: unknown; role: string }[];
   model: string;
@@ -226,7 +338,7 @@ export const decideReply = (request: Pick<ModelRequest, 'messages' | 'tools'>): 
     }
   }
 
-  const personal = mailStep(request) ?? calendarStep(request);
+  const personal = mailStep(request) ?? calendarStep(request) ?? computerStep(request);
   if (personal) return personal;
 
   const reminder = reminderFor(textOf(request.messages[lastUser]?.content));
@@ -841,6 +953,114 @@ export const startFakeFeishuApi = async (port: number) => {
   });
   await listen(server, port);
   return { close: () => server.close(), created, tokenRequests };
+};
+
+/**
+ * The OpenBot supervisor for one real agent-computer running on this machine: every computer it
+ * is asked for is that one, already running.
+ */
+export const startFakeSupervisor = async (
+  port: number,
+  { computerUrl, token }: { computerUrl: string; token: string },
+) => {
+  const server = createServer((req, res) => {
+    res.writeHead(req.headers.authorization === `Bearer ${token}` ? 200 : 401, {
+      'Content-Type': 'application/json',
+    });
+    if (req.headers.authorization !== `Bearer ${token}`) {
+      res.end(JSON.stringify({ error: 'Unauthorized.' }));
+      return;
+    }
+    const id = /^\/computers\/([\w-]+)/.exec(req.url ?? '')?.[1];
+    res.end(JSON.stringify({ botId: id, status: 'running', url: computerUrl }));
+  });
+  await listen(server, port);
+  return { close: () => server.close() };
+};
+
+/** What the test shop received: logins, codes and orders, as the browser sent them. */
+export interface ShopReceived {
+  codes: string[];
+  logins: { password: string; username: string }[];
+  orders: string[];
+}
+
+const page = (title: string, body: string) =>
+  `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body><h1>${title}</h1>${body}</body></html>`;
+
+/**
+ * A small shop for the cloud computer's browser: a sign-in page, one that then asks for a texted
+ * code, and a checkout page with Next page and Place order buttons and an order note. It keeps
+ * what it is sent, so a smoke run can check that the right values arrived.
+ */
+export const startTestShop = async (
+  port: number,
+  account: { code: string; password: string; username: string },
+) => {
+  const received: ShopReceived = { codes: [], logins: [], orders: [] };
+  const form = async (req: IncomingMessage) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk as Buffer);
+    return new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
+  };
+  const loginForm = (action: string) =>
+    `<form method="post" action="${action}"><label>Email <input name="email" type="email" autocomplete="username"></label><label>Password <input name="password" type="password" autocomplete="current-password"></label><button type="submit">Sign in</button></form>`;
+
+  const server = createServer(async (req, res) => {
+    const path = new URL(req.url ?? '/', 'http://localhost').pathname;
+    const send = (html: string) => {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(html);
+    };
+
+    if (req.method === 'GET' && (path === '/login' || path === '/login-code')) {
+      send(page('Sign in to Test Shop', loginForm(path)));
+      return;
+    }
+    if (req.method === 'POST' && (path === '/login' || path === '/login-code')) {
+      const body = await form(req);
+      const login = { password: body.get('password') ?? '', username: body.get('email') ?? '' };
+      received.logins.push(login);
+      const right = login.username === account.username && login.password === account.password;
+      if (!right) {
+        send(page('Sign in to Test Shop', `<p>Wrong email or password.</p>${loginForm(path)}`));
+      } else if (path === '/login-code') {
+        send(
+          page(
+            'Enter your code',
+            '<form method="post" action="/verify"><label>Verification code <input name="code" autocomplete="one-time-code" inputmode="numeric"></label><button type="submit">Verify</button></form>',
+          ),
+        );
+      } else {
+        send(page('Welcome back, Ada', '<p>You are signed in.</p>'));
+      }
+      return;
+    }
+    if (req.method === 'POST' && path === '/verify') {
+      const code = (await form(req)).get('code') ?? '';
+      received.codes.push(code);
+      send(page(code === account.code ? 'Welcome back, Ada' : 'Wrong code', '<p>Done.</p>'));
+      return;
+    }
+    if (req.method === 'GET' && path === '/checkout') {
+      send(
+        page(
+          'Checkout',
+          '<p>One blue mug, ¥39.</p><a href="/checkout?page=2" role="button">Next page</a><form method="post" action="/order"><label>Order note <input name="note" type="text"></label><button type="submit">Place order</button></form>',
+        ),
+      );
+      return;
+    }
+    if (req.method === 'POST' && path === '/order') {
+      received.orders.push((await form(req)).get('note') ?? '');
+      send(page('Order placed', '<p>Thank you.</p>'));
+      return;
+    }
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('not found');
+  });
+  await listen(server, port);
+  return { close: () => server.close(), received };
 };
 
 /** A plain PNG of the given size: a light page with a dark top bar and a box, like a login page. */
