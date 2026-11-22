@@ -5,7 +5,10 @@
  *   user asked to run code, calls that tool (likewise Biber's reminders tool, see `reminderFor`);
  *   once the tool has answered, it replies in text. Running as an expert it answers "Researcher
  *   here: …"; hosting a group, Biber hands "ask the researcher …" to the researcher with `speak`;
- * - Expo's push service, recording every notification it is asked to send.
+ *   with the user's mailbox and calendar, it reads the latest mail, replies to it, finds free time
+ *   and creates an event (see `mailStep` and `calendarStep`);
+ * - Expo's push service, recording every notification it is asked to send;
+ * - Feishu's open platform for a user's calendar (`startFakeFeishuApi`).
  *
  * Point the server at them with OPENAI_PROXY_URL=http://127.0.0.1:<model>/v1 and
  * EXPO_BASE_URL=http://127.0.0.1:<push>.
@@ -18,7 +21,19 @@ import { deflateSync } from 'node:zlib';
 export const CODE_TOOL = 'lobe-cloud-sandbox____executeCode';
 export const REMIND_TOOL = 'lobe-reminders____addReminder';
 export const SPEAK_TOOL = 'lobe-group-management____speak';
+export const MAIL_SEARCH_TOOL = 'lobe-mail____searchMail';
+export const MAIL_READ_TOOL = 'lobe-mail____readMail';
+export const MAIL_SEND_TOOL = 'lobe-mail____sendMail';
+export const FREE_TIME_TOOL = 'lobe-calendar____findFreeTime';
+export const CREATE_EVENT_TOOL = 'lobe-calendar____createEvent';
 const HOUR = 60 * 60 * 1000;
+
+/** Tomorrow at an hour in mainland China (UTC+8, no daylight saving), with its offset. */
+export const tomorrowInChina = (hour: number) => {
+  const now = new Date(Date.now() + 8 * HOUR);
+  const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  return `${day.toISOString().slice(0, 10)}T${String(hour).padStart(2, '0')}:00:00+08:00`;
+};
 
 /** The expert names the fake model knows, in both languages, as their prompts introduce them. */
 const EXPERT_NAMES: Record<string, string[]> = {
@@ -73,6 +88,77 @@ const reminderFor = (said: string) => {
   }
 };
 
+type Reply = { text: string } | { toolCall: { arguments: string; name: string } };
+
+const callTool = (name: string, args: object): Reply => ({
+  toolCall: { arguments: JSON.stringify(args), name },
+});
+
+/**
+ * With the user's mailbox: "check my latest mail" ("看看最新的邮件") searches, then reads the
+ * newest; "reply to that mail" ("回复这封邮件") replies "Got it" to the mail read before, to its
+ * sender.
+ */
+const mailStep = (request: Pick<ModelRequest, 'messages' | 'tools'>): Reply | undefined => {
+  const lastUser = request.messages.findLastIndex((m) => m.role === 'user');
+  const said = textOf(request.messages[lastUser]?.content);
+  const results = request.messages
+    .slice(lastUser + 1)
+    .filter((m) => m.role === 'tool')
+    .map((m) => textOf(m.content));
+
+  if (/latest mail|最新的邮件/i.test(said) && request.tools.includes(MAIL_SEARCH_TOOL)) {
+    if (results.length === 0) return callTool(MAIL_SEARCH_TOOL, { limit: 1 });
+    const id = /- id (\S+)/.exec(results[0])?.[1];
+    if (results.length === 1 && id) return callTool(MAIL_READ_TOOL, { id });
+    return { text: 'That is your latest mail.' };
+  }
+
+  if (/reply to that mail|回复这封邮件/i.test(said) && request.tools.includes(MAIL_SEND_TOOL)) {
+    if (results.length > 0) return { text: 'Replied.' };
+    const earlier = request.messages
+      .slice(0, lastUser)
+      .map((m) => textOf(m.content))
+      .join('\n');
+    const id = [...earlier.matchAll(/- id (\S+:\d+)/g)].at(-1)?.[1];
+    const sender = [...earlier.matchAll(/^From: (.+)$/gm)].at(-1)?.[1];
+    const from = sender && /[\w.+-]+@[\w.-]+/.exec(sender)?.[0];
+    if (id && from) {
+      return callTool(MAIL_SEND_TOOL, { body: 'Got it, thanks.', replyToId: id, to: [from] });
+    }
+  }
+};
+
+/**
+ * With the user's calendar, in mainland China time: "am I free tomorrow afternoon" ("明天下午有空
+ * 吗") looks for free time from 13:00 to 18:00; "a meeting tomorrow at 3" ("明天下午三点建个会")
+ * creates one from 15:00 to 16:00.
+ */
+const calendarStep = (request: Pick<ModelRequest, 'messages' | 'tools'>): Reply | undefined => {
+  const lastUser = request.messages.findLastIndex((m) => m.role === 'user');
+  const said = textOf(request.messages[lastUser]?.content);
+  const answered = request.messages.slice(lastUser + 1).some((m) => m.role === 'tool');
+
+  if (
+    /free tomorrow afternoon|明天下午有空/i.test(said) &&
+    request.tools.includes(FREE_TIME_TOOL)
+  ) {
+    if (answered) return { text: 'Those are your free times.' };
+    return callTool(FREE_TIME_TOOL, { from: tomorrowInChina(13), to: tomorrowInChina(18) });
+  }
+  if (
+    /meeting tomorrow at 3|明天下午三点建个会/i.test(said) &&
+    request.tools.includes(CREATE_EVENT_TOOL)
+  ) {
+    if (answered) return { text: 'The meeting is on your calendar.' };
+    return callTool(CREATE_EVENT_TOOL, {
+      end: tomorrowInChina(16),
+      start: tomorrowInChina(15),
+      title: 'Project sync',
+    });
+  }
+};
+
 export interface ModelRequest {
   messages: { content?: unknown; role: string }[];
   model: string;
@@ -104,9 +190,7 @@ const textOf = (content: unknown): string =>
       : '';
 
 /** What the fake model answers: a tool call, or text. */
-export const decideReply = (
-  request: Pick<ModelRequest, 'messages' | 'tools'>,
-): { text: string } | { toolCall: { arguments: string; name: string } } => {
+export const decideReply = (request: Pick<ModelRequest, 'messages' | 'tools'>): Reply => {
   const lastUser = request.messages.findLastIndex((m) => m.role === 'user');
   const toolResults = request.messages.slice(lastUser + 1).filter((m) => m.role === 'tool');
   const toolAnswered = toolResults.length > 0;
@@ -141,6 +225,9 @@ export const decideReply = (
       };
     }
   }
+
+  const personal = mailStep(request) ?? calendarStep(request);
+  if (personal) return personal;
 
   const reminder = reminderFor(textOf(request.messages[lastUser]?.content));
   if (reminder && request.tools.includes(REMIND_TOOL)) {
@@ -664,6 +751,96 @@ export const startFakeLarkApi = async (port: number) => {
   });
   await listen(server, port);
   return { close: () => server.close(), sent };
+};
+
+/** An event the fake Feishu calendar was asked to create. */
+export interface FeishuCreated {
+  body: any;
+  calendarId: string;
+}
+
+/**
+ * Feishu's open platform (`/open-apis/...`) for one user's calendar: the authorization code
+ * `smoke-code` gives the user token `u-smoke`, the user is "Ada Feishu", and the primary calendar
+ * already has a meeting tomorrow from 14:00 to 15:00, China time. Calls without the user token
+ * answer as Feishu does for an invalid token. Keeps the events it is asked to create.
+ */
+export const startFakeFeishuApi = async (port: number) => {
+  const created: FeishuCreated[] = [];
+  const tokenRequests: Record<string, string>[] = [];
+  const at = (iso: string) => String(Math.floor(new Date(iso).getTime() / 1000));
+  const busy = {
+    end_time: { timestamp: at(tomorrowInChina(15)), timezone: 'Asia/Shanghai' },
+    event_id: 'evt_busy',
+    start_time: { timestamp: at(tomorrowInChina(14)), timezone: 'Asia/Shanghai' },
+    status: 'confirmed',
+    summary: 'Design review',
+  };
+
+  const server = createServer(async (req, res) => {
+    const body = await readJson(req).catch(() => ({}));
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    const path = url.pathname.replace(/^\/open-apis/, '');
+    const json = (value: Record<string, unknown>, status = 200) => {
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(value));
+    };
+
+    if (req.method === 'POST' && path === '/authen/v2/oauth/token') {
+      tokenRequests.push(body);
+      const granted =
+        (body.grant_type === 'authorization_code' && body.code === 'smoke-code') ||
+        (body.grant_type === 'refresh_token' && body.refresh_token === 'r-smoke');
+      if (!granted) {
+        json({ code: 20_003, error: 'invalid_grant', error_description: 'bad code' }, 400);
+        return;
+      }
+      json({
+        access_token: 'u-smoke',
+        code: 0,
+        expires_in: 7200,
+        refresh_token: 'r-smoke',
+        refresh_token_expires_in: 2_592_000,
+      });
+      return;
+    }
+
+    if (req.headers.authorization !== 'Bearer u-smoke') {
+      json({ code: 99_991_668, msg: 'Invalid access token for authorization' }, 400);
+      return;
+    }
+    if (req.method === 'GET' && path === '/authen/v1/user_info') {
+      json({ code: 0, data: { name: 'Ada Feishu' } });
+      return;
+    }
+    if (req.method === 'POST' && path === '/calendar/v4/calendars/primary') {
+      json({ code: 0, data: { calendars: [{ calendar: { calendar_id: 'cal_ada' } }] } });
+      return;
+    }
+    const events = /^\/calendar\/v4\/calendars\/([^/]+)\/events(?:\/(instance_view|[^/]+))?/.exec(
+      path,
+    );
+    if (events && req.method === 'GET' && events[2] === 'instance_view') {
+      const from = Number(url.searchParams.get('start_time'));
+      const to = Number(url.searchParams.get('end_time'));
+      const items = [
+        busy,
+        ...created.map(({ body }, index) => ({ ...body, event_id: `evt_${index}` })),
+      ]
+        .filter((event) => Number(event.end_time.timestamp) > from)
+        .filter((event) => Number(event.start_time.timestamp) < to);
+      json({ code: 0, data: { items } });
+      return;
+    }
+    if (events && req.method === 'POST' && !events[2]) {
+      created.push({ body, calendarId: decodeURIComponent(events[1]) });
+      json({ code: 0, data: { event: { ...body, event_id: `evt_${created.length - 1}` } } });
+      return;
+    }
+    json({ code: 0, data: {} });
+  });
+  await listen(server, port);
+  return { close: () => server.close(), created, tokenRequests };
 };
 
 /** A plain PNG of the given size: a light page with a dark top bar and a box, like a login page. */
