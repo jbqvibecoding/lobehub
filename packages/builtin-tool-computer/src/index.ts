@@ -7,7 +7,9 @@ export type {
   PressKeyParams,
   PressKeyWithApprovalParams,
   RequestHelpParams,
+  RequestSecretParams,
   ScrollParams,
+  SignInParams,
   TypeParams,
 } from './types';
 export { ComputerApiName } from './types';

@@ -5,6 +5,9 @@ export const ComputerApiName = {
   /** Click a button that pays, orders, sends or deletes, after the user approves it */
   clickWithApproval: 'clickWithApproval',
 
+  /** The user's saved logins: site, account hint and id, never a password */
+  listLogins: 'listLogins',
+
   /** Open a URL and read the page */
   navigate: 'navigate',
 
@@ -20,8 +23,14 @@ export const ComputerApiName = {
   /** Ask the person to take over the browser */
   requestHelp: 'requestHelp',
 
+  /** Ask the person for one value (a code) typed straight into a field */
+  requestSecret: 'requestSecret',
+
   /** Scroll the page */
   scroll: 'scroll',
+
+  /** Sign in with a saved login on its site, after the user approves it */
+  signIn: 'signIn',
 
   /** List the page's fields, buttons and links with refs */
   snapshot: 'snapshot',
@@ -77,4 +86,19 @@ export interface ScrollParams {
 
 export interface RequestHelpParams {
   reason: string;
+}
+
+export interface RequestSecretParams {
+  /** What the person is asked for, such as "the 6-digit code texted to you" */
+  label: string;
+  ref: string;
+  snapshotId: number;
+}
+
+export interface SignInParams {
+  /** The account hint, exactly as listLogins gave it */
+  account: string;
+  loginId: string;
+  /** The login's site, exactly as listLogins gave it */
+  site: string;
 }

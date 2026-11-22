@@ -37,6 +37,11 @@ export const computerRouter = router({
     .input(z.object(scope).nullish())
     .mutation(({ ctx, input }) => computerFor(ctx.userId, input).start()),
 
+  /** The value Biber asked for, typed by the person; it goes to the page and nowhere else. */
+  supplySecret: authedProcedure
+    .input(z.object({ ...scope, text: z.string().min(1).max(500) }))
+    .mutation(({ ctx, input }) => computerFor(ctx.userId, input).supplySecret(input.text)),
+
   takeOver: authedProcedure
     .input(z.object(scope).nullish())
     .mutation(({ ctx, input }) => computerFor(ctx.userId, input).takeOver()),

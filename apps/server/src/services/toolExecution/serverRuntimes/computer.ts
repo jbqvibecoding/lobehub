@@ -5,7 +5,9 @@ import type {
   PressKeyParams,
   PressKeyWithApprovalParams,
   RequestHelpParams,
+  RequestSecretParams,
   ScrollParams,
+  SignInParams,
   TypeParams,
 } from '@lobechat/builtin-tool-computer';
 import { ComputerIdentifier } from '@lobechat/builtin-tool-computer';
@@ -25,13 +27,16 @@ export const computerRuntime: ServerRuntimeRegistration = {
     return {
       click: (args: ClickParams) => computer.click(args),
       clickWithApproval: (args: ClickWithApprovalParams) => computer.clickWithApproval(args),
+      listLogins: () => computer.listLogins(),
       navigate: (args: NavigateParams) => computer.navigate(args),
       pressKey: (args: PressKeyParams) => computer.pressKey(args),
       pressKeyWithApproval: (args: PressKeyWithApprovalParams) =>
         computer.pressKeyWithApproval(args),
       read: () => computer.read(),
       requestHelp: (args: RequestHelpParams) => computer.requestHelp(args),
+      requestSecret: (args: RequestSecretParams) => computer.requestSecret(args),
       scroll: (args: ScrollParams) => computer.scroll(args),
+      signIn: (args: SignInParams) => computer.signIn(args),
       snapshot: () => computer.snapshot(),
       type: (args: TypeParams) => computer.type(args),
     };

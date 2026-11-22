@@ -6,7 +6,9 @@ import type {
   PressKeyParams,
   PressKeyWithApprovalParams,
   RequestHelpParams,
+  RequestSecretParams,
   ScrollParams,
+  SignInParams,
   TypeParams,
 } from '@lobechat/builtin-tool-computer';
 import type { BuiltinServerRuntimeOutput } from '@lobechat/types';
@@ -22,17 +24,40 @@ import {
   OpenBotComputer,
   OpenBotRequestError,
 } from '@/server/services/sandbox/providers/openbotComputer';
+import { SavedLoginService } from '@/server/services/savedLogins';
 
 const log = debug('lobe-server:computer-tools');
 
 /** How long the server remembers what a snapshot showed, to judge the actions taken on it. */
 const SNAPSHOT_TTL_SECONDS = 30 * 60;
 
-/** The push sent when Biber asks for the user: fixed words, since a push leaves the app. */
-const HELP_PUSH = {
-  en: { content: 'Open the cloud computer to help it continue.', title: 'Biber needs you' },
-  zh: { content: '打开云电脑，帮它完成这一步。', title: 'Biber 需要你' },
+/** The pushes sent when Biber asks for the user: fixed words, since a push leaves the app. */
+const PUSHES = {
+  help: {
+    en: { content: 'Open the cloud computer to help it continue.', title: 'Biber needs you' },
+    zh: { content: '打开云电脑，帮它完成这一步。', title: 'Biber 需要你' },
+  },
+  secret: {
+    en: {
+      content: 'Open the cloud computer to fill in what the page asks for.',
+      title: 'Biber needs you',
+    },
+    zh: { content: '打开云电脑，填一项页面要的内容。', title: 'Biber 需要你' },
+  },
 };
+
+/** How long requestSecret waits for the user, inside the two minutes a tool call may take. */
+const SECRET_WAIT_MS = 100_000;
+const SECRET_POLL_MS = 2000;
+
+/** What a sign-in reports back: whether it went through, never the values typed. */
+interface SignInResult {
+  codeRequested: boolean;
+  error?: string;
+  passwordFieldVisible: boolean;
+  submitted: boolean;
+  url: string;
+}
 
 /** Whether this deployment gives Biber a browser: an OpenBot computer, configured. */
 export const isCloudComputerAvailable = () =>
@@ -357,12 +382,126 @@ export class ComputerToolsService {
         reason: args.reason?.slice(0, 500),
         source: 'model',
       });
-      await this.notify(state.request?.id).catch((error) =>
+      await this.notify('help', state.request?.id).catch((error) =>
         log('userId=%s help push failed: %s', this.userId, (error as Error).message),
       );
       return {
         content:
           'Asked the user to take over the browser; they have been notified. Tell them what you need, and wait: once they hand it back, take a new snapshot before acting.',
+        success: true,
+      };
+    });
+  }
+
+  /** The user's saved logins as Biber may see them: no user name, no password. */
+  async listLogins(): Promise<BuiltinServerRuntimeOutput> {
+    const logins = await new SavedLoginService(this.db, this.userId).list();
+    if (logins.length === 0) {
+      return {
+        content:
+          'The user has no saved logins. Ask them to save one in the Biber app (Account → Saved logins), or to take over and sign in themselves.',
+        success: true,
+      };
+    }
+    return {
+      content: [
+        `${logins.length} saved login${logins.length === 1 ? '' : 's'} (passwords are never shown):`,
+        ...logins.map(
+          (login) =>
+            `- loginId ${login.id} · site ${quoted(login.site)} · account ${quoted(login.account)} · ${login.label}`,
+        ),
+      ].join('\n'),
+      success: true,
+    };
+  }
+
+  /**
+   * Signs in with a saved login, once the user approved it. The site and account the approval
+   * showed must be the login's own; the computer types the values only on that exact site, and
+   * nothing it reports back, nor any error here, carries them.
+   */
+  async signIn(args: SignInParams): Promise<BuiltinServerRuntimeOutput> {
+    const logins = new SavedLoginService(this.db, this.userId);
+    const login = await logins.secretFor(args.loginId).catch(() => undefined);
+    if (!login) {
+      return failure('LoginNotFound', 'No such saved login. Call listLogins for the ids.');
+    }
+    if (login.origin !== args.site?.trim() || login.accountHint !== (args.account ?? '').trim()) {
+      log('userId=%s sign-in did not match login %s', this.userId, login.id);
+      return failure(
+        'LoginMismatch',
+        'The approved site or account is not that saved login’s, so nothing was typed. Call listLogins and ask again with its exact site and account.',
+      );
+    }
+
+    return this.run('sign in', async (url) => {
+      const result = await this.post<SignInResult>(url, '/sign-in/fill', {
+        origin: login.origin,
+        password: login.secret.password,
+        ...(login.secret.username && { username: login.secret.username }),
+      });
+      await logins.touch(login.id);
+      log(
+        'userId=%s signed in at %s: submitted=%s code=%s',
+        this.userId,
+        login.origin,
+        result.submitted,
+        result.codeRequested,
+      );
+      const outcome = result.error
+        ? `Not signed in: ${result.error}`
+        : result.codeRequested
+          ? 'The site accepted the password and now asks for a verification code: snapshot, then call requestSecret with the code field.'
+          : result.submitted && !result.passwordFieldVisible
+            ? 'Submitted, and the password field is gone. Read the page to check you are signed in.'
+            : result.submitted
+              ? 'Submitted, but the password field is still showing: the site may have refused it. Read the page, and if so tell the user their saved password may be out of date.'
+              : 'Nothing was submitted.';
+      return {
+        content: `${outcome} The page is at ${siteOf(result.url)}.`,
+        success: !result.error,
+        ...(result.error && { error: { message: result.error, type: 'LoginFailed' } }),
+      };
+    });
+  }
+
+  /**
+   * Asks the user for one value the page needs, typed on their phone straight into the field.
+   * Waits for it a while, so a code the user has at hand lands within the same call.
+   */
+  async requestSecret(args: RequestSecretParams): Promise<BuiltinServerRuntimeOutput> {
+    const { error, snapshot } = await this.snapshotFor(args.snapshotId);
+    if (error) return error;
+    if (!this.elementIn(snapshot, args.ref)) {
+      return failure('ComputerUnknownRef', `No ${args.ref} in that snapshot. Take a new snapshot.`);
+    }
+
+    return this.run('ask for the value', async (url) => {
+      await this.post(url, '/control/secret', {
+        label: args.label?.slice(0, 200),
+        ref: args.ref,
+        snapshotId: args.snapshotId,
+      });
+      await this.notify('secret', `${snapshot.snapshotId}:${args.ref}`).catch((error) =>
+        log('userId=%s secret push failed: %s', this.userId, (error as Error).message),
+      );
+
+      const deadline = Date.now() + SECRET_WAIT_MS;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, SECRET_POLL_MS));
+        const control = await this.computer.call<{ secretWanted?: string }>(url, '/control');
+        if (!control.secretWanted) {
+          log('userId=%s secret supplied', this.userId);
+          return {
+            content:
+              'The user filled it in; you did not see it. Take a new snapshot, then submit the form.',
+            success: true,
+          };
+        }
+      }
+      return {
+        content:
+          'The user has not filled it in yet; they were notified on their phone. Tell them what is needed and wait; once they have, take a new snapshot and continue.',
         success: true,
       };
     });
@@ -384,23 +523,24 @@ export class ComputerToolsService {
     });
   }
 
-  private async notify(requestId: string | undefined) {
+  private async notify(kind: 'help' | 'secret', dedupe: string | undefined) {
+    const text = PUSHES[kind];
     const notification = await new NotificationModel(this.db, this.userId).create({
       actionUrl: '/computer',
       category: 'agent',
-      content: HELP_PUSH.en.content,
-      dedupeKey: requestId ? `computer-help:${requestId}` : undefined,
-      title: HELP_PUSH.en.title,
-      type: 'computer_help',
+      content: text.en.content,
+      dedupeKey: dedupe ? `computer-${kind}:${this.computer.id}:${dedupe}` : undefined,
+      title: text.en.title,
+      type: kind === 'help' ? 'computer_help' : 'computer_secret',
     });
     if (!notification) return;
     await new PushChannel().deliver({
       actionUrl: '/computer',
-      content: HELP_PUSH.en.content,
+      content: text.en.content,
       data: { kind: 'computer' },
       notificationId: notification.id,
-      title: HELP_PUSH.en.title,
-      translations: HELP_PUSH,
+      title: text.en.title,
+      translations: text,
       userId: this.userId,
     });
   }

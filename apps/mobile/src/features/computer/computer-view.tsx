@@ -144,9 +144,7 @@ export const CloudComputerView = ({ api }: { api: ApiClient }) => {
         </Text>
       )}
       {control?.secretWanted ? (
-        <Text style={styles.body}>
-          {t('computerSecretWanted')} ({control.secretWanted})
-        </Text>
+        <SecretField api={api} label={control.secretWanted} onSupplied={refresh} />
       ) : null}
 
       {driving
@@ -218,6 +216,68 @@ export const CloudComputerView = ({ api }: { api: ApiClient }) => {
       <Text style={styles.caption}>
         {t(driving ? 'computerHintHuman' : 'computerHintBot')} {t('computerMasked')}
       </Text>
+    </View>
+  );
+};
+
+/**
+ * The one value Biber asked for and must not see (a code, a password), typed here into a masked
+ * box and sent straight to the field it named. It is never kept, logged or shown back.
+ */
+const SecretField = ({
+  api,
+  label,
+  onSupplied,
+}: {
+  api: ApiClient;
+  label: string;
+  onSupplied: () => void;
+}) => {
+  const colors = useColors();
+  const styles = createStyles(colors);
+  const [value, setValue] = useState('');
+  const supply = useMutation({
+    mutationFn: (text: string) => api.mutation('computer.supplySecret', { text }),
+    onSuccess: () => {
+      setValue('');
+      onSupplied();
+    },
+  });
+  const submit = () => {
+    if (value && !supply.isPending) supply.mutate(value);
+  };
+
+  return (
+    <View style={styles.help}>
+      <Text style={styles.body}>
+        {t('computerSecretWanted')} {label}
+      </Text>
+      <View style={styles.row}>
+        <TextInput
+          accessibilityLabel={label}
+          autoCapitalize="none"
+          autoComplete="one-time-code"
+          autoCorrect={false}
+          editable={!supply.isPending}
+          onChangeText={setValue}
+          onSubmitEditing={submit}
+          placeholder={t('computerSecretPlaceholder')}
+          placeholderTextColor={colors.secondaryLabel}
+          returnKeyType="done"
+          secureTextEntry
+          style={styles.input}
+          value={value}
+        />
+        <Pressable
+          accessibilityRole="button"
+          disabled={!value || supply.isPending}
+          onPress={submit}
+          style={({ pressed }) => [styles.chip, (pressed || !value) && styles.pressed]}
+        >
+          <Text style={styles.chipText}>{t('computerSecretSubmit')}</Text>
+        </Pressable>
+      </View>
+      {supply.isError ? <Text style={styles.error}>{t('computerSecretError')}</Text> : null}
     </View>
   );
 };

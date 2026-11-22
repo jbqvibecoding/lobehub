@@ -65,9 +65,14 @@ export const isReadOnlyAccountAction = (name: string) => {
   return parts.some((part) => READ_WORDS.has(part));
 };
 
-/** Biber's own calls that carry the user's words to other people. */
+/**
+ * Biber's own calls that carry the user's words to other people: mail, invitations, and what it
+ * types into a web page or puts in an address on its cloud computer.
+ */
 export const BUILTIN_OUTBOUND_CALLS = new Set([
   'lobe-calendar/createEvent',
   'lobe-calendar/updateEvent',
+  'lobe-computer/navigate',
+  'lobe-computer/type',
   'lobe-mail/sendMail',
 ]);

@@ -11,7 +11,9 @@ import type {
   PressKeyParams,
   PressKeyWithApprovalParams,
   RequestHelpParams,
+  RequestSecretParams,
   ScrollParams,
+  SignInParams,
   TypeParams,
 } from '../../types';
 import { ComputerApiName } from '../../types';
@@ -46,6 +48,9 @@ class ComputerExecutor extends BaseExecutor<typeof ComputerApiName> {
   clickWithApproval = (params: ClickWithApprovalParams, ctx: BuiltinToolContext) =>
     this.run(() => computerToolsService.clickWithApproval({ ...params, ...this.topic(ctx) }));
 
+  listLogins = (_params: unknown, ctx: BuiltinToolContext) =>
+    this.run(() => computerToolsService.listLogins(this.topic(ctx)));
+
   navigate = (params: NavigateParams, ctx: BuiltinToolContext) =>
     this.run(() => computerToolsService.navigate({ ...params, ...this.topic(ctx) }));
 
@@ -61,8 +66,14 @@ class ComputerExecutor extends BaseExecutor<typeof ComputerApiName> {
   requestHelp = (params: RequestHelpParams, ctx: BuiltinToolContext) =>
     this.run(() => computerToolsService.requestHelp({ ...params, ...this.topic(ctx) }));
 
+  requestSecret = (params: RequestSecretParams, ctx: BuiltinToolContext) =>
+    this.run(() => computerToolsService.requestSecret({ ...params, ...this.topic(ctx) }));
+
   scroll = (params: ScrollParams, ctx: BuiltinToolContext) =>
     this.run(() => computerToolsService.scroll({ ...params, ...this.topic(ctx) }));
+
+  signIn = (params: SignInParams, ctx: BuiltinToolContext) =>
+    this.run(() => computerToolsService.signIn({ ...params, ...this.topic(ctx) }));
 
   snapshot = (_params: unknown, ctx: BuiltinToolContext) =>
     this.run(() => computerToolsService.snapshot(this.topic(ctx)));

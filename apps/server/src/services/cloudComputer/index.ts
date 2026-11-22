@@ -166,6 +166,23 @@ export class CloudComputerService {
     return { ok: true };
   }
 
+  /**
+   * The one value the Bot asked for and must not see (a code, a password), typed by the person into
+   * the field it named. The computer accepts it only while that request is open; it is never
+   * logged, kept or returned here.
+   */
+  async supplySecret(text: string) {
+    const url = await this.runningOrThrow();
+    const result = await this.mapErrors(() =>
+      this.computer.call<{ supplied?: boolean }>(url, '/human/secret', {
+        body: JSON.stringify({ text }),
+        method: 'POST',
+      }),
+    );
+    log('secret supplied: %s', !!result.supplied);
+    return { supplied: !!result.supplied };
+  }
+
   private assertAvailable() {
     if (!this.isAvailable()) {
       throw new TRPCError({

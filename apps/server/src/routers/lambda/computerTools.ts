@@ -36,6 +36,10 @@ export const computerToolsRouter = router({
       service(ctx, topicId).clickWithApproval(args),
     ),
 
+  listLogins: procedure
+    .input(withTopic)
+    .mutation(({ ctx, input }) => service(ctx, input.topicId).listLogins()),
+
   navigate: procedure
     .input(withTopic.extend({ url: z.string().trim().min(1).max(4000) }))
     .mutation(({ ctx, input: { topicId, ...args } }) => service(ctx, topicId).navigate(args)),
@@ -56,9 +60,17 @@ export const computerToolsRouter = router({
     .input(withTopic.extend({ reason: z.string().max(2000) }))
     .mutation(({ ctx, input: { topicId, ...args } }) => service(ctx, topicId).requestHelp(args)),
 
+  requestSecret: procedure
+    .input(withTopic.extend({ label: z.string().max(500), ref, snapshotId }))
+    .mutation(({ ctx, input: { topicId, ...args } }) => service(ctx, topicId).requestSecret(args)),
+
   scroll: procedure
     .input(withTopic.extend({ deltaY: z.number().int().min(-20_000).max(20_000).optional() }))
     .mutation(({ ctx, input: { topicId, ...args } }) => service(ctx, topicId).scroll(args)),
+
+  signIn: procedure
+    .input(withTopic.extend({ account: z.string().max(320), loginId: z.string().max(64), site }))
+    .mutation(({ ctx, input: { topicId, ...args } }) => service(ctx, topicId).signIn(args)),
 
   snapshot: procedure
     .input(withTopic)

@@ -132,6 +132,46 @@ export const ComputerManifest: BuiltinToolManifest = {
     },
     {
       description:
+        "List the website logins the user saved for you: each one's loginId, site, account (partly hidden) and name. Passwords are never shown, to you or anyone.",
+      name: ComputerApiName.listLogins,
+      parameters: { additionalProperties: false, properties: {}, type: 'object' },
+    },
+    {
+      description:
+        "Sign in with a saved login. Open the site's sign-in page first; the cloud computer types the user name and password itself and submits, only if the page is on the login's site. The user approves it first, seeing the site and the account. Tells you whether it was submitted and whether the site now asks for a code.",
+      humanIntervention: 'required',
+      name: ComputerApiName.signIn,
+      parameters: {
+        additionalProperties: false,
+        properties: {
+          account: { description: 'The account, exactly as listLogins gave it', type: 'string' },
+          loginId: { description: 'The loginId from listLogins', type: 'string' },
+          site: { description: "The login's site, exactly as listLogins gave it", type: 'string' },
+        },
+        required: ['loginId', 'site', 'account'],
+        type: 'object',
+      },
+    },
+    {
+      description:
+        'Ask the user for one value the page needs, such as a code texted to them: they type it on their phone into a masked box and it goes straight into the field, without you seeing it. Snapshot first and give the field. Waits for them for a few minutes.',
+      name: ComputerApiName.requestSecret,
+      parameters: {
+        additionalProperties: false,
+        properties: {
+          label: {
+            description: 'What they are asked for, e.g. "the 6-digit code texted to you"',
+            type: 'string',
+          },
+          ref: { ...REF, description: 'The field the value goes in, from the latest snapshot' },
+          snapshotId: SNAPSHOT_ID,
+        },
+        required: ['ref', 'snapshotId', 'label'],
+        type: 'object',
+      },
+    },
+    {
+      description:
         'Ask the user to take over the browser for something only they can do: a password, a code, a CAPTCHA, a choice. Say exactly what is needed. They are notified on their phone.',
       name: ComputerApiName.requestHelp,
       parameters: {

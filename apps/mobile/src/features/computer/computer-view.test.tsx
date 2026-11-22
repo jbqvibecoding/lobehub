@@ -95,6 +95,26 @@ describe('CloudComputerView', () => {
     ]);
   });
 
+  it('takes the value Biber asked for in a masked box, without taking over', async () => {
+    let wanted = true;
+    const mutation = jest.fn(async () => {
+      wanted = false;
+      return { supplied: true };
+    });
+    await renderView({
+      mutation,
+      view: async () => running('bot', wanted ? { secretWanted: 'the 6-digit code' } : {}),
+    });
+
+    const box = await screen.findByLabelText('the 6-digit code');
+    expect(box).toHaveProp('secureTextEntry', true);
+    await fireEvent.changeText(box, '482913');
+    await fireEvent.press(screen.getByRole('button', { name: 'Fill in' }));
+
+    expect(mutation).toHaveBeenCalledWith('computer.supplySecret', { text: '482913' });
+    await waitFor(() => expect(screen.queryByLabelText('the 6-digit code')).not.toBeOnTheScreen());
+  });
+
   it('hands the browser back', async () => {
     const { mutation } = await renderView({ view: running('human') });
 

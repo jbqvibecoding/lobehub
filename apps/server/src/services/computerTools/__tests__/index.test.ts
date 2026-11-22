@@ -36,6 +36,33 @@ vi.mock('@/server/services/push/PushChannel', () => ({
   },
 }));
 
+/** The user's saved logins, decrypted as SavedLoginService gives them to the server. */
+const saved = vi.hoisted(() => ({
+  logins: [] as {
+    accountHint: string;
+    id: string;
+    label: string;
+    origin: string;
+    secret: { password: string; username: string };
+  }[],
+  touched: [] as string[],
+}));
+vi.mock('@/server/services/savedLogins', () => ({
+  SavedLoginService: class {
+    list = async () =>
+      saved.logins.map((login) => ({
+        account: login.accountHint,
+        id: login.id,
+        label: login.label,
+        site: login.origin,
+      }));
+    secretFor = async (id: string) => saved.logins.find((login) => login.id === id);
+    touch = async (id: string) => void saved.touched.push(id);
+  },
+}));
+
+const PASSWORD = 'Hunter2-secret';
+
 const configured = {
   OPENBOT_COMPUTER_TOKEN: 'computer-token',
   OPENBOT_SUPERVISOR_TOKEN: 'supervisor-token',
@@ -51,9 +78,19 @@ const SHOP = [
 ];
 
 /** A supervisor and one computer, answering as agent-computer does, on a shop's checkout page. */
-const fakeComputer = (elements = SHOP) => {
+const fakeComputer = (
+  elements = SHOP,
+  {
+    signIn = { codeRequested: false, passwordFieldVisible: false, submitted: true } as Record<
+      string,
+      unknown
+    >,
+    secretSuppliedAfter = 1,
+  } = {},
+) => {
   const calls: { body?: any; path: string }[] = [];
   let snapshotId = 0;
+  let controlPolls = 0;
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init: RequestInit = {}) => {
@@ -84,6 +121,18 @@ const fakeComputer = (elements = SHOP) => {
         case '/control/request': {
           return Response.json({ request: { id: 'req-1' }, requested: true });
         }
+        case '/control/secret': {
+          return Response.json({ secretWanted: body.label });
+        }
+        case '/control': {
+          controlPolls += 1;
+          return Response.json(
+            controlPolls >= secretSuppliedAfter ? {} : { secretWanted: 'the code' },
+          );
+        }
+        case '/sign-in/fill': {
+          return Response.json({ url: 'https://shop.example/account', ...signIn });
+        }
         default: {
           return Response.json({ url: 'https://shop.example/checkout?step=2' });
         }
@@ -97,6 +146,16 @@ const service = () => new ComputerToolsService({} as any, 'user-1');
 
 beforeEach(() => {
   env.sandboxEnv = { ...configured };
+  saved.logins = [
+    {
+      accountHint: 'a•••@qq.com',
+      id: 'login-1',
+      label: 'Shop',
+      origin: 'https://shop.example',
+      secret: { password: PASSWORD, username: 'ada@qq.com' },
+    },
+  ];
+  saved.touched = [];
   cache.clear();
   clearOpenBotComputerCache();
   pushes.delivered = [];
@@ -226,7 +285,7 @@ describe('ComputerToolsService', () => {
     });
     expect(pushes.notifications[0]).toMatchObject({
       actionUrl: '/computer',
-      dedupeKey: 'computer-help:req-1',
+      dedupeKey: expect.stringMatching(/^computer-help:u-\w+:req-1$/),
       type: 'computer_help',
     });
     expect(pushes.delivered[0]).toMatchObject({
@@ -247,5 +306,117 @@ describe('ComputerToolsService', () => {
 
     env.sandboxEnv = configured;
     expect(isCloudComputerAvailable()).toBe(true);
+  });
+
+  describe('saved logins', () => {
+    it('lists them by site and account, never with a password', async () => {
+      fakeComputer();
+      const result = await service().listLogins();
+
+      expect(result.content).toContain(
+        'loginId login-1 · site "https://shop.example" · account "a•••@qq.com" · Shop',
+      );
+      expect(result.content).not.toContain(PASSWORD);
+      expect(result.content).not.toContain('ada@qq.com');
+    });
+
+    it('signs in only with the approved site and account, and reports no value back', async () => {
+      const computer = fakeComputer();
+      const tools = service();
+
+      const forged = await tools.signIn({
+        account: 'a•••@qq.com',
+        loginId: 'login-1',
+        site: 'https://evil.example',
+      });
+      expect(forged.error?.type).toBe('LoginMismatch');
+      expect((await tools.signIn({ account: '', loginId: 'nope', site: '' })).error?.type).toBe(
+        'LoginNotFound',
+      );
+      expect(computer.actions().some((call) => call.path === '/sign-in/fill')).toBe(false);
+
+      const result = await tools.signIn({
+        account: 'a•••@qq.com',
+        loginId: 'login-1',
+        site: 'https://shop.example',
+      });
+
+      expect(result.success).toBe(true);
+      expect(computer.actions().find((call) => call.path === '/sign-in/fill')?.body).toEqual({
+        origin: 'https://shop.example',
+        password: PASSWORD,
+        username: 'ada@qq.com',
+      });
+      expect(JSON.stringify(result)).not.toContain(PASSWORD);
+      expect(JSON.stringify(result)).not.toContain('ada@qq.com');
+      expect(saved.touched).toEqual(['login-1']);
+    });
+
+    it('says when the site asks for a code, and passes the computer’s refusal on', async () => {
+      fakeComputer(SHOP, {
+        signIn: { codeRequested: true, passwordFieldVisible: false, submitted: true },
+      });
+      const login = { account: 'a•••@qq.com', loginId: 'login-1', site: 'https://shop.example' };
+      expect((await service().signIn(login)).content).toContain('requestSecret');
+
+      fakeComputer(SHOP, {
+        signIn: {
+          codeRequested: false,
+          error: 'This page is not on https://shop.example.',
+          passwordFieldVisible: false,
+          submitted: false,
+        },
+      });
+      const refused = await service().signIn(login);
+      expect(refused).toMatchObject({ error: { type: 'LoginFailed' }, success: false });
+      expect(JSON.stringify(refused)).not.toContain(PASSWORD);
+    });
+  });
+
+  describe('asking the user for one value', () => {
+    it('asks for it on the phone and returns once the user filled it in', async () => {
+      const computer = fakeComputer();
+      const tools = service();
+      await tools.snapshot();
+
+      const result = await tools.requestSecret({
+        label: 'the 6-digit code texted to you',
+        ref: 'e1',
+        snapshotId: 1,
+      });
+
+      expect(result.content).toContain('The user filled it in');
+      expect(computer.actions().find((call) => call.path === '/control/secret')?.body).toEqual({
+        label: 'the 6-digit code texted to you',
+        ref: 'e1',
+        snapshotId: 1,
+      });
+      expect(pushes.notifications[0]).toMatchObject({ type: 'computer_secret' });
+      expect(pushes.delivered[0]).toMatchObject({ data: { kind: 'computer' } });
+      expect(JSON.stringify(pushes.delivered)).not.toContain('6-digit');
+    });
+
+    it('stops waiting after a while and says the user has not filled it in yet', async () => {
+      vi.useFakeTimers();
+      try {
+        fakeComputer(SHOP, { secretSuppliedAfter: Number.POSITIVE_INFINITY });
+        const tools = service();
+        await tools.snapshot();
+
+        const pending = tools.requestSecret({ label: 'the code', ref: 'e1', snapshotId: 1 });
+        await vi.advanceTimersByTimeAsync(101_000);
+
+        expect((await pending).content).toContain('has not filled it in yet');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('needs a field from the latest snapshot', async () => {
+      fakeComputer();
+      expect(
+        (await service().requestSecret({ label: 'x', ref: 'e1', snapshotId: 5 })).error?.type,
+      ).toBe('ComputerStaleSnapshot');
+    });
   });
 });

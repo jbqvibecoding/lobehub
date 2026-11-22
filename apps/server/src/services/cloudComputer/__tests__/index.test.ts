@@ -37,6 +37,7 @@ const fakeOpenBot = ({ running = true } = {}) => {
     requested: false,
     reason: undefined as string | undefined,
   };
+  let secretWanted = false;
   const state = () => ({ ...control, transitioning: false });
 
   const fetchSpy = vi.fn(async (url: string, init: RequestInit = {}) => {
@@ -96,6 +97,13 @@ const fakeOpenBot = ({ running = true } = {}) => {
         control.request = { ...control.request!, status: 'completed' };
         return Response.json(state());
       }
+      case '/human/secret': {
+        // Open only while the assistant has asked for a value, whoever holds the browser
+        if (!secretWanted)
+          return Response.json({ error: 'Nothing is asked for.' }, { status: 409 });
+        secretWanted = false;
+        return Response.json({ characters: body.text.length, supplied: true });
+      }
       default: {
         if (pathname.startsWith('/human/')) {
           if (control.holder !== 'human') {
@@ -110,6 +118,9 @@ const fakeOpenBot = ({ running = true } = {}) => {
 
   vi.stubGlobal('fetch', fetchSpy);
   return {
+    askForSecret: () => {
+      secretWanted = true;
+    },
     askForHelp: (reason: string) => {
       control.request = { id: 'req-bot', source: 'model', status: 'waiting' };
       control.requested = true;
@@ -246,6 +257,19 @@ describe('CloudComputerService', () => {
       ['computer.internal/human/click', { x: 10, y: 20 }],
       ['computer.internal/human/click', { x: 10, y: 20 }],
       ['computer.internal/human/type', { text: 'hunter2' }],
+    ]);
+  });
+
+  it('types the value the assistant asked for into the page, and only while it is asked', async () => {
+    const openBot = fakeOpenBot();
+    const service = new CloudComputerService('user-1');
+
+    await expect(service.supplySecret('482913')).rejects.toMatchObject({ code: 'CONFLICT' });
+    openBot.askForSecret();
+    expect(await service.supplySecret('482913')).toEqual({ supplied: true });
+    expect(openBot.computerCalls().filter((call) => call.path.endsWith('/human/secret'))).toEqual([
+      expect.objectContaining({ body: { text: '482913' }, method: 'POST' }),
+      expect.objectContaining({ body: { text: '482913' }, method: 'POST' }),
     ]);
   });
 
