@@ -40,5 +40,6 @@ export * from './task';
 export * from './topic';
 export * from './user';
 export * from './userMemories';
+export * from './userProfile';
 export * from './verify';
 export * from './workspace';

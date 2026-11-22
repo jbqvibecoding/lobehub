@@ -24,6 +24,7 @@ import { MailManifest } from '@lobechat/builtin-tool-mail';
 import { MemoryManifest } from '@lobechat/builtin-tool-memory';
 import { NotebookManifest } from '@lobechat/builtin-tool-notebook';
 import { PageAgentManifest } from '@lobechat/builtin-tool-page-agent';
+import { ProfileManifest } from '@lobechat/builtin-tool-profile';
 import { RemindersManifest } from '@lobechat/builtin-tool-reminders';
 import { selfFeedbackIntentManifest } from '@lobechat/builtin-tool-self-iteration';
 import { SkillStoreManifest } from '@lobechat/builtin-tool-skill-store';
@@ -52,6 +53,7 @@ export const builtinToolIdentifiers: string[] = [
   CalendarManifest.identifier,
   ComputerManifest.identifier,
   MailManifest.identifier,
+  ProfileManifest.identifier,
   RemindersManifest.identifier,
   selfFeedbackIntentManifest.identifier,
   agentSignalReviewManifest.identifier,

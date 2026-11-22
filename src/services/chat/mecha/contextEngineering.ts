@@ -14,6 +14,7 @@ import {
 import { GroupAgentBuilderIdentifier } from '@lobechat/builtin-tool-group-agent-builder';
 import { LobeAgentIdentifier } from '@lobechat/builtin-tool-lobe-agent';
 import { PageAgentIdentifier } from '@lobechat/builtin-tool-page-agent';
+import { ProfileIdentifier } from '@lobechat/builtin-tool-profile';
 import { WebOnboardingIdentifier } from '@lobechat/builtin-tool-web-onboarding';
 import {
   AGENT_PLAN_FILE_TYPE,
@@ -35,6 +36,7 @@ import type {
   PlanTodoConfig,
   ToolDiscoveryConfig,
   UserMemoryData,
+  UserProfileConfig,
 } from '@lobechat/context-engine';
 import { MessagesEngine, resolveTopicReferences } from '@lobechat/context-engine';
 import { historySummaryPrompt } from '@lobechat/prompts';
@@ -56,6 +58,7 @@ import {
   AVAILABLE_AGENTS_CONTEXT_QUERY_LIMIT,
 } from '@/services/agent';
 import { notebookService } from '@/services/notebook';
+import { profileService } from '@/services/profile';
 import { getAgentStoreState } from '@/store/agent';
 import { agentChatConfigSelectors, agentSelectors } from '@/store/agent/selectors';
 import { getChatGroupStoreState } from '@/store/agentGroup';
@@ -357,6 +360,19 @@ export const contextEngineering = async ({
     const topicMemories = resolveTopicMemories();
     const persona = resolveUserPersona();
     userMemoryData = combineUserMemoryData(topicMemories, persona);
+  }
+
+  // What the user told Biber about themselves: for the agent that carries the profile tool, and
+  // given whether or not memory is on, since the user said it on purpose.
+  let userProfile: UserProfileConfig | undefined;
+  if (tools?.includes(ProfileIdentifier)) {
+    try {
+      const { entries } = await profileService.get();
+      if (entries.length > 0) userProfile = { entries };
+      log('User profile resolved: %d entries', entries.length);
+    } catch (error) {
+      log('Failed to resolve the user profile:', error);
+    }
   }
 
   // Resolve plan + todos context (now part of the lobe-agent tool).
@@ -763,6 +779,7 @@ export const contextEngineering = async ({
 
     // User memory configuration
     userMemory: userMemoryConfig,
+    userProfile,
 
     // Variable generators
     variableGenerators: {

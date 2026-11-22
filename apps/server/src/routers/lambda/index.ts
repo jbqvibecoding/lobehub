@@ -67,6 +67,7 @@ import { notebookRouter } from './notebook';
 import { notificationRouter } from './notification';
 import { oauthDeviceFlowRouter } from './oauthDeviceFlow';
 import { pluginRouter } from './plugin';
+import { profileRouter } from './profile';
 import { pushTokenRouter } from './pushToken';
 import { ragEvalRouter } from './ragEval';
 import { recentRouter } from './recent';
@@ -144,6 +145,7 @@ export const lambdaRouter = router({
   calendar: calendarRouter,
   computerTools: computerToolsRouter,
   mail: mailRouter,
+  profile: profileRouter,
   reminders: remindersRouter,
   search: searchRouter,
   session: sessionRouter,

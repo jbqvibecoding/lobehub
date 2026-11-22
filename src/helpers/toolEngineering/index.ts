@@ -9,6 +9,7 @@ import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
 import { MailManifest } from '@lobechat/builtin-tool-mail';
 import { MemoryManifest } from '@lobechat/builtin-tool-memory';
+import { ProfileManifest } from '@lobechat/builtin-tool-profile';
 import { RemindersManifest } from '@lobechat/builtin-tool-reminders';
 import { WebBrowsingManifest } from '@lobechat/builtin-tool-web-browsing';
 import { alwaysOnToolIds, chatModeAllowedToolIds, defaultToolIds } from '@lobechat/builtin-tools';
@@ -276,12 +277,15 @@ export const createAgentToolsEngine = (
     [ComputerManifest.identifier]: computerEnabled,
     [KnowledgeBaseManifest.identifier]: kbEnabled,
     [MemoryManifest.identifier]: memoryEnabled,
-    // Biber's reminders, mail and calendar: only for the agent whose plugins carry them
+    // Biber's reminders, profile, mail and calendar: only for the agent whose plugins carry them
     [CalendarManifest.identifier]: [...(pluginIds ?? []), ...userPlugins].includes(
       CalendarManifest.identifier,
     ),
     [MailManifest.identifier]: [...(pluginIds ?? []), ...userPlugins].includes(
       MailManifest.identifier,
+    ),
+    [ProfileManifest.identifier]: [...(pluginIds ?? []), ...userPlugins].includes(
+      ProfileManifest.identifier,
     ),
     [RemindersManifest.identifier]: [...(pluginIds ?? []), ...userPlugins].includes(
       RemindersManifest.identifier,

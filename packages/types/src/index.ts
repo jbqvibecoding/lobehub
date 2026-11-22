@@ -43,6 +43,7 @@ export * from './tool';
 export * from './topic';
 export * from './user';
 export * from './userMemory';
+export * from './userProfile';
 export * from './verify';
 // FIXME: I think we need a refactor for the "openai" types
 // it more likes the UI message payload

@@ -32,6 +32,7 @@ import { memoryRuntime } from './memory';
 import { messageRuntime } from './message';
 import { notebookRuntime } from './notebook';
 import { pageAgentRuntime } from './pageAgent';
+import { profileRuntime } from './profile';
 import { remindersRuntime } from './reminders';
 import { remoteDeviceRuntime } from './remoteDevice';
 import { selfFeedbackIntentRuntime } from './selfFeedbackIntent';
@@ -76,6 +77,7 @@ registerRuntimes([
   calendarRuntime,
   computerRuntime,
   mailRuntime,
+  profileRuntime,
   remindersRuntime,
   activatorRuntime,
   messageRuntime,

@@ -60,6 +60,7 @@ import {
   ToolSystemRoleProvider,
   TopicReferenceContextInjector,
   UserMemoryInjector,
+  UserProfileInjector,
 } from '../../providers';
 import { SelectedToolInjector } from '../../providers/SelectedToolInjector';
 import type { ContextProcessor } from '../../types';
@@ -171,6 +172,7 @@ export class MessagesEngine {
       agentDocuments,
       planTodo,
       userMemory,
+      userProfile,
       initialContext,
       stepContext,
       pageContentContext,
@@ -283,6 +285,8 @@ export class MessagesEngine {
       // Order matters: first executed = first in content
       // =============================================
 
+      // The user's own profile, then what memory gathered about them
+      new UserProfileInjector({ entries: userProfile?.entries }),
       // User memory
       new UserMemoryInjector({ ...userMemory, enabled: isUserMemoryEnabled }),
       // Group context (agent identity and group info for multi-agent chat)

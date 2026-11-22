@@ -25,6 +25,7 @@ import { MailManifest } from '@lobechat/builtin-tool-mail';
 import { MemoryManifest } from '@lobechat/builtin-tool-memory';
 import { MessageManifest } from '@lobechat/builtin-tool-message';
 import { PageAgentManifest } from '@lobechat/builtin-tool-page-agent';
+import { ProfileManifest } from '@lobechat/builtin-tool-profile';
 import { RemindersManifest } from '@lobechat/builtin-tool-reminders';
 import { RemoteDeviceManifest } from '@lobechat/builtin-tool-remote-device';
 import { selfFeedbackIntentManifest } from '@lobechat/builtin-tool-self-iteration';
@@ -117,6 +118,7 @@ export const chatModeAllowedToolIds = [
   CalendarManifest.identifier,
   ComputerManifest.identifier,
   MailManifest.identifier,
+  ProfileManifest.identifier,
   RemindersManifest.identifier,
   WebBrowsingManifest.identifier,
 ];
@@ -283,6 +285,14 @@ const builtinToolRegistry: LobeBuiltinTool[] = [
     hidden: true,
     identifier: MailManifest.identifier,
     manifest: MailManifest,
+    type: 'builtin',
+  },
+  {
+    // Biber's own: the inbox agent carries it in its plugins
+    discoverable: false,
+    hidden: true,
+    identifier: ProfileManifest.identifier,
+    manifest: ProfileManifest,
     type: 'builtin',
   },
   {

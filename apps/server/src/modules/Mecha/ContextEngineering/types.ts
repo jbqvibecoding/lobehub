@@ -15,6 +15,7 @@ import type {
   ToolDiscoveryConfig,
   TopicReferenceItem,
   UserMemoryData,
+  UserProfileConfig,
 } from '@lobechat/context-engine';
 import type { PageContentContext } from '@lobechat/prompts';
 import type { RuntimeInitialContext, UIChatMessage } from '@lobechat/types';
@@ -160,6 +161,8 @@ export interface ServerMessagesEngineParams {
   // ========== User memory ==========
   /** User memory configuration */
   userMemory?: ServerUserMemoryConfig;
+  /** What the user told Biber about themselves; given whether or not memory is on */
+  userProfile?: UserProfileConfig;
 }
 
 // Re-export types for convenience

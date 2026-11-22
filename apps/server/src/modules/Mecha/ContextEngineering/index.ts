@@ -78,6 +78,7 @@ export const serverMessagesEngine = async ({
   toolsConfig,
   capabilities,
   userMemory,
+  userProfile,
   agentBuilderContext,
   agentGroup,
   botPlatformContext,
@@ -158,6 +159,9 @@ export const serverMessagesEngine = async ({
           memories: userMemory.memories,
         }
       : undefined,
+
+    // The user's own profile (Biber only: the caller passes it when the profile tool is on)
+    ...(userProfile?.entries.length && { userProfile }),
 
     // Server-side variable generators (with model/provider context + device paths)
     variableGenerators: {

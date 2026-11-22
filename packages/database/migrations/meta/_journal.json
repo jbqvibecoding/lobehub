@@ -903,6 +903,13 @@
       "when": 1795336727184,
       "tag": "0128_add_saved_logins",
       "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1795350601826,
+      "tag": "0129_add_user_profiles",
+      "breakpoints": true
     }
   ],
   "version": "6"

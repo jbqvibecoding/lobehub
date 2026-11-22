@@ -8,6 +8,7 @@ import { LobeAgentApiName, LobeAgentManifest } from '@lobechat/builtin-tool-lobe
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
 import { MailManifest } from '@lobechat/builtin-tool-mail';
 import { MemoryManifest } from '@lobechat/builtin-tool-memory';
+import { ProfileManifest } from '@lobechat/builtin-tool-profile';
 import { RemindersManifest } from '@lobechat/builtin-tool-reminders';
 import { RemoteDeviceManifest } from '@lobechat/builtin-tool-remote-device';
 import { SkillsApiName, SkillsManifest } from '@lobechat/builtin-tool-skills';
@@ -631,6 +632,13 @@ describe('createServerAgentToolsEngine', () => {
     it('is off for other agents, even in chat mode where it is allowed', () => {
       expect(remindersFor([])).not.toContain(RemindersManifest.identifier);
       expect(remindersFor([], 'chat')).not.toContain(RemindersManifest.identifier);
+    });
+
+    it('goes with the profile tool, which follows the same rule', () => {
+      expect(remindersFor([ProfileManifest.identifier], 'chat')).toContain(
+        ProfileManifest.identifier,
+      );
+      expect(remindersFor([], 'chat')).not.toContain(ProfileManifest.identifier);
     });
   });
 

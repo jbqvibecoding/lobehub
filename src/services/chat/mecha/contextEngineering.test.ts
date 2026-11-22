@@ -48,6 +48,23 @@ vi.mock('@/services/agentDocument', () => ({
   },
 }));
 
+vi.mock('@/services/profile', () => ({
+  profileService: {
+    get: vi.fn().mockResolvedValue({
+      entries: [
+        {
+          id: 'G0',
+          section: 'goals',
+          status: 'active',
+          text: 'Run a full marathon before October',
+          updatedAt: '2026-11-01T00:00:00.000Z',
+        },
+      ],
+      interview: {},
+    }),
+  },
+}));
+
 vi.mock('@/services/agent', () => ({
   AVAILABLE_AGENTS_CONTEXT_LIMIT: 10,
   AVAILABLE_AGENTS_CONTEXT_QUERY_LIMIT: 12,
@@ -99,6 +116,26 @@ const getCurrentDateContent = () => {
 };
 
 describe('contextEngineering', () => {
+  it("gives Biber the user's profile only when the profile tool is on", async () => {
+    const messages = [{ content: 'Hello', role: 'user' }] as UIChatMessage[];
+    const hasProfile = (output: { content?: unknown }[]) =>
+      output.some((message) => String(message.content).includes('- [G0] Run a full marathon'));
+
+    expect(
+      hasProfile(
+        await contextEngineering({
+          messages,
+          model: 'gpt-4',
+          provider: 'openai',
+          tools: ['lobe-profile'],
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      hasProfile(await contextEngineering({ messages, model: 'gpt-4', provider: 'openai' })),
+    ).toBe(false);
+  });
+
   it('should not fetch agent documents implicitly when agentId is provided', async () => {
     const messages = [{ content: 'Hello', role: 'user' }] as UIChatMessage[];
 

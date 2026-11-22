@@ -5,6 +5,7 @@ import type {
   RuntimeSelectedSkill,
   RuntimeSelectedTool,
   RuntimeStepContext,
+  UserProfileEntry,
 } from '@lobechat/types';
 
 import type { OpenAIChatMessage, UIChatMessage } from '@/types/index';
@@ -171,6 +172,13 @@ export interface UserMemoryConfig {
 }
 
 /**
+ * User profile configuration: what the user told Biber about themselves
+ */
+export interface UserProfileConfig {
+  entries: UserProfileEntry[];
+}
+
+/**
  * Agent group configuration
  * Used to inject sender identity into assistant messages in multi-agent scenarios
  */
@@ -308,6 +316,8 @@ export interface MessagesEngineParams {
   };
   /** User memory configuration */
   userMemory?: UserMemoryConfig;
+  /** The user's own profile, given whether or not memory is on */
+  userProfile?: UserProfileConfig;
 
   // ========== Topic References ==========
   /** Topic reference summaries to inject into last user message */

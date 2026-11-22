@@ -21,6 +21,7 @@ import { lobeAgentExecutor } from '@lobechat/builtin-tool-lobe-agent/client/exec
 import { localSystemExecutor } from '@lobechat/builtin-tool-local-system/client/executor';
 import { mailExecutor } from '@lobechat/builtin-tool-mail/client/executor';
 import { memoryExecutor } from '@lobechat/builtin-tool-memory/executor';
+import { profileExecutor } from '@lobechat/builtin-tool-profile/client/executor';
 import { remindersExecutor } from '@lobechat/builtin-tool-reminders/client/executor';
 import { taskExecutor } from '@lobechat/builtin-tool-task/client/executor';
 
@@ -162,6 +163,7 @@ export const registerBuiltinToolExecutors = (): void => {
     calendarExecutor,
     computerExecutor,
     mailExecutor,
+    profileExecutor,
     remindersExecutor,
     messageExecutor,
     notebookExecutor,

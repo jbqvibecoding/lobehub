@@ -18,6 +18,7 @@ import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
 import { MailManifest } from '@lobechat/builtin-tool-mail';
 import { MemoryManifest } from '@lobechat/builtin-tool-memory';
 import { MessageManifest } from '@lobechat/builtin-tool-message';
+import { ProfileManifest } from '@lobechat/builtin-tool-profile';
 import { RemindersManifest } from '@lobechat/builtin-tool-reminders';
 import { RemoteDeviceManifest } from '@lobechat/builtin-tool-remote-device';
 import { WebBrowsingManifest } from '@lobechat/builtin-tool-web-browsing';
@@ -243,11 +244,12 @@ export const createServerAgentToolsEngine = (
     [ComputerManifest.identifier]: computerEnabled,
     [KnowledgeBaseManifest.identifier]: hasEnabledKnowledgeBases,
     [MemoryManifest.identifier]: globalMemoryEnabled,
-    // Biber's reminders, mail and calendar: only for the agent whose plugins carry them
+    // Biber's reminders, profile, mail and calendar: only for the agent whose plugins carry them
     [CalendarManifest.identifier]: (agentConfig.plugins ?? []).includes(
       CalendarManifest.identifier,
     ),
     [MailManifest.identifier]: (agentConfig.plugins ?? []).includes(MailManifest.identifier),
+    [ProfileManifest.identifier]: (agentConfig.plugins ?? []).includes(ProfileManifest.identifier),
     [RemindersManifest.identifier]: (agentConfig.plugins ?? []).includes(
       RemindersManifest.identifier,
     ),

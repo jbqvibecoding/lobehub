@@ -27,5 +27,6 @@ export type {
   UserMemoryExperienceItem,
   UserMemoryIdentityItem,
   UserMemoryPreferenceItem,
+  UserProfileConfig,
   VariableGenerators,
 } from './types';

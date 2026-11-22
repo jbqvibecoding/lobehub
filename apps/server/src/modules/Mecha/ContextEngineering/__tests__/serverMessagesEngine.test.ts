@@ -397,6 +397,43 @@ describe('serverMessagesEngine', () => {
     });
   });
 
+  describe('user profile injection', () => {
+    it("gives the user's profile, even with memory off", async () => {
+      const result = await serverMessagesEngine({
+        messages: createBasicMessages(),
+        model: 'gpt-4',
+        provider: 'openai',
+        userProfile: {
+          entries: [
+            {
+              id: 'G0',
+              section: 'goals',
+              status: 'active',
+              text: 'Run a full marathon before October',
+              updatedAt: '2026-11-01T00:00:00.000Z',
+            },
+          ],
+        },
+      });
+
+      const injection = result.find(
+        (m: any) => m.role === 'user' && String(m.content).includes('<user_profile>'),
+      );
+      expect(String(injection?.content)).toContain('- [G0] Run a full marathon before October');
+    });
+
+    it('adds no profile block when there is none', async () => {
+      const result = await serverMessagesEngine({
+        messages: createBasicMessages(),
+        model: 'gpt-4',
+        provider: 'openai',
+        userProfile: { entries: [] },
+      });
+
+      expect(result.some((m: any) => String(m.content).includes('<user_profile>'))).toBe(false);
+    });
+  });
+
   describe('extended contexts', () => {
     it('should inject Agent Builder context when provided', async () => {
       const messages = createBasicMessages();

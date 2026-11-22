@@ -2689,6 +2689,13 @@ table user_memory_persona_documents {
   }
 }
 
+table user_profiles {
+  user_id text [pk, not null]
+  entries jsonb [not null, default: `[]`]
+  interview jsonb [not null, default: `{}`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+}
+
 table verify_check_results {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   verify_run_id uuid
