@@ -147,6 +147,80 @@ describe('tool executors', () => {
     expect(result.newState.usage.tools.totalCalls).toBe(1);
   });
 
+  it('fills in the tool message an approval left empty, so the model reads the result', async () => {
+    const pausedCall = createToolCall('tool-call-approved');
+    const state = createState({
+      messages: [
+        { content: 'Sign in to the shop', role: 'user' },
+        { content: '', role: 'assistant', tool_calls: [] },
+        // What the pause wrote for the call that waited on the user
+        { content: '', plugin: pausedCall, role: 'tool', tool_call_id: 'tool-call-approved' },
+      ] as any,
+    });
+
+    const result = await callTool(host)(
+      {
+        payload: {
+          parentMessageId: 'paused-tool-msg',
+          skipCreateToolMessage: true,
+          toolCalling: pausedCall,
+        },
+        type: 'call_tool',
+      },
+      state,
+    );
+
+    const toolMessages = result.newState.messages.filter(
+      (message: any) => message.role === 'tool' && message.tool_call_id === 'tool-call-approved',
+    );
+    expect(toolMessages).toHaveLength(1);
+    expect(toolMessages[0]).toMatchObject({ content: 'Tool result', role: 'tool' });
+    expect(createToolMessage).not.toHaveBeenCalled();
+  });
+
+  it('fills it in inside the assistant group a reloaded conversation holds it in', async () => {
+    const pausedCall = createToolCall('tool-call-approved');
+    // As the resume reloads it from the database: the call and its empty result nested in a group
+    const state = createState({
+      messages: [
+        { content: 'Sign in to the shop', id: 'user-msg', role: 'user' },
+        {
+          children: [
+            {
+              content: '',
+              id: 'assistant-msg',
+              tools: [{ ...pausedCall, result: { content: '', id: 'paused-tool-msg' } }],
+            },
+          ],
+          content: '',
+          id: 'assistant-msg',
+          role: 'assistantGroup',
+        },
+      ] as any,
+    });
+
+    const result = await callTool(host)(
+      {
+        payload: {
+          parentMessageId: 'paused-tool-msg',
+          skipCreateToolMessage: true,
+          toolCalling: pausedCall,
+        },
+        type: 'call_tool',
+      },
+      state,
+    );
+
+    const [, group] = result.newState.messages as any[];
+    expect(group.children[0].tools[0].result).toMatchObject({
+      content: 'Tool result',
+      id: 'paused-tool-msg',
+    });
+    expect(result.newState.messages).toHaveLength(2);
+    // The state passed in is left as it was
+    expect((state.messages[1] as any).children[0].tools[0].result.content).toBe('');
+  });
+
   it('parks single client-source tools without invoking the transport runner', async () => {
     const instruction: Extract<AgentInstruction, { type: 'call_tool' }> = {
       payload: {

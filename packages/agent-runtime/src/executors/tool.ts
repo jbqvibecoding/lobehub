@@ -338,6 +338,56 @@ const persistActivatedTools = ({
   }
 };
 
+/**
+ * Puts an approved call's result where the conversation already holds that call: a tool message
+ * of its own, or (as a conversation reloaded from the database groups it) the call inside an
+ * assistant group's `children[].tools[]`. Whether it was found.
+ */
+const fillWaitingToolResult = (
+  messages: any[],
+  {
+    parentMessageId,
+    result,
+    resultMessage,
+    toolCallId,
+  }: {
+    parentMessageId: string;
+    result: { content: unknown; error?: unknown; state?: unknown };
+    resultMessage: Record<string, unknown>;
+    toolCallId: string;
+  },
+) => {
+  const own = messages.findIndex(
+    (message) =>
+      message.role === 'tool' &&
+      (message.id === parentMessageId ||
+        message.tool_call_id === toolCallId ||
+        message.plugin?.id === toolCallId),
+  );
+  if (own >= 0) {
+    messages[own] = { ...messages[own], ...resultMessage };
+    return true;
+  }
+
+  for (const message of messages) {
+    for (const child of message.children ?? []) {
+      const call = (child.tools ?? []).find(
+        (candidate: any) => candidate.id === toolCallId || candidate.result?.id === parentMessageId,
+      );
+      if (!call) continue;
+      call.result = {
+        ...call.result,
+        content: result.content,
+        error: result.error,
+        id: call.result?.id ?? parentMessageId,
+        state: result.state,
+      };
+      return true;
+    }
+  }
+  return false;
+};
+
 export const callTool =
   (host: AgentRuntimeHost): InstructionExecutor =>
   async (instruction, state, runtimeContext) => {
@@ -436,13 +486,25 @@ export const callTool =
           topicId: runContext.topicId,
         });
       } else {
-        newState.messages.push({
+        const resultMessage = {
           content: executionResult.content,
           plugin: tool,
           pluginState: executionResult.state,
           role: 'tool',
           tool_call_id: tool.id,
-        });
+        };
+        // A call the user approved is already in the conversation with the empty result its pause
+        // wrote; fill that in rather than append a second answer to the same call, which would
+        // leave the model reading the empty one.
+        const filled =
+          payload.skipCreateToolMessage &&
+          fillWaitingToolResult(newState.messages, {
+            parentMessageId: payload.parentMessageId,
+            result: executionResult,
+            resultMessage,
+            toolCallId: tool.id,
+          });
+        if (!filled) newState.messages.push(resultMessage);
       }
       newState.lastModified = nowIso();
 
