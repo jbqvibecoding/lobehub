@@ -40,7 +40,7 @@ import {
   messengerPlatformRegistry,
   MessengerSlackBinder,
   MessengerTelegramBinder,
-  MessengerWechatBinder,
+  MessengerWechatMpBinder,
   peekConsumedLinkToken,
   peekLinkToken,
   startWechatLinkCode,
@@ -226,7 +226,7 @@ export const messengerRouter = router({
     // Lark and Feishu: the same store app on two domains
     const larkFamily = { feishu: feishuConfig, lark: larkConfig } as const;
     // WeChat: what the Official Account's follow QR code encodes
-    const wechatQrUrl = enabledSet.has('wechat') ? await wechatFollowQrUrl() : undefined;
+    const wechatQrUrl = enabledSet.has('wechatmp') ? await wechatFollowQrUrl() : undefined;
 
     return definitions.map((def) => ({
       ...def,
@@ -246,7 +246,7 @@ export const messengerRouter = router({
       // iMessage-only: the shared line's number, where users text the bot.
       phoneNumber: def.id === 'imessage' ? imessageConfig?.phoneNumber : undefined,
       // WeChat-only: scanned in WeChat, it opens the Official Account to follow.
-      qrCodeUrl: def.id === 'wechat' ? wechatQrUrl : undefined,
+      qrCodeUrl: def.id === 'wechatmp' ? wechatQrUrl : undefined,
       // Lark-only: the App Directory listing where a tenant admin installs the app.
       installUrl:
         def.id === 'lark' || def.id === 'feishu' ? larkFamily[def.id]?.installUrl : undefined,
@@ -401,7 +401,7 @@ export const messengerRouter = router({
 
       // WeChat cannot show whose account is being linked, so its link takes effect only once the
       // code shown here is sent from that WeChat (decision 6)
-      const confirmByCode = peeked.platform === 'wechat';
+      const confirmByCode = peeked.platform === 'wechatmp';
 
       // Now safe to consume — token is single-use; do this last so any error
       // above leaves the token available for retry.
@@ -422,7 +422,7 @@ export const messengerRouter = router({
           userId: ctx.userId,
           workspaceId: agentScope.workspaceId,
         });
-        void new MessengerWechatBinder()
+        void new MessengerWechatMpBinder()
           .askForLinkCode(payload.platformUserId)
           .catch(() => undefined);
         return {
@@ -706,8 +706,8 @@ const notifyLinkSuccess = async (
         await new MessengerLarkBinder(platform).notifyLinkSuccess(params);
         break;
       }
-      case 'wechat': {
-        await new MessengerWechatBinder().notifyLinkSuccess(params);
+      case 'wechatmp': {
+        await new MessengerWechatMpBinder().notifyLinkSuccess(params);
         break;
       }
     }

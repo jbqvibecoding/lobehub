@@ -1,14 +1,14 @@
 import debug from 'debug';
 
-import { getMessengerWechatConfig } from '@/config/messenger';
+import { getMessengerWechatMpConfig } from '@/config/messenger';
 
 import { expiringCache } from '../../expiringCache';
 import type { MessengerPlatformWebhookGate } from '../types';
 import { inboundText } from './adapter';
-import { MessengerWechatBinder } from './binder';
+import { MessengerWechatMpBinder } from './binder';
 import { answerUrlCheck, readDelivery, WechatMpVerificationError } from './protocol';
 
-const log = debug('lobe-server:messenger:wechat:webhook');
+const log = debug('lobe-server:messenger:wechatmpmp:webhook');
 
 /** WeChat stops retrying a delivery once it gets this reply. */
 const acknowledged = () => new Response('success', { status: 200 });
@@ -21,9 +21,9 @@ const EVENT_DEDUPE_SECONDS = 10 * 60;
  * the server URL, follow and QR-scan events (answered with a welcome or the link to connect), and
  * kinds of message the bot cannot read yet. Deliveries WeChat did not sign are refused here.
  */
-export const wechatWebhookGate: MessengerPlatformWebhookGate = {
+export const wechatMpWebhookGate: MessengerPlatformWebhookGate = {
   handleGet: async (req) => {
-    const config = await getMessengerWechatConfig();
+    const config = await getMessengerWechatMpConfig();
     if (!config) return new Response('WeChat is not configured', { status: 503 });
 
     const echostr = answerUrlCheck(config, new URL(req.url));
@@ -33,7 +33,7 @@ export const wechatWebhookGate: MessengerPlatformWebhookGate = {
   },
 
   preprocess: async (req, rawBody) => {
-    const config = await getMessengerWechatConfig();
+    const config = await getMessengerWechatMpConfig();
     if (!config) return null;
 
     let fields;
@@ -49,7 +49,7 @@ export const wechatWebhookGate: MessengerPlatformWebhookGate = {
 
     const openId = fields.FromUserName;
     if (!openId) return acknowledged();
-    const binder = new MessengerWechatBinder();
+    const binder = new MessengerWechatMpBinder();
 
     if (fields.MsgType === 'event') {
       const event = fields.Event;
@@ -57,7 +57,7 @@ export const wechatWebhookGate: MessengerPlatformWebhookGate = {
       if (event !== 'subscribe' && event !== 'SCAN') return acknowledged();
 
       const first = await expiringCache.claim(
-        `messenger:wechat:event:${openId}:${fields.CreateTime}:${event}`,
+        `messenger:wechatmp:event:${openId}:${fields.CreateTime}:${event}`,
         EVENT_DEDUPE_SECONDS,
       );
       if (first) await binder.greet(openId);
@@ -66,7 +66,7 @@ export const wechatWebhookGate: MessengerPlatformWebhookGate = {
 
     if (inboundText(fields) === undefined) {
       const first = await expiringCache.claim(
-        `messenger:wechat:unsupported:${openId}:${fields.MsgId ?? fields.CreateTime}`,
+        `messenger:wechatmp:unsupported:${openId}:${fields.MsgId ?? fields.CreateTime}`,
         EVENT_DEDUPE_SECONDS,
       );
       if (first) await binder.sendDmText(openId, '目前只能处理文字和图片消息，请发送文字。');

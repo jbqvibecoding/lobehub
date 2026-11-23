@@ -9,7 +9,10 @@ import { type BotReplyLocale, getBotReplyLocale } from '@/server/services/bot/pl
  * in English).
  */
 export const messengerReplyLocale = (platform: string | undefined): BotReplyLocale =>
-  isMainlandRegion(regionEnv.APP_REGION) ? 'zh-CN' : getBotReplyLocale(platform);
+  // The WeChat Official Account's followers read Chinese wherever the server runs
+  isMainlandRegion(regionEnv.APP_REGION) || platform === 'wechatmp'
+    ? 'zh-CN'
+    : getBotReplyLocale(platform);
 
 interface MessengerReplies {
   agentAlreadyActive: (title: string) => string;

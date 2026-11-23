@@ -2,7 +2,7 @@ import debug from 'debug';
 
 import { expiringCache } from '../../expiringCache';
 
-const log = debug('lobe-server:messenger:wechat:api');
+const log = debug('lobe-server:messenger:wechatmpmp:api');
 
 /** WeChat's API; a deployment may route it through a fixed-IP proxy, since WeChat allowlists IPs */
 export const DEFAULT_WECHAT_API_BASE = 'https://api.weixin.qq.com';
@@ -65,8 +65,8 @@ export interface WechatMpAppCredentials {
  */
 export const createWechatMpApi = ({ apiBaseUrl, appId, appSecret }: WechatMpAppCredentials) => {
   const API = `${(apiBaseUrl ?? DEFAULT_WECHAT_API_BASE).replace(/\/+$/, '')}/cgi-bin`;
-  const tokenKey = `messenger:wechat:access-token:${appId}`;
-  const qrKey = `messenger:wechat:follow-qr:${appId}`;
+  const tokenKey = `messenger:wechatmp:access-token:${appId}`;
+  const qrKey = `messenger:wechatmp:follow-qr:${appId}`;
 
   const accessToken = async (forceRefresh = false): Promise<string> => {
     if (!forceRefresh) {

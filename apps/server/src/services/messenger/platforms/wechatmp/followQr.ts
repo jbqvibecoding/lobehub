@@ -1,17 +1,17 @@
 import debug from 'debug';
 
-import { getMessengerWechatConfig } from '@/config/messenger';
+import { getMessengerWechatMpConfig } from '@/config/messenger';
 
 import { createWechatMpApi } from './api';
 
-const log = debug('lobe-server:messenger:wechat:qr');
+const log = debug('lobe-server:messenger:wechatmpmp:qr');
 
 /**
  * What the Official Account's follow QR code encodes, for the web page to draw. Undefined when the
  * account is not configured or WeChat cannot be reached; the page then says so.
  */
 export const wechatFollowQrUrl = async (): Promise<string | undefined> => {
-  const config = await getMessengerWechatConfig();
+  const config = await getMessengerWechatMpConfig();
   if (!config) return undefined;
   try {
     return await createWechatMpApi(config).followQrUrl();

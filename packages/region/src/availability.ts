@@ -13,7 +13,7 @@ const MAINLAND_BOT_PLATFORMS: readonly string[] = ['feishu', 'qq', 'wechat'];
  * edition offers WeChat and Feishu, the Lark store app's China domain; the others are unreachable
  * from mainland China.
  */
-const MAINLAND_MESSENGER_PLATFORMS: readonly string[] = ['feishu', 'wechat'];
+const MAINLAND_MESSENGER_PLATFORMS: readonly string[] = ['feishu', 'wechatmp'];
 
 export const isBotPlatformAvailable = (region: AppRegion, platformId: string): boolean =>
   !isMainlandRegion(region) || MAINLAND_BOT_PLATFORMS.includes(platformId);

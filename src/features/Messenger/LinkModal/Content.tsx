@@ -76,7 +76,7 @@ const LinkModalContent = memo<LinkModalContentProps>(
             />
           );
         }
-        case 'wechat': {
+        case 'wechatmp': {
           // An Official Account is found by scanning its code in WeChat, not by opening a link
           return (
             <SharedBotLinkBody
@@ -84,7 +84,7 @@ const LinkModalContent = memo<LinkModalContentProps>(
               deepLink={qrCodeUrl}
               name={name}
               note={t('messenger.linkModal.wechatFollowNote')}
-              platform="wechat"
+              platform="wechatmp"
             />
           );
         }

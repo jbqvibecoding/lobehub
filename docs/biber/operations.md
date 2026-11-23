@@ -97,7 +97,7 @@ bunx tsx scripts/biber/ops.ts refund "用户申请退款" < 订单号 > --reason
 
 ```bash
 echo '{"appSecret":"…","token":"…","encodingAESKey":"…"}' \
-  | bunx tsx scripts/biber/ops.ts bot set wechat --application-id wx1234567890abcdef
+  | bunx tsx scripts/biber/ops.ts bot set wechatmp --application-id wx1234567890abcdef
 bunx tsx scripts/biber/ops.ts bot list
 ```
 
@@ -108,7 +108,7 @@ bunx tsx scripts/biber/ops.ts bot list
 | `telegram`       | 留空              | `botToken`、`botUsername`、`webhookSecret`     | `<APP_URL>/api/agent/messenger/webhooks/telegram` |
 | `imessage`       | 线路号码（E.164） | `apiKey`、`signingSecret`（Linq）              | `…/webhooks/imessage`                             |
 | `lark`、`feishu` | App ID            | `appSecret`、`verificationToken`、`encryptKey` | `…/webhooks/lark`、`…/webhooks/feishu`            |
-| `wechat`         | 服务号 AppID      | `appSecret`、`token`、`encodingAESKey`         | `…/webhooks/wechat`                               |
+| `wechatmp`       | 服务号 AppID      | `appSecret`、`token`、`encodingAESKey`         | `…/webhooks/wechatmp`                             |
 
 各平台的注意事项：
 
@@ -304,7 +304,7 @@ bunx tsx scripts/biber/ops.ts bot list
    - `profile-interview.ts` 和 `reminders.ts` 要的一样：服务端设 `CRON_SECRET`，运行时带上 `SMOKE_CRON_SECRET` 和
      `SMOKE_DATABASE_URL`；国内版再带 `APP_REGION=cn`、`SMOKE_MODEL_PROVIDER=deepseek`、`SMOKE_MODEL=deepseek-v4-flash`。
    - `SMOKE_ALIPAY_SIGNING_KEY=<那把私钥的 PEM 文件> bunx tsx scripts/biber/smoke/mainland.ts`。
-   - `wechat-bot.ts` 先按脚本开头的说明用 `bot set wechat` 存一个指向本地替身的服务号，
+   - `wechat-bot.ts` 先按脚本开头的说明用 `bot set wechatmp` 存一个指向本地替身的服务号，
      再带上同样的 `SMOKE_WECHAT_TOKEN`、`SMOKE_WECHAT_AES_KEY` 运行。
    - `telegram-bot.ts`、`imessage-bot.ts`、`lark-bot.ts` 也是先按脚本开头的说明用 `bot set` 存好凭据。
      这三家的接口地址是写死的，所以服务端启动时要加载 `scripts/biber/smoke/redirect-hosts.mjs`，

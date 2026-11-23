@@ -5,6 +5,7 @@ import type { ChatPlatform } from './types';
 const LOCAL_NAMES: Partial<Record<string, StringKey>> = {
   feishu: 'platformFeishu',
   wechat: 'platformWechat',
+  wechatmp: 'platformWechat',
 };
 
 export const chatAppName = (platform: Pick<ChatPlatform, 'id' | 'name'>) => {
@@ -33,7 +34,8 @@ export const howToLink = (
         ? { hint: platform.phoneNumber, open: open(`sms:${platform.phoneNumber}`) }
         : { hint: t('linkOnWebHint') };
     }
-    case 'wechat': {
+    // The shared WeChat Official Account: follow it, then message it
+    case 'wechatmp': {
       return { hint: t('linkWechatHint'), open: open('weixin://') };
     }
     case 'feishu':

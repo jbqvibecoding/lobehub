@@ -21,7 +21,7 @@ export const encryptedDelivery = (
 ) => {
   const nonce = randomBytes(4).toString('hex');
   const encrypted = encryptForWechat(secrets, xml(fields));
-  const url = new URL('https://app.biber.test/api/agent/messenger/webhooks/wechat');
+  const url = new URL('https://app.biber.test/api/agent/messenger/webhooks/wechatmp');
   url.searchParams.set('signature', wechatSignature(secrets.token, timestamp, nonce));
   url.searchParams.set('timestamp', timestamp);
   url.searchParams.set('nonce', nonce);

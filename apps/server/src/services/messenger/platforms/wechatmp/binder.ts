@@ -1,7 +1,7 @@
 import { BRANDING_NAME } from '@lobechat/business-const';
 import debug from 'debug';
 
-import { getMessengerWechatConfig } from '@/config/messenger';
+import { getMessengerWechatMpConfig } from '@/config/messenger';
 import { getServerDB } from '@/database/core/db-adaptor';
 import { MessengerAccountLinkModel } from '@/database/models/messengerAccountLink';
 import { appEnv } from '@/envs/app';
@@ -11,7 +11,7 @@ import type { MessengerPlatformBinder, UnlinkedMessageContext } from '../../type
 import { WechatMpClient } from './client';
 import { answerWechatLinkCode, WECHAT_LINK_CODE_TTL_SECONDS } from './linkCode';
 
-const log = debug('lobe-server:messenger:wechat');
+const log = debug('lobe-server:messenger:wechatmp');
 
 export const buildWechatVerifyUrl = (params: {
   appUrl: string;
@@ -19,10 +19,10 @@ export const buildWechatVerifyUrl = (params: {
   randomId: string;
 }): string => {
   const url = new URL('/verify-im', params.appUrl);
-  url.searchParams.set('im_type', 'wechat');
+  url.searchParams.set('im_type', 'wechatmp');
   url.searchParams.set('im_user_id', params.platformUserId);
   url.searchParams.set('random_id', params.randomId);
-  url.searchParams.set('utm_source', 'messenger_wechat');
+  url.searchParams.set('utm_source', 'messenger_wechatmp');
   return url.toString();
 };
 
@@ -35,9 +35,9 @@ export const buildWechatVerifyUrl = (params: {
  * Linking ends in WeChat: after the confirm on the web, the follower sends the code the page shows
  * (`linkCode.ts`). Until then, their messages are read as that code.
  */
-export class MessengerWechatBinder implements MessengerPlatformBinder {
+export class MessengerWechatMpBinder implements MessengerPlatformBinder {
   async createClient(): Promise<WechatMpClient | null> {
-    const config = await getMessengerWechatConfig();
+    const config = await getMessengerWechatMpConfig();
     return config ? new WechatMpClient(config) : null;
   }
 
@@ -53,7 +53,7 @@ export class MessengerWechatBinder implements MessengerPlatformBinder {
     let randomId: string;
     try {
       // WeChat no longer tells accounts their followers' names: the openid is all there is
-      randomId = await issueLinkToken({ platform: 'wechat', platformUserId: ctx.authorUserId });
+      randomId = await issueLinkToken({ platform: 'wechatmp', platformUserId: ctx.authorUserId });
     } catch (error) {
       log('handleUnlinkedMessage: failed to issue link token: %O', error);
       await this.sendDmText(ctx.chatId, `${BRANDING_NAME} 暂时不可用，请稍后再试。`);
@@ -122,7 +122,7 @@ export class MessengerWechatBinder implements MessengerPlatformBinder {
   async greet(openId: string): Promise<void> {
     const link = await MessengerAccountLinkModel.findByPlatformUser(
       await getServerDB(),
-      'wechat',
+      'wechatmp',
       openId,
       '',
     );

@@ -34,7 +34,7 @@ const IntegrationDetail = memo<IntegrationDetailProps>(
       }
       case 'telegram':
       case 'imessage':
-      case 'wechat': {
+      case 'wechatmp': {
         return (
           <SharedBotDetail
             {...rest}

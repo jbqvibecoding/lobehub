@@ -55,7 +55,7 @@ export const getMessengerConfig = () => {
 export const messengerEnv = getMessengerConfig();
 
 export type MessengerPlatform =
-  'telegram' | 'slack' | 'discord' | 'imessage' | 'lark' | 'feishu' | 'wechat';
+  'telegram' | 'slack' | 'discord' | 'imessage' | 'lark' | 'feishu' | 'wechatmp';
 
 export const MESSENGER_PLATFORMS = [
   'telegram',
@@ -64,7 +64,7 @@ export const MESSENGER_PLATFORMS = [
   'imessage',
   'lark',
   'feishu',
-  'wechat',
+  'wechatmp',
 ] as const satisfies readonly MessengerPlatform[];
 
 export interface MessengerTelegramConfig {
@@ -103,7 +103,7 @@ export interface MessengerImessageConfig {
 }
 
 /** The shared WeChat Official Account (服务号), from its developer settings. */
-export interface MessengerWechatConfig {
+export interface MessengerWechatMpConfig {
   /** Where WeChat's API is reached, e.g. through a fixed-IP proxy (`settings.apiBaseUrl`) */
   apiBaseUrl?: string;
   appId: string;
@@ -227,9 +227,9 @@ export const getMessengerImessageConfig = async (): Promise<MessengerImessageCon
   });
 };
 
-export const getMessengerWechatConfig = async (): Promise<MessengerWechatConfig | null> => {
-  return fetchAndCache<MessengerWechatConfig>('wechat', (row) => {
-    const c = row.credentials as Partial<Omit<MessengerWechatConfig, 'appId'>>;
+export const getMessengerWechatMpConfig = async (): Promise<MessengerWechatMpConfig | null> => {
+  return fetchAndCache<MessengerWechatMpConfig>('wechatmp', (row) => {
+    const c = row.credentials as Partial<Omit<MessengerWechatMpConfig, 'appId'>>;
     if (!row.applicationId || !c.appSecret || !c.token) return null;
     const apiBaseUrl = row.settings?.apiBaseUrl;
     return {
@@ -284,8 +284,8 @@ export const isMessengerPlatformEnabled = async (platform: MessengerPlatform): P
     case 'feishu': {
       return !!(await getLarkFamilyConfig(platform));
     }
-    case 'wechat': {
-      return !!(await getMessengerWechatConfig());
+    case 'wechatmp': {
+      return !!(await getMessengerWechatMpConfig());
     }
     default: {
       return false;

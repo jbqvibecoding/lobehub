@@ -45,6 +45,7 @@ const WHERE: Record<string, StringKey> = {
   telegram: 'answeredInTelegram',
   timeout: 'answeredByTimeout',
   wechat: 'answeredInWechat',
+  wechatmp: 'answeredInWechat',
 };
 
 /** One row of the activity list: what the agent did, what became of it, and why. */

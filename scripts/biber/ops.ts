@@ -36,7 +36,7 @@ import { sql } from 'drizzle-orm';
 import {
   getLarkFamilyConfig,
   getMessengerTelegramConfig,
-  getMessengerWechatConfig,
+  getMessengerWechatMpConfig,
   invalidateMessengerConfigCache,
   isMessengerPlatformEnabled,
   MESSENGER_PLATFORMS,
@@ -58,7 +58,7 @@ import {
 import { getStripe, isStripeConfigured } from '@/server/services/billing/stripe';
 import { type StripePriceChange, syncStripePrices } from '@/server/services/billing/stripePrices';
 import { setTelegramWebhook } from '@/server/services/bot/platforms/telegram/helpers';
-import { createWechatMpApi } from '@/server/services/messenger/platforms/wechat/api';
+import { createWechatMpApi } from '@/server/services/messenger/platforms/wechatmp/api';
 import { vendorPushSenders } from '@/server/services/push/vendors';
 import { isPhoneSignInEnabled } from '@/server/services/sms';
 
@@ -259,8 +259,8 @@ const doctor = async () => {
       const lastError = info.result?.last_error_message;
       return lastError ? `${bot}, last delivery error: ${lastError}` : bot;
     }),
-    await probe('bot: wechat', async () => {
-      const config = await getMessengerWechatConfig();
+    await probe('bot: wechatmp', async () => {
+      const config = await getMessengerWechatMpConfig();
       if (!config) return undefined;
       await createWechatMpApi(config).checkAccess();
       return `${config.appId}, ${config.encodingAESKey ? 'encrypted' : 'PLAIN (set an EncodingAESKey)'}`;

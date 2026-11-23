@@ -6,7 +6,7 @@ import { getServerDB } from '@/database/core/db-adaptor';
 import { MessengerAccountLinkModel } from '@/database/models/messengerAccountLink';
 import { getAgentRuntimeRedisClient } from '@/server/modules/AgentRuntime/redis';
 
-const log = debug('lobe-server:messenger:wechat:link-code');
+const log = debug('lobe-server:messenger:wechatmpmp:link-code');
 
 /**
  * Linking WeChat is confirmed from both ends. WeChat only tells the account a follower's opaque
@@ -18,7 +18,7 @@ const log = debug('lobe-server:messenger:wechat:link-code');
 export const WECHAT_LINK_CODE_TTL_SECONDS = 10 * 60;
 const MAX_ATTEMPTS = 5;
 
-const pendingKey = (openId: string) => `messenger:wechat-link-code:${openId}`;
+const pendingKey = (openId: string) => `messenger:wechatmp-link-code:${openId}`;
 
 interface PendingWechatLink {
   activeAgentId: string;
@@ -94,7 +94,7 @@ export const answerWechatLinkCode = async (
   try {
     await new MessengerAccountLinkModel(await getServerDB(), pending.userId).upsertForPlatform({
       activeAgentId: pending.activeAgentId,
-      platform: 'wechat',
+      platform: 'wechatmp',
       platformUserId: openId,
       platformUsername: null,
       tenantId: '',

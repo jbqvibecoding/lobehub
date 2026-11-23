@@ -20,11 +20,11 @@ describe('messenger platforms by region', { timeout: 30_000 }, () => {
       'imessage',
       'lark',
       'feishu',
-      'wechat',
+      'wechatmp',
     ]);
   });
 
   it('runs only Feishu and WeChat in the mainland edition', async () => {
-    expect(await loadRegistry('cn')).toEqual(['feishu', 'wechat']);
+    expect(await loadRegistry('cn')).toEqual(['feishu', 'wechatmp']);
   });
 });

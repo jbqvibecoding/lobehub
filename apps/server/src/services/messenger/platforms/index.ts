@@ -8,7 +8,7 @@ import { feishu, lark } from './lark';
 import { MessengerPlatformRegistry } from './registry';
 import { slack } from './slack';
 import { telegram } from './telegram';
-import { wechat } from './wechat';
+import { wechatmp } from './wechatmp';
 
 export { MessengerDiscordBinder } from './discord';
 export { MessengerImessageBinder } from './imessage';
@@ -22,7 +22,7 @@ export type {
   MessengerWebhookContext,
   SerializedMessengerPlatformDefinition,
 } from './types';
-export { MessengerWechatBinder } from './wechat';
+export { MessengerWechatMpBinder } from './wechatmp';
 
 /**
  * Singleton registry — one per process. Each platform definition lives
@@ -31,7 +31,7 @@ export { MessengerWechatBinder } from './wechat';
 export const messengerPlatformRegistry = new MessengerPlatformRegistry();
 
 // The mainland edition offers only the bots reachable from mainland China (see @lobechat/region).
-for (const definition of [slack, telegram, discord, imessage, lark, feishu, wechat]) {
+for (const definition of [slack, telegram, discord, imessage, lark, feishu, wechatmp]) {
   if (isMessengerPlatformAvailable(regionEnv.APP_REGION, definition.id)) {
     messengerPlatformRegistry.register(definition);
   }

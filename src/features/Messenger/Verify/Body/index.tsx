@@ -31,7 +31,7 @@ const Body = memo<BodyProps>(({ platform, ...rest }) => {
     }
     case 'telegram':
     case 'imessage':
-    case 'wechat': {
+    case 'wechatmp': {
       return <SharedBotBody {...rest} platform={platform} />;
     }
   }

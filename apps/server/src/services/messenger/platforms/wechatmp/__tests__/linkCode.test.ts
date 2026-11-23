@@ -48,7 +48,7 @@ describe('WeChat link codes', () => {
 
     expect(code).toMatch(/^\d{6}$/);
     expect(redis.set).toHaveBeenCalledWith(
-      'messenger:wechat-link-code:o_alice',
+      'messenger:wechatmp-link-code:o_alice',
       expect.any(String),
       'EX',
       600,
@@ -60,7 +60,7 @@ describe('WeChat link codes', () => {
     expect(mockModel).toHaveBeenCalledWith({ db: true }, 'user-1');
     expect(mockUpsert).toHaveBeenCalledWith({
       activeAgentId: 'agent-1',
-      platform: 'wechat',
+      platform: 'wechatmp',
       platformUserId: 'o_alice',
       platformUsername: null,
       tenantId: '',

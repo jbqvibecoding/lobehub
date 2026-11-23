@@ -9,7 +9,7 @@ import type { ChatLink, ChatPlatform } from './types';
 
 const platforms: ChatPlatform[] = [
   { botUsername: 'BiberBot', id: 'telegram', name: 'Telegram' },
-  { id: 'wechat', name: 'WeChat' },
+  { id: 'wechatmp', name: 'WeChat Official Account' },
 ];
 
 const renderView = async ({
@@ -56,7 +56,7 @@ describe('LinkedChatsView', () => {
 
     const telegram = await screen.findByTestId('chat-app-telegram');
     expect(within(telegram).getByText('Linked as ada')).toBeOnTheScreen();
-    const wechat = screen.getByTestId('chat-app-wechat');
+    const wechat = screen.getByTestId('chat-app-wechatmp');
     expect(within(wechat).getByText('Not linked')).toBeOnTheScreen();
     expect(within(wechat).getByText(/Official Account/)).toBeOnTheScreen();
   });

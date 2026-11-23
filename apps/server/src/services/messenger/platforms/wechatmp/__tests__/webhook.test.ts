@@ -2,15 +2,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { wechatSignature } from '../protocol';
-import { wechatWebhookGate } from '../webhook';
+import { wechatMpWebhookGate } from '../webhook';
 import { encryptedDelivery, SECRETS, textMessage } from './fixtures';
 
 const { greet, sendDmText } = vi.hoisted(() => ({ greet: vi.fn(), sendDmText: vi.fn() }));
 
 vi.mock('@/server/modules/AgentRuntime/redis', () => ({ getAgentRuntimeRedisClient: () => null }));
-vi.mock('@/config/messenger', () => ({ getMessengerWechatConfig: async () => SECRETS }));
+vi.mock('@/config/messenger', () => ({ getMessengerWechatMpConfig: async () => SECRETS }));
 vi.mock('../binder', () => ({
-  MessengerWechatBinder: class {
+  MessengerWechatMpBinder: class {
     greet = greet;
     sendDmText = sendDmText;
   },
@@ -19,7 +19,7 @@ vi.mock('../binder', () => ({
 const ctx = { invalidateBot: vi.fn() };
 const deliver = (fields: Record<string, string>) => {
   const { body, url } = encryptedDelivery(fields);
-  return wechatWebhookGate.preprocess(new Request(url, { body, method: 'POST' }), body, ctx);
+  return wechatMpWebhookGate.preprocess(new Request(url, { body, method: 'POST' }), body, ctx);
 };
 
 beforeEach(() => {
@@ -32,11 +32,11 @@ describe('the WeChat webhook gate', () => {
     const url = new URL('https://app.biber.test/hook?timestamp=1&nonce=2&echostr=ping');
     url.searchParams.set('signature', wechatSignature(SECRETS.token, '1', '2'));
 
-    const response = await wechatWebhookGate.handleGet!(new Request(url));
+    const response = await wechatMpWebhookGate.handleGet!(new Request(url));
     expect(await response.text()).toBe('ping');
 
     url.searchParams.set('signature', 'forged');
-    expect((await wechatWebhookGate.handleGet!(new Request(url))).status).toBe(401);
+    expect((await wechatMpWebhookGate.handleGet!(new Request(url))).status).toBe(401);
   });
 
   it('greets a new follower once, even when WeChat delivers the event twice', async () => {
@@ -80,7 +80,7 @@ describe('the WeChat webhook gate', () => {
     const { body, url } = encryptedDelivery(textMessage('hi'));
     url.searchParams.set('signature', 'forged');
 
-    const response = await wechatWebhookGate.preprocess(
+    const response = await wechatMpWebhookGate.preprocess(
       new Request(url, { body, method: 'POST' }),
       body,
       ctx,

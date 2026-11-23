@@ -10,7 +10,7 @@
  *
  * Before running, store the bot pointed at this script's stand-in for WeChat's API:
  *   echo '{"appSecret":"smoke","token":"<SMOKE_WECHAT_TOKEN>","encodingAESKey":"<SMOKE_WECHAT_AES_KEY>"}' |
- *     bunx tsx scripts/biber/ops.ts bot set wechat --application-id <SMOKE_WECHAT_APP_ID> \
+ *     bunx tsx scripts/biber/ops.ts bot set wechatmp --application-id <SMOKE_WECHAT_APP_ID> \
  *       --settings '{"apiBaseUrl":"http://127.0.0.1:4040"}'
  * The server's DEEPSEEK_PROXY_URL must point at this script's fake model (port 4010), with
  * DEEPSEEK_API_KEY set to any value: the mainland edition does not offer OpenAI. Content safety
@@ -22,12 +22,12 @@ import { randomBytes } from 'node:crypto';
 import {
   encryptForWechat,
   wechatSignature,
-} from '../../../apps/server/src/services/messenger/platforms/wechat/protocol';
+} from '../../../apps/server/src/services/messenger/platforms/wechatmp/protocol';
 import { SmokeClient, waitFor } from './client';
 import { startFakeContentSafety, startFakeModel, startFakeWechatApi } from './fake-services';
 
 const BASE_URL = process.env.SMOKE_BASE_URL ?? 'http://localhost:3011';
-const WEBHOOK = `${BASE_URL}/api/agent/messenger/webhooks/wechat`;
+const WEBHOOK = `${BASE_URL}/api/agent/messenger/webhooks/wechatmp`;
 const secrets = {
   appId: process.env.SMOKE_WECHAT_APP_ID ?? 'wx_smoke_app',
   encodingAESKey: process.env.SMOKE_WECHAT_AES_KEY!,

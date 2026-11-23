@@ -50,7 +50,7 @@ const SharedBotBody = memo<SharedBotBodyProps>(
 
     const platformLabel =
       platformMeta?.name ??
-      { imessage: 'iMessage', telegram: 'Telegram', wechat: 'WeChat' }[platform];
+      { imessage: 'iMessage', telegram: 'Telegram', wechatmp: 'WeChat' }[platform];
     // iMessage identifies people by their phone number or Apple ID email, which reads as-is.
     // WeChat gives only an opaque openid, shortened here so it can still be told apart.
     const describeAccount = (account: {
@@ -60,7 +60,7 @@ const SharedBotBody = memo<SharedBotBodyProps>(
       if (account.platformUsername) return account.platformUsername;
       const id = account.platformUserId ?? '';
       if (platform === 'imessage') return id;
-      if (platform === 'wechat') return id.length > 12 ? `${id.slice(0, 6)}…${id.slice(-4)}` : id;
+      if (platform === 'wechatmp') return id.length > 12 ? `${id.slice(0, 6)}…${id.slice(-4)}` : id;
       return `ID ${id}`;
     };
     const rebindBlocked = isSingleAccountRebindBlocked(existingLink, tokenData);

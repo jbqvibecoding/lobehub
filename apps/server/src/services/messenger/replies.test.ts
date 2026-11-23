@@ -12,7 +12,7 @@ afterEach(() => {
 describe('messengerReplyLocale', () => {
   it("follows the platform's audience in the international edition", () => {
     expect(messengerReplyLocale('feishu')).toBe('zh-CN');
-    expect(messengerReplyLocale('wechat')).toBe('zh-CN');
+    expect(messengerReplyLocale('wechatmp')).toBe('zh-CN');
     expect(messengerReplyLocale('telegram')).toBe('en-US');
     expect(messengerReplyLocale('lark')).toBe('en-US');
   });

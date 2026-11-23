@@ -131,7 +131,7 @@ const MessengerVerifyPage = memo(() => {
     // WeChat: confirmed here, but the code has not come from WeChat yet
     if (consumedToken?.awaitingCode) {
       return (
-        <AwaitingCodeCard platformLabel={platform === 'wechat' ? t('verify.wechat') : platform} />
+        <AwaitingCodeCard platformLabel={platform === 'wechatmp' ? t('verify.wechat') : platform} />
       );
     }
 

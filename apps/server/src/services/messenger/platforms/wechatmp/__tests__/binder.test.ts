@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MessengerAccountLinkModel } from '@/database/models/messengerAccountLink';
 
 import { issueLinkToken } from '../../../linkTokenStore';
-import { MessengerWechatBinder } from '../binder';
+import { MessengerWechatMpBinder } from '../binder';
 import { answerWechatLinkCode } from '../linkCode';
 import { SECRETS } from './fixtures';
 
@@ -12,7 +12,7 @@ const { sendText } = vi.hoisted(() => ({ sendText: vi.fn() }));
 
 vi.mock('@/envs/app', () => ({ appEnv: { APP_URL: 'https://app.biber.test' } }));
 vi.mock('@/config/messenger', () => ({
-  getMessengerWechatConfig: async () => ({ ...SECRETS, appSecret: 'secret' }),
+  getMessengerWechatMpConfig: async () => ({ ...SECRETS, appSecret: 'secret' }),
 }));
 vi.mock('@/database/core/db-adaptor', () => ({ getServerDB: async () => ({}) }));
 vi.mock('@/database/models/messengerAccountLink', () => ({
@@ -33,27 +33,27 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('MessengerWechatBinder', () => {
+describe('MessengerWechatMpBinder', () => {
   it('answers an unlinked follower with the link that connects their account', async () => {
-    await new MessengerWechatBinder().handleUnlinkedMessage({
+    await new MessengerWechatMpBinder().handleUnlinkedMessage({
       authorUserId: 'oAlice',
       chatId: 'oAlice',
     });
 
-    expect(issueLinkToken).toHaveBeenCalledWith({ platform: 'wechat', platformUserId: 'oAlice' });
+    expect(issueLinkToken).toHaveBeenCalledWith({ platform: 'wechatmp', platformUserId: 'oAlice' });
     const [openId, text] = sendText.mock.calls[0];
     expect(openId).toBe('oAlice');
     const link = new URL(text.match(/https:\/\/\S+/)[0]);
     expect(link.pathname).toBe('/verify-im');
     expect(Object.fromEntries(link.searchParams)).toMatchObject({
-      im_type: 'wechat',
+      im_type: 'wechatmp',
       im_user_id: 'oAlice',
       random_id: 'rand-1',
     });
   });
 
   it('greets a returning follower who is linked, and starts linking one who is not', async () => {
-    const binder = new MessengerWechatBinder();
+    const binder = new MessengerWechatMpBinder();
     vi.mocked(MessengerAccountLinkModel.findByPlatformUser).mockResolvedValueOnce({
       id: 'link-1',
     } as any);
@@ -63,12 +63,12 @@ describe('MessengerWechatBinder', () => {
 
     vi.mocked(MessengerAccountLinkModel.findByPlatformUser).mockResolvedValueOnce(undefined);
     await binder.greet('oNew');
-    expect(issueLinkToken).toHaveBeenCalledWith({ platform: 'wechat', platformUserId: 'oNew' });
+    expect(issueLinkToken).toHaveBeenCalledWith({ platform: 'wechatmp', platformUserId: 'oNew' });
     expect(sendText).toHaveBeenLastCalledWith('oNew', expect.stringContaining('/verify-im'));
   });
 
   it('confirms the link to the follower, naming the active agent', async () => {
-    await new MessengerWechatBinder().notifyLinkSuccess({
+    await new MessengerWechatMpBinder().notifyLinkSuccess({
       activeAgentName: '日程助理',
       platformUserId: 'oAlice',
     });
@@ -89,7 +89,7 @@ describe('MessengerWechatBinder', () => {
         status: 'linked',
       });
 
-      await new MessengerWechatBinder().handleUnlinkedMessage(message('042917'));
+      await new MessengerWechatMpBinder().handleUnlinkedMessage(message('042917'));
 
       expect(answerWechatLinkCode).toHaveBeenCalledWith('oAlice', '042917');
       expect(sendText).toHaveBeenCalledWith('oAlice', expect.stringContaining('绑定成功'));
@@ -100,7 +100,7 @@ describe('MessengerWechatBinder', () => {
     it('asks for the code instead of sending a new link', async () => {
       vi.mocked(answerWechatLinkCode).mockResolvedValueOnce({ status: 'waiting' });
 
-      await new MessengerWechatBinder().handleUnlinkedMessage(message('hi'));
+      await new MessengerWechatMpBinder().handleUnlinkedMessage(message('hi'));
 
       expect(sendText).toHaveBeenCalledWith('oAlice', expect.stringContaining('6 位数字'));
       expect(issueLinkToken).not.toHaveBeenCalled();
@@ -109,7 +109,7 @@ describe('MessengerWechatBinder', () => {
     it('says how many tries are left after a wrong code', async () => {
       vi.mocked(answerWechatLinkCode).mockResolvedValueOnce({ attemptsLeft: 3, status: 'wrong' });
 
-      await new MessengerWechatBinder().handleUnlinkedMessage(message('123456'));
+      await new MessengerWechatMpBinder().handleUnlinkedMessage(message('123456'));
 
       expect(sendText).toHaveBeenCalledWith('oAlice', expect.stringContaining('还能试 3 次'));
     });

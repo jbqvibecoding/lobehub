@@ -46,7 +46,7 @@ describe('describeActivity', () => {
 
   it('names the chat an approval was answered in, and a request nobody answered', () => {
     expect(
-      describeActivity(event({ eventType: 'approved', payload: { via: 'wechat' } })).where,
+      describeActivity(event({ eventType: 'approved', payload: { via: 'wechatmp' } })).where,
     ).toBe('in WeChat');
     expect(
       describeActivity(event({ eventType: 'rejected', payload: { via: 'timeout' } })).where,

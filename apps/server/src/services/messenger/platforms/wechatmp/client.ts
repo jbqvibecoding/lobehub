@@ -9,12 +9,12 @@ import type {
 } from '@/server/services/bot/platforms';
 import { stripMarkdown } from '@/server/services/bot/platforms/stripMarkdown';
 
-import { WECHAT_INSTALLATION_KEY } from '../../installations/wechat';
+import { WECHAT_MP_INSTALLATION_KEY } from '../../installations/wechatmp';
 import { openIdOfThread, WECHAT_MP_ADAPTER_NAME, WechatMpAdapter } from './adapter';
 import { createWechatMpApi, type WechatMpApi, type WechatMpAppCredentials } from './api';
 import type { WechatMpSecrets } from './protocol';
 
-const log = debug('lobe-server:messenger:wechat:client');
+const log = debug('lobe-server:messenger:wechatmpmp:client');
 
 export interface WechatMpCredentials extends WechatMpSecrets, WechatMpAppCredentials {}
 
@@ -38,8 +38,8 @@ const toPostable = (content: MessengerContent): AdapterPostableMessage => {
 
 /** Outbound and inbound for the shared WeChat Official Account. */
 export class WechatMpClient implements PlatformClient {
-  readonly id = 'wechat';
-  readonly applicationId = WECHAT_INSTALLATION_KEY;
+  readonly id = 'wechatmp';
+  readonly applicationId = WECHAT_MP_INSTALLATION_KEY;
 
   readonly api: WechatMpApi;
   private outbound?: WechatMpAdapter;

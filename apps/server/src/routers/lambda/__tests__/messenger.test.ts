@@ -98,7 +98,7 @@ vi.mock('@/server/services/messenger', () => ({
   MessengerTelegramBinder: vi.fn().mockImplementation(() => ({
     notifyLinkSuccess: mockNotifyTelegramLinkSuccess,
   })),
-  MessengerWechatBinder: vi.fn().mockImplementation(() => ({
+  MessengerWechatMpBinder: vi.fn().mockImplementation(() => ({
     askForLinkCode: mockAskForLinkCode,
   })),
   peekConsumedLinkToken: mockPeekConsumedLinkToken,
@@ -408,7 +408,7 @@ describe('messengerRouter.confirmLink', () => {
       { id: 'agent-1', title: 'Biber', userId: 'user-1', workspaceId: null },
     ]);
     mockGetServerDB.mockResolvedValue({ select: vi.fn(() => selectBuilder) });
-    const linkPayload = { platform: 'wechat', platformUserId: 'o_wechat', tenantId: '' };
+    const linkPayload = { platform: 'wechatmp', platformUserId: 'o_wechat', tenantId: '' };
     mockPeekLinkToken.mockResolvedValue(linkPayload);
     mockFindByPlatformUser.mockResolvedValue(undefined);
     mockFindByPlatform.mockResolvedValue(undefined);
