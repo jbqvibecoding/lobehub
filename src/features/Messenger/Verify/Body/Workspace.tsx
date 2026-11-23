@@ -67,6 +67,7 @@ const WorkspaceBody = memo<WorkspaceBodyProps>(
       return (
         <SuccessCard
           openBotUrl={openBotUrl(platform, tenantId, platformMeta?.appId)}
+          platform={platform}
           platformLabel={platformLabel}
         />
       );

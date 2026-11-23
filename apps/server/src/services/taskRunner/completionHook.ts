@@ -22,12 +22,14 @@ export const taskCompletionHook = ({
 }) => ({
   handler: async (event: {
     errorMessage?: string;
+    errorType?: string;
     lastAssistantContent?: string;
     operationId: string;
     reason?: string;
     topicId?: string;
   }) => {
     await taskLifecycle.onTopicComplete({
+      errorCode: event.errorType,
       errorMessage: event.errorMessage,
       lastAssistantContent: event.lastAssistantContent,
       operationId: event.operationId,

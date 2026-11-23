@@ -16,6 +16,7 @@ import { ComputerManifest } from '@lobechat/builtin-tool-computer';
 import { CredsManifest } from '@lobechat/builtin-tool-creds';
 import { GroupAgentBuilderManifest } from '@lobechat/builtin-tool-group-agent-builder';
 import { GroupManagementManifest } from '@lobechat/builtin-tool-group-management';
+import { ImageGenerationManifest } from '@lobechat/builtin-tool-image-generation';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
 import { LobeAgentManifest } from '@lobechat/builtin-tool-lobe-agent';
 import { LobeDeliveryCheckerManifest } from '@lobechat/builtin-tool-lobe-delivery-checker';
@@ -44,6 +45,7 @@ export const builtinToolIdentifiers: string[] = [
   CredsManifest.identifier,
   GroupAgentBuilderManifest.identifier,
   GroupManagementManifest.identifier,
+  ImageGenerationManifest.identifier,
   KnowledgeBaseManifest.identifier,
   BrowserManifest.identifier,
   LocalSystemManifest.identifier,

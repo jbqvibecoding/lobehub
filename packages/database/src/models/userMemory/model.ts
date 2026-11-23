@@ -1584,9 +1584,7 @@ export class UserMemoryModel {
     const experienceSelection = selectNonVectorColumns(userMemoriesExperiences);
     const identitySelection = selectNonVectorColumns(userMemoriesIdentities);
     const preferenceSelection = selectNonVectorColumns(userMemoriesPreferences);
-    // TODO(@nekomeowww): activity
-    // eslint-disable-next-line unused-imports/no-unused-vars
-    const activitySelection = selectNonVectorColumns(userMemoriesActivities);
+    // TODO(@nekomeowww): extract a shared selection for the activity branch.
 
     const baseConditions: Array<SQL | undefined> = [
       this.memoryWhere(userMemories),

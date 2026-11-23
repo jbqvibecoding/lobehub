@@ -12,9 +12,8 @@ export const labPreferSelectors = {
   enableArtifactDeployment: (s: UserState): boolean =>
     s.preference.lab?.enableArtifactDeployment ?? false,
   enableClaudeCodeSdk: (s: UserState): boolean => s.preference.lab?.enableClaudeCodeSdk ?? false,
-  enableFleet: (s: UserState): boolean => s.preference.lab?.enableFleet ?? false,
-  enableFoldFinishedTurn: (s: UserState): boolean =>
-    s.preference.lab?.enableFoldFinishedTurn ?? false,
+  enableHeteroSessionImport: (s: UserState): boolean =>
+    s.preference.lab?.enableHeteroSessionImport ?? false,
   enableImessage: (s: UserState): boolean => s.preference.lab?.enableImessage ?? false,
   enableInAppBrowser: (s: UserState): boolean => s.preference.lab?.enableInAppBrowser ?? false,
   enableInputMarkdown: (s: UserState): boolean =>
@@ -23,6 +22,9 @@ export const labPreferSelectors = {
     s.preference.lab?.enableMessageTextSelectionActions ??
     DEFAULT_PREFERENCE.lab?.enableMessageTextSelectionActions ??
     false,
+  enableOAuthApps: (s: UserState): boolean => s.preference.lab?.enableOAuthApps ?? false,
   enablePlatformAgent: (s: UserState): boolean => s.preference.lab?.enablePlatformAgent ?? false,
   enableTaskVerify: (s: UserState): boolean => s.preference.lab?.enableTaskVerify ?? false,
+  enableTopicAcceptance: (s: UserState): boolean =>
+    s.preference.lab?.enableTopicAcceptance ?? false,
 };

@@ -1,5 +1,6 @@
 import { SkillsIcon } from '@lobehub/ui/icons';
 import {
+  AppWindowIcon,
   Blocks,
   Brain,
   BrainCircuit,
@@ -29,10 +30,12 @@ import {
   useServerConfigStore,
 } from '@/store/serverConfig';
 import { useUserStore } from '@/store/user';
+import { labPreferSelectors } from '@/store/user/selectors';
 import { userGeneralSettingsSelectors } from '@/store/user/slices/settings/selectors';
 
 export enum SettingsGroupKey {
   Agent = 'agent',
+  Developer = 'developer',
   General = 'general',
   Subscription = 'subscription',
   System = 'system',
@@ -55,6 +58,7 @@ export const useCategory = (): CategoryGroup[] => {
   const enableBusinessFeatures = useServerConfigStore(serverConfigSelectors.enableBusinessFeatures);
   const enableBilling = useServerConfigStore(serverConfigSelectors.enableBilling);
   const isDevMode = useUserStore((s) => userGeneralSettingsSelectors.config(s).isDevMode);
+  const enableOAuthApps = useUserStore(labPreferSelectors.enableOAuthApps);
 
   return useMemo(() => {
     const navigateTo = (key: SettingsTabs) =>
@@ -121,6 +125,15 @@ export const useCategory = (): CategoryGroup[] => {
         makeItem({ icon: KeyIcon, key: SettingsTabs.APIKey, label: t('auth:tab.apikey') }),
     ].filter((item): item is CategoryItem => Boolean(item));
 
+    const developer: CategoryItem[] = [
+      enableOAuthApps &&
+        makeItem({
+          icon: AppWindowIcon,
+          key: SettingsTabs.OAuthApps,
+          label: t('auth:tab.oauthApps'),
+        }),
+    ].filter((item): item is CategoryItem => Boolean(item));
+
     const system: CategoryItem[] = [
       makeItem({ icon: Database, key: SettingsTabs.Storage, label: t('setting:tab.storage') }),
       isDevMode &&
@@ -142,6 +155,11 @@ export const useCategory = (): CategoryGroup[] => {
       },
       { items: agent, key: SettingsGroupKey.Agent, title: t('setting:group.aiConfig') },
       { items: system, key: SettingsGroupKey.System, title: t('setting:group.system') },
+      {
+        items: developer,
+        key: SettingsGroupKey.Developer,
+        title: t('setting:group.developer'),
+      },
     ].filter((group) => group.items.length > 0);
   }, [
     t,
@@ -151,6 +169,7 @@ export const useCategory = (): CategoryGroup[] => {
     showApiKeyManage,
     showProvider,
     isDevMode,
+    enableOAuthApps,
     navigate,
   ]);
 };

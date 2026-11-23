@@ -53,7 +53,11 @@ export interface SandboxService extends ISandboxService {
 }
 
 export interface SandboxFileExporter {
-  exportAndUploadFile: (path: string, filename: string) => Promise<SandboxExportFileResult>;
+  exportAndUploadFile: (
+    path: string,
+    filename: string,
+    options?: { storageName?: string },
+  ) => Promise<SandboxExportFileResult>;
 }
 
 export interface SandboxProviderFileExportRequest {

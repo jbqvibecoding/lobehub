@@ -160,8 +160,10 @@ export interface MessengerPlatformBinder {
    * (DMs are private by definition, public channels stay public until
    * chat-adapter-discord exposes the interaction ephemeral flag).
    *
-   * Platforms without it (Telegram) get slash command answers in the chat the command came
-   * from, through `sendDmText`.
+   * The router registers the shared command names as slash commands on every
+   * platform, so the slash menu stays symmetric. Binders that leave this unset
+   * (Telegram, iMessage, Lark, WeChat) get command replies through
+   * `sendDmText` instead.
    */
   replyPrivately?: (
     channel: SlashCommandEvent['channel'],

@@ -42,6 +42,7 @@ const resolved = {
 const createAttempt = (
   runCallbacks: (options: ChatMethodOptions) => Promise<void>,
   blobStore?: BlobStore,
+  attemptOverrides?: { clientIp?: string; userAgent?: string },
 ) => {
   const publishStreamChunk = vi.fn().mockResolvedValue('event-1');
   const streamManager = {
@@ -84,6 +85,7 @@ const createAttempt = (
     resolved,
     topicId: 'topic-1',
     trigger: 'user',
+    ...attemptOverrides,
   });
 
   return { attempt, chat, events, onFirstChunk, publishStreamChunk };
@@ -108,6 +110,7 @@ describe('ServerCallLlmAttempt', () => {
         await callback?.onToolsCalling?.({ chunk: [], toolsCalling: [rawToolCall] });
         await callback?.onCompletion?.({
           finishReason: 'tool_use',
+          reasoning: { content: 'Reasoning', signature: 'encrypted-signature' },
           speed: { tps: 20, ttft: 100 },
           text: '',
           usage: { totalInputTokens: 10, totalOutputTokens: 5, totalTokens: 15 },
@@ -122,6 +125,10 @@ describe('ServerCallLlmAttempt', () => {
     expect(snapshot.content).toBe('Visible answer');
     expect(snapshot.thinkingContent).toBe('Reasoning');
     expect(snapshot.grounding).toEqual({ searchQueries: ['docs'] });
+    expect(snapshot.reasoning).toEqual({
+      content: 'Reasoning',
+      signature: 'encrypted-signature',
+    });
     expect(snapshot.finishReason).toBe('tool_use');
     expect(snapshot.speed).toEqual({ tps: 20, ttft: 100 });
     expect(snapshot.usage).toEqual({
@@ -151,6 +158,45 @@ describe('ServerCallLlmAttempt', () => {
       2,
       expect.objectContaining({ chunkType: 'tools_calling' }),
     );
+  });
+
+  it('forwards clientIp / userAgent into the chat call metadata when provided', async () => {
+    const { attempt, chat } = createAttempt(
+      async ({ callback }) => {
+        await callback?.onText?.('Answer');
+        await callback?.onCompletion?.({ text: '', usage: { totalOutputTokens: 1 } });
+      },
+      undefined,
+      { clientIp: '203.0.113.7', userAgent: 'Mozilla/5.0 (Test)' },
+    );
+
+    await attempt.execute();
+
+    expect(chat).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          clientIp: '203.0.113.7',
+          operationId: 'operation-1',
+          topicId: 'topic-1',
+          trigger: 'user',
+          userAgent: 'Mozilla/5.0 (Test)',
+        }),
+      }),
+    );
+  });
+
+  it('leaves clientIp / userAgent metadata undefined when not provided', async () => {
+    const { attempt, chat } = createAttempt(async ({ callback }) => {
+      await callback?.onText?.('Answer');
+      await callback?.onCompletion?.({ text: '', usage: { totalOutputTokens: 1 } });
+    });
+
+    await attempt.execute();
+
+    const metadata = chat.mock.calls[0][1]!.metadata as Record<string, unknown>;
+    expect(metadata.clientIp).toBeUndefined();
+    expect(metadata.userAgent).toBeUndefined();
   });
 
   it('keeps partial output and usage readable after a stream error', async () => {

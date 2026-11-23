@@ -13,6 +13,7 @@ import { BrowserManifest } from '@lobechat/builtin-tool-browser';
 import { CalendarManifest } from '@lobechat/builtin-tool-calendar';
 import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { ComputerManifest } from '@lobechat/builtin-tool-computer';
+import { ImageGenerationManifest } from '@lobechat/builtin-tool-image-generation';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
 import { MailManifest } from '@lobechat/builtin-tool-mail';
@@ -169,7 +170,9 @@ export const createServerAgentToolsEngine = (
     isGroupSupervisor = false,
     manifestContext,
     model,
+    modelAbilities,
     provider,
+    useApplicationBuiltinSearchTool,
   } = params;
 
   // Tools that need a user-side execution target (local-system, stdio MCP)
@@ -211,7 +214,9 @@ export const createServerAgentToolsEngine = (
     : !!deviceContext?.autoActivated || !!deviceContext?.boundDeviceId;
 
   const searchMode = agentConfig.chatConfig?.searchMode ?? 'auto';
-  const isSearchEnabled = searchMode !== 'off';
+  const isSearchEnabled = useApplicationBuiltinSearchTool ?? searchMode !== 'off';
+  const imageGenerationEnabled =
+    context.isModelSupportToolUse(model, provider) && !modelAbilities?.imageOutput;
   // Tool mode: explicit `toolMode` wins; otherwise derive from `enableAgentMode`
   // (undefined = agent). `custom` = toolset is exactly the agent's plugins.
   const toolMode = resolveToolMode(agentConfig.chatConfig ?? undefined);
@@ -242,6 +247,9 @@ export const createServerAgentToolsEngine = (
 
   const chatModeRules = {
     [ComputerManifest.identifier]: computerEnabled,
+    // Example: Claude can call tools but lacks native imageOutput, so expose the
+    // image-generation fallback; image-output models should use their native path.
+    [ImageGenerationManifest.identifier]: imageGenerationEnabled,
     [KnowledgeBaseManifest.identifier]: hasEnabledKnowledgeBases,
     [MemoryManifest.identifier]: globalMemoryEnabled,
     // Biber's reminders, profile, mail and calendar: only for the agent whose plugins carry them

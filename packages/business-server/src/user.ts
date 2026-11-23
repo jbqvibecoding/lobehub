@@ -1,4 +1,3 @@
-/* eslint-disable unused-imports/no-unused-vars */
 import type { Plans, ReferralStatusString } from '@lobechat/types';
 
 import { getServerDB } from '@/database/core/db-adaptor';
@@ -11,7 +10,9 @@ export interface OnUserActivityForBusinessParams {
   userId: string;
 }
 
-export async function getReferralStatus(userId: string): Promise<ReferralStatusString | undefined> {
+export async function getReferralStatus(
+  _userId: string,
+): Promise<ReferralStatusString | undefined> {
   return undefined;
 }
 
@@ -21,10 +22,10 @@ export async function getSubscriptionPlan(userId: string): Promise<Plans> {
 }
 
 export async function initNewUserForBusiness(
-  userId: string,
-  createdAt: Date | null | undefined,
+  _userId: string,
+  _createdAt: Date | null | undefined,
 ): Promise<void> {}
 
 export async function onUserActivityForBusiness(
-  params: OnUserActivityForBusinessParams,
+  _params: OnUserActivityForBusinessParams,
 ): Promise<void> {}

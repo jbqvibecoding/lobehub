@@ -7,8 +7,14 @@ import DiscordDetail from './Discord';
 import LarkDetail from './Lark';
 import SharedBotDetail from './SharedBot';
 import SlackDetail from './Slack';
+import WechatDetail from './Wechat';
 
 interface IntegrationDetailProps {
+  access?: {
+    allowed?: boolean;
+    blockedMessage?: string;
+    requiredPlan?: 'paid';
+  };
   appId?: string;
   botUsername?: string;
   /** Lark: the App Directory listing where a workspace admin installs the app. */
@@ -47,6 +53,9 @@ const IntegrationDetail = memo<IntegrationDetailProps>(
       case 'lark':
       case 'feishu': {
         return <LarkDetail {...rest} installUrl={installUrl} platform={platform} />;
+      }
+      case 'wechat': {
+        return <WechatDetail {...rest} />;
       }
     }
   },

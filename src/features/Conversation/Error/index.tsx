@@ -3,6 +3,7 @@ import { type ILobeAgentRuntimeErrorType } from '@lobechat/model-runtime';
 import { AgentRuntimeErrorType, getErrorCodeSpec } from '@lobechat/model-runtime';
 import { type ChatMessageError, type ErrorType, type IToolErrorType } from '@lobechat/types';
 import { ChatErrorType } from '@lobechat/types';
+import { isRecord } from '@lobechat/utils/object';
 import { type AlertProps } from '@lobehub/ui';
 import { Block, Highlighter } from '@lobehub/ui';
 import { memo, useCallback, useMemo } from 'react';
@@ -13,6 +14,7 @@ import useBusinessErrorContent from '@/business/client/hooks/useBusinessErrorCon
 import useRenderBusinessChatErrorMessageExtra from '@/business/client/hooks/useRenderBusinessChatErrorMessageExtra';
 import { SkeletonInput } from '@/components/Skeleton/SkeletonInput';
 import ErrorContent from '@/features/Conversation/ChatItem/components/ErrorContent';
+import { useConversationResourceAccess } from '@/features/Conversation/hooks/useConversationResourceAccess';
 import { dataSelectors, useConversationStore } from '@/features/Conversation/store';
 import HeterogeneousAgentStatusGuide from '@/features/Electron/HeterogeneousAgent/StatusGuide';
 import type { HeterogeneousAgentScheduleState } from '@/features/Electron/HeterogeneousAgent/StatusGuide/types';
@@ -56,6 +58,17 @@ const getRawErrorMessage = (error?: ChatMessageError | null) => {
   }
 
   return;
+};
+
+const getErrorDetails = (error?: ChatMessageError | null) => {
+  if (!error) return;
+
+  const rawErrorMessage = getRawErrorMessage(error);
+  if (!rawErrorMessage) return error.body;
+  if (isRecord(error.body)) return { ...error.body, message: rawErrorMessage };
+  if (error.body !== undefined) return { body: error.body, message: rawErrorMessage };
+
+  return { message: rawErrorMessage };
 };
 
 const loading = () => (
@@ -200,7 +213,11 @@ export const useErrorContent = (error: any) => {
   const { t } = useTranslation(['error', 'modelRuntime']);
   const providerName = useProviderName(error?.body?.provider || '');
   const businessAlertConfig = useBusinessErrorAlertConfig(error?.type);
-  const { errorType: businessErrorType, hideMessage } = useBusinessErrorContent(error?.type);
+  const {
+    errorType: businessErrorType,
+    hideMessage,
+    message: businessMessage,
+  } = useBusinessErrorContent(error);
 
   return useMemo<AlertProps | undefined>(() => {
     if (!error) return;
@@ -226,10 +243,18 @@ export const useErrorContent = (error: any) => {
       : getRuntimeErrorMessage(t, finalErrorType, { provider: providerName });
 
     return {
-      message: translatedMessage || rawErrorMessage,
+      message: businessMessage || translatedMessage || rawErrorMessage,
       ...alertConfig,
     };
-  }, [businessAlertConfig, businessErrorType, error, hideMessage, providerName, t]);
+  }, [
+    businessAlertConfig,
+    businessErrorType,
+    businessMessage,
+    error,
+    hideMessage,
+    providerName,
+    t,
+  ]);
 };
 
 interface ErrorExtraProps {
@@ -254,11 +279,21 @@ const ErrorMessageExtra = memo<ErrorExtraProps>(
     const enableBusinessFeatures = useServerConfigStore(
       serverConfigSelectors.enableBusinessFeatures,
     );
-    const { allowed: canCreate } = usePermission('create_content');
+    const { allowed: canCreateContent } = usePermission('create_content');
+    // Retry re-sends into the shared conversation — requires use-level General
+    // access on top of the workspace-role capability.
+    const { canUseResource } = useConversationResourceAccess();
+    const canCreate = canCreateContent && canUseResource;
     const sessionErrorBody = error?.body;
-    const rawErrorMessage = getRawErrorMessage(error) || alertError?.message;
+    const rawErrorMessage = getRawErrorMessage(error);
+    const errorDetails = getErrorDetails(error);
+    const localizedErrorMessage = hasLocalizedErrorMessage(error?.type)
+      ? alertError?.message
+      : undefined;
+    const displayMessage = localizedErrorMessage ?? rawErrorMessage ?? alertError?.message;
 
     const delAndRegenerateMessage = useConversationStore((s) => s.delAndRegenerateMessage);
+    const updateMessageError = useConversationStore((s) => s.updateMessageError);
     const resetHeteroOverloadRetry = useConversationStore((s) => s.resetHeteroOverloadRetry);
     // Standalone surface: data.id is the top-level assistant message, so its
     // parentId is the user message. Group surface passes retryScopeId directly.
@@ -308,9 +343,12 @@ const ErrorMessageExtra = memo<ErrorExtraProps>(
     const activeTopicScheduled = useChatStore(
       (s) => topicSelectors.currentActiveTopic(s)?.status === 'scheduled',
     );
-    const scheduledResetsAt = useChatStore(
-      (s) => topicSelectors.currentActiveTopic(s)?.metadata?.scheduledRun?.rateLimit?.resetsAt,
-    );
+    const scheduledResetsAt = useChatStore((s) => {
+      const scheduledRun = topicSelectors.currentActiveTopic(s)?.metadata?.scheduledRun;
+      return scheduledRun?.kind === 'resume_after_rate_limit'
+        ? scheduledRun.rateLimit?.resetsAt
+        : undefined;
+    });
 
     const isRateLimitError =
       canCreate &&
@@ -344,6 +382,7 @@ const ErrorMessageExtra = memo<ErrorExtraProps>(
           autoRetry={autoRetry}
           error={sessionErrorBody}
           schedule={schedule}
+          onDismiss={() => void updateMessageError(data.id, null)}
           onOpenSystemTools={() => navigate('/settings/system-tools')}
           onRetry={handleManualRetry}
         />
@@ -409,8 +448,20 @@ const ErrorMessageExtra = memo<ErrorExtraProps>(
 
     // Show a report action for unknown or fallback-bucket traceable errors.
     // Specific known error types keep their dedicated localized message below.
-    if (enableBusinessFeatures && shouldShowTraceIdError(error)) {
-      return <TraceIdError id={data.id} traceId={error.body.traceId} />;
+    if (
+      enableBusinessFeatures &&
+      (error?.type === ChatErrorType.InternalServerError || shouldShowTraceIdError(error))
+    ) {
+      const traceId =
+        typeof error?.body?.traceId === 'string' ? (error.body.traceId as string) : undefined;
+
+      return (
+        <TraceIdError
+          id={data.id}
+          traceId={traceId}
+          onRetry={canCreate && onRegenerate ? handleManualRetry : undefined}
+        />
+      );
     }
 
     return (
@@ -418,15 +469,15 @@ const ErrorMessageExtra = memo<ErrorExtraProps>(
         id={data.id}
         error={{
           ...alertError,
-          ...(rawErrorMessage ? { message: rawErrorMessage } : {}),
-          extra: data.error?.body ? (
+          message: displayMessage,
+          extra: errorDetails ? (
             <Highlighter
               actionIconSize={'small'}
               language={'json'}
               padding={8}
               variant={'borderless'}
             >
-              {JSON.stringify(data.error?.body, null, 2)}
+              {JSON.stringify(errorDetails, null, 2)}
             </Highlighter>
           ) : undefined,
         }}

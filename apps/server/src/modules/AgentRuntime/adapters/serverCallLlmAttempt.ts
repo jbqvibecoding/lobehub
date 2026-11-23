@@ -12,6 +12,7 @@ import type {
   GroundingSearch,
   MessageToolCall,
   ModelPerformance,
+  ModelReasoning,
   ModelUsage,
 } from '@lobechat/types';
 import { pickString, toRecord } from '@lobechat/utils/object';
@@ -28,6 +29,8 @@ interface CreateServerCallLlmAttemptInput {
   attempt: number;
   blobStore?: BlobStore;
   chatPayload: ChatStreamPayload;
+  /** Client IP of the originating request, forwarded into the LLM-call metadata for auditing and spend attribution. */
+  clientIp?: string;
   ctx: RuntimeExecutorContext;
   events: AgentEvent[];
   maxAttempts: number;
@@ -40,6 +43,8 @@ interface CreateServerCallLlmAttemptInput {
   resolved: ServerCallLlmTooling['resolved'];
   topicId?: string;
   trigger?: unknown;
+  /** User agent of the originating request, forwarded into the LLM-call metadata for auditing and spend attribution. */
+  userAgent?: string;
 }
 
 const createStreamExecutionError = (errorData: unknown) => {
@@ -61,6 +66,7 @@ export class ServerCallLlmAttempt {
   private answerSalvagedFromReasoning = false;
   private readonly attempt: number;
   private readonly chatPayload: ChatStreamPayload;
+  private readonly clientIp?: string;
   private readonly ctx: RuntimeExecutorContext;
   private finishReason?: string;
   private grounding: GroundingSearch | null = null;
@@ -72,6 +78,7 @@ export class ServerCallLlmAttempt {
   private readonly onFirstChunk: () => void;
   private readonly operationLogId: string;
   private readonly provider: string;
+  private reasoning?: ModelReasoning;
   private readonly resolved: ServerCallLlmTooling['resolved'];
   private speed?: ModelPerformance;
   private readonly streamSink: ServerCallLlmStreamSink;
@@ -80,12 +87,14 @@ export class ServerCallLlmAttempt {
   private toolsCalling: ChatToolPayload[] = [];
   private readonly topicId?: string;
   private readonly trigger?: unknown;
+  private readonly userAgent?: string;
   private usage?: ModelUsage;
 
   constructor({
     attempt,
     blobStore,
     chatPayload,
+    clientIp,
     ctx,
     events,
     maxAttempts,
@@ -98,9 +107,11 @@ export class ServerCallLlmAttempt {
     resolved,
     topicId,
     trigger,
+    userAgent,
   }: CreateServerCallLlmAttemptInput) {
     this.attempt = attempt;
     this.chatPayload = chatPayload;
+    this.clientIp = clientIp;
     this.ctx = ctx;
     this.maxAttempts = maxAttempts;
     this.messageCount = messageCount;
@@ -118,6 +129,7 @@ export class ServerCallLlmAttempt {
     });
     this.topicId = topicId;
     this.trigger = trigger;
+    this.userAgent = userAgent;
   }
 
   async execute(): Promise<void> {
@@ -141,6 +153,7 @@ export class ServerCallLlmAttempt {
           if (data.usage) this.usage = data.usage;
           if (data.speed) this.speed = data.speed;
           if (data.finishReason) this.finishReason = data.finishReason;
+          if (data.reasoning) this.reasoning = data.reasoning;
         },
         onContentPart: async (part) => {
           this.onFirstChunk();
@@ -217,9 +230,11 @@ export class ServerCallLlmAttempt {
         },
       },
       metadata: {
+        clientIp: this.clientIp,
         operationId: this.ctx.operationId,
         topicId: this.topicId,
         trigger: this.trigger,
+        userAgent: this.userAgent,
       },
       user: this.ctx.userId,
     });
@@ -252,6 +267,7 @@ export class ServerCallLlmAttempt {
       hasContentImages: this.streamSink.hasContentImages,
       hasReasoningImages: this.streamSink.hasReasoningImages,
       imageList: [...this.imageList],
+      reasoning: this.reasoning,
       reasoningParts: [...this.streamSink.reasoningParts],
       speed: this.speed,
       thinkingContent: this.streamSink.thinkingContent,
@@ -265,6 +281,7 @@ export class ServerCallLlmAttempt {
     if (
       isEmptyModelCompletion({
         content: this.streamSink.content,
+        hasGrounding: !!this.grounding,
         imageCount: this.imageList.length,
         outputTokens: this.usage?.totalOutputTokens,
         reasoning: this.streamSink.thinkingContent,
@@ -273,7 +290,7 @@ export class ServerCallLlmAttempt {
       !(await isOperationInterrupted(this.ctx))
     ) {
       log(
-        '[%s] Model returned an empty completion (attempt %d/%d) — throwing ModelEmptyError to retry',
+        '[%s] Model returned an empty completion (attempt %d/%d) — throwing terminal ModelEmptyError',
         this.operationLogId,
         this.attempt,
         this.maxAttempts,
@@ -281,6 +298,7 @@ export class ServerCallLlmAttempt {
       throw new ModelEmptyError(undefined, {
         attempt: this.attempt,
         contentLength: this.streamSink.content.length,
+        cost: this.usage?.cost,
         finishReason: this.finishReason,
         imageCount: this.imageList.length,
         maxAttempts: this.maxAttempts,

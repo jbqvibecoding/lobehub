@@ -79,6 +79,7 @@ const SharedBotBody = memo<SharedBotBodyProps>(
       return (
         <SuccessCard
           openBotUrl={sharedBotUrl(platform, platformMeta ?? {})}
+          platform={platform}
           platformLabel={platformLabel}
         />
       );

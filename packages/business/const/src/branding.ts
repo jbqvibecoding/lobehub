@@ -32,6 +32,7 @@ export const FILE_URL = {
 
 export const BRANDING_EMAIL = {
   business: 'hello@biber.ai',
+  replyTo: undefined,
   support: 'support@biber.ai',
 };
 

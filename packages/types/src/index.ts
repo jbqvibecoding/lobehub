@@ -41,10 +41,13 @@ export * from './stepContext';
 export * from './task';
 export * from './tool';
 export * from './topic';
+export * from './topicComment';
+export * from './understanding';
 export * from './user';
 export * from './userMemory';
 export * from './userProfile';
 export * from './verify';
+export * from './work';
 // FIXME: I think we need a refactor for the "openai" types
 // it more likes the UI message payload
 export * from './agentRuntime';
@@ -52,6 +55,7 @@ export * from './openai/chat';
 export * from './openai/plugin';
 export * from './subscription';
 export * from './trace';
+export * from './understanding';
 export * from './userMemory';
 export * from './util';
 export * from './zustand';

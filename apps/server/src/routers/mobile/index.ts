@@ -25,6 +25,7 @@ import { knowledgeBaseRouter } from '../lambda/knowledgeBase';
 import { marketRouter } from '../lambda/market';
 import { messageRouter } from '../lambda/message';
 import { messengerRouter } from '../lambda/messenger';
+import { notificationRouter } from '../lambda/notification';
 import { pluginRouter } from '../lambda/plugin';
 import { pushTokenRouter } from '../lambda/pushToken';
 import { sessionRouter } from '../lambda/session';
@@ -76,6 +77,7 @@ export const mobileRouter = router({
   memories: memoriesRouter,
   message: messageRouter,
   messenger: messengerRouter,
+  notification: notificationRouter,
   plugin: pluginRouter,
   proactive: proactiveRouter,
   profile: profileRouter,

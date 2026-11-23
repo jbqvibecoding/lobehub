@@ -7,6 +7,7 @@ import { LarkInstallationStore } from './lark';
 import { SlackInstallationStore } from './slack';
 import { TelegramInstallationStore } from './telegram';
 import type { MessengerInstallationStore } from './types';
+import { WechatInstallationStore } from './wechat';
 import { WechatMpInstallationStore } from './wechatmp';
 
 /**
@@ -36,6 +37,9 @@ const create = (platform: MessengerPlatform): MessengerInstallationStore | null 
     }
     case 'wechatmp': {
       return new WechatMpInstallationStore();
+    }
+    case 'wechat': {
+      return new WechatInstallationStore();
     }
     default: {
       return null;
@@ -132,4 +136,5 @@ export { LarkInstallationStore } from './lark';
 export { SlackInstallationStore } from './slack';
 export { TELEGRAM_INSTALLATION_KEY, TelegramInstallationStore } from './telegram';
 export type { InstallationCredentials, MessengerInstallationStore } from './types';
+export { wechatInstallationKey, WechatInstallationStore } from './wechat';
 export { WECHAT_MP_INSTALLATION_KEY, WechatMpInstallationStore } from './wechatmp';

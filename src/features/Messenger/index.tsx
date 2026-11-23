@@ -121,6 +121,7 @@ const MessengerSettings = memo(() => {
       <Flexbox gap={20}>
         {selected && selectedMeta ? (
           <IntegrationDetail
+            access={selectedMeta.access}
             appId={selectedMeta.appId}
             botUsername={selectedMeta.botUsername}
             installUrl={selectedMeta.installUrl}

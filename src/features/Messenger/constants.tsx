@@ -2,12 +2,13 @@ import { Discord, IMessage, Lark, Slack, Telegram, WeChat } from '@lobehub/ui/ic
 import type { ReactNode } from 'react';
 
 export type MessengerPlatform =
-  'telegram' | 'slack' | 'discord' | 'imessage' | 'lark' | 'feishu' | 'wechatmp';
+  'telegram' | 'slack' | 'discord' | 'wechat' | 'imessage' | 'lark' | 'feishu' | 'wechatmp';
 
 export const SUPPORTED_MESSENGER_PLATFORMS = [
   { id: 'telegram', name: 'Telegram' },
   { id: 'slack', name: 'Slack' },
   { id: 'discord', name: 'Discord' },
+  { id: 'wechat', name: 'WeChat' },
   { id: 'imessage', name: 'iMessage' },
   { id: 'lark', name: 'Lark' },
   { id: 'feishu', name: 'Feishu' },
@@ -34,6 +35,7 @@ export const PLATFORM_TAB_ICONS: Record<MessengerPlatform, ReactNode> = {
   slack: <Slack.Color size={16} />,
   telegram: <Telegram.Color size={16} />,
   wechatmp: <WeChat.Color size={16} />,
+  wechat: <WeChat.Color size={16} />,
 };
 
 export const PlatformAvatar = ({
@@ -48,6 +50,7 @@ export const PlatformAvatar = ({
   if (platform === 'imessage') return <IMessage.Avatar size={size} />;
   if (platform === 'lark' || platform === 'feishu') return <Lark.Avatar size={size} />;
   if (platform === 'wechatmp') return <WeChat.Avatar size={size} />;
+  if (platform === 'wechat') return <WeChat.Avatar size={size} />;
   return <Slack.Avatar size={size} />;
 };
 
@@ -63,6 +66,7 @@ export const PlatformBrandIcon = ({
   if (platform === 'imessage') return <IMessage.Color size={size} />;
   if (platform === 'lark' || platform === 'feishu') return <Lark.Color size={size} />;
   if (platform === 'wechatmp') return <WeChat.Color size={size} />;
+  if (platform === 'wechat') return <WeChat.Color size={size} />;
   return <Slack.Color size={size} />;
 };
 
@@ -96,7 +100,7 @@ export const buildSlackOpenBotUrl = (tenantId: string, appId?: string): string =
  * `/api/agent/messenger/discord/install` (OAuth code-grant) rather than a
  * hardcoded `discord.com/oauth2/authorize` URL, so the callback can persist
  * the guild as an audit row. Bot scopes / permissions live in
- * `src/server/services/messenger/platforms/discord/oauth.ts`.
+ * `apps/server/src/services/messenger/platforms/discord/oauth.ts`.
  */
 export const buildDiscordOpenBotUrl = (applicationId: string): string =>
   `https://discord.com/users/${applicationId}`;

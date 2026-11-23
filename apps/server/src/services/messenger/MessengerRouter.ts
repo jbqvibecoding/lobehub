@@ -8,13 +8,14 @@ import {
 } from 'chat';
 import debug from 'debug';
 
+import { getBotFeatureAccessState } from '@/business/server/bot/featureAccess';
 import type { MessengerPlatform } from '@/config/messenger';
 import { getServerDB } from '@/database/core/db-adaptor';
 import { AgentModel } from '@/database/models/agent';
 import { MessageModel } from '@/database/models/message';
+import type { SafeMessengerAccountLink } from '@/database/models/messengerAccountLink';
 import { MessengerAccountLinkModel } from '@/database/models/messengerAccountLink';
 import { WorkspaceModel } from '@/database/models/workspace';
-import type { MessengerAccountLinkItem } from '@/database/schemas';
 import type { LobeChatDatabase } from '@/database/type';
 import { getServerFeatureFlagsStateFromRuntimeConfig } from '@/server/featureFlags';
 import { getAgentRuntimeRedisClient } from '@/server/modules/AgentRuntime/redis';
@@ -38,6 +39,7 @@ import { getInstallationStore } from './installations';
 import type { InstallationCredentials } from './installations/types';
 import { messengerPlatformRegistry } from './platforms';
 import { messengerReplies, messengerReplyLocale } from './replies';
+import { getMessengerSystemStrings } from './systemReply';
 import type {
   AgentPickerEntry,
   CallbackAcknowledgement,
@@ -54,6 +56,7 @@ const log = debug('lobe-server:messenger:router');
  * are generated nanoids, so they never collide with this literal.
  */
 const PERSONAL_SCOPE_ID = 'personal';
+const WECHAT_UNSUPPORTED_COMMANDS = new Set(['start']);
 
 interface RegisteredMessengerBot {
   binder: MessengerPlatformBinder;
@@ -70,6 +73,9 @@ interface CommandMatch {
 
 interface AgentSummary {
   id: string;
+  /** The caller's own private agent inside a workspace scope (always false in
+   *  the personal scope, where every agent is implicitly private). */
+  isPrivate: boolean;
   title: string;
 }
 
@@ -102,7 +108,7 @@ interface MessengerCommandContext {
    *  user-private UI (e.g. `/agents` picker) widen private replies into
    *  ephemerals when this is false so the channel doesn't see them. */
   isDM: boolean;
-  link: MessengerAccountLinkItem | undefined;
+  link: SafeMessengerAccountLink | undefined;
   message?: Message;
   platform: MessengerPlatform;
   /** Platform-aware reply: ephemeral on Slack slash, DM on Discord slash,
@@ -228,10 +234,26 @@ export class MessengerRouter {
   private bots = new Map<string, RegisteredMessengerBot>();
   private loadingPromises = new Map<string, Promise<RegisteredMessengerBot | null>>();
 
-  /** Static command registry — reused across every install since command
-   *  logic is platform-agnostic. Handlers reach platform-specific reply
-   *  surfaces through `ctx.reply` and `ctx.binder`. */
+  /** Static command registry. Platform capability filters are applied when
+   *  commands are registered and dispatched (WeChat, for example, binds via
+   *  web QR and therefore does not expose `/start`). */
   private readonly commands: MessengerCommand[] = this.buildCommands();
+
+  /**
+   * Drop the cached Chat SDK bot for an install so the next webhook rebuilds
+   * it from freshly resolved credentials. Must be called whenever an install's
+   * credential bundle is replaced or removed (e.g. a WeChat rescan rotates the
+   * QR-issued bot token / baseUrl) — otherwise this process keeps replying
+   * through the stale client until restart.
+   */
+  invalidateBot(installationKey: string): void {
+    this.bots.delete(installationKey);
+  }
+
+  private getCommandsForPlatform(platform: MessengerPlatform): MessengerCommand[] {
+    if (platform !== 'wechat') return this.commands;
+    return this.commands.filter((command) => !WECHAT_UNSUPPORTED_COMMANDS.has(command.name));
+  }
 
   /**
    * Webhook handler for `/api/agent/messenger/webhooks/[platform]`. The flow:
@@ -379,9 +401,10 @@ export class MessengerRouter {
     await chatBot.initialize();
 
     if (client.registerBotCommands) {
+      const commands = this.getCommandsForPlatform(creds.platform);
       client
         .registerBotCommands(
-          this.commands.map((cmd) => ({
+          commands.map((cmd) => ({
             command: cmd.name,
             description: cmd.description,
             // Forward the option schema so Discord/Slack surface required
@@ -437,6 +460,8 @@ export class MessengerRouter {
     const platform = creds.platform;
     const tenantId = creds.tenantId;
     const replies = messengerReplies(platform);
+    const commands = this.getCommandsForPlatform(platform);
+    const systemStrings = getMessengerSystemStrings(platform);
 
     const handle = async (
       thread: any,
@@ -459,6 +484,18 @@ export class MessengerRouter {
       // the platform's thread anchor (Slack: `slack:<channel>:<threadTs>`)
       // which the binder splits when posting in-thread.
       const isChannelMention = thread.isDM === false;
+      const channelThreadTs = isChannelMention ? String(thread.id).split(':')[2] : undefined;
+      const replyToSender = (text: string): Promise<void> => {
+        if (isChannelMention && binder.replyEphemeral) {
+          return binder.replyEphemeral({
+            channelId: chatId,
+            text,
+            threadTs: channelThreadTs,
+            userId: senderId,
+          });
+        }
+        return binder.sendDmText(chatId, text);
+      };
       const link = await MessengerAccountLinkModel.findByPlatformUser(
         serverDB,
         platform,
@@ -469,7 +506,7 @@ export class MessengerRouter {
       try {
         const parsed = parseCommand(message.text);
         if (parsed) {
-          const command = this.commands.find((c) => c.name === parsed.name);
+          const command = commands.find((c) => c.name === parsed.name);
           if (command) {
             // Text-path command reply: in a DM `chat.postMessage` is fine
             // (the conversation is private already). In a channel `@mention`
@@ -479,17 +516,6 @@ export class MessengerRouter {
             // mention's thread (Slack `thread_ts`) so the response sits next
             // to the trigger. Platforms without `replyEphemeral` (Telegram)
             // fall back to the regular DM path.
-            const channelThreadTs = isChannelMention ? String(thread.id).split(':')[2] : undefined;
-            const reply =
-              isChannelMention && binder.replyEphemeral
-                ? (text: string) =>
-                    binder.replyEphemeral!({
-                      channelId: chatId,
-                      text,
-                      threadTs: channelThreadTs,
-                      userId: senderId,
-                    })
-                : (text: string) => binder.sendDmText(chatId, text);
             await command.handler({
               args: parsed.args,
               authorUserId: senderId,
@@ -500,7 +526,7 @@ export class MessengerRouter {
               link,
               message,
               platform,
-              reply,
+              reply: replyToSender,
               serverDB,
               source: 'text',
               tenantId,
@@ -531,18 +557,7 @@ export class MessengerRouter {
         // In a channel, route the prompt ephemerally so the entire channel
         // doesn't see the system message.
         if (!link.activeAgentId) {
-          const noAgentText = replies.noActiveAgent;
-          if (isChannelMention && binder.replyEphemeral) {
-            const threadTs = String(thread.id).split(':')[2];
-            await binder.replyEphemeral({
-              channelId: chatId,
-              text: noAgentText,
-              threadTs,
-              userId: senderId,
-            });
-          } else {
-            await binder.sendDmText(chatId, noAgentText);
-          }
+          await replyToSender(systemStrings.noActiveAgent);
           return;
         }
 
@@ -553,18 +568,21 @@ export class MessengerRouter {
           link.workspaceId &&
           !(await userIsWorkspaceMember(serverDB, link.userId, link.workspaceId))
         ) {
-          const staleScopeText = replies.scopeUnavailable;
-          if (isChannelMention && binder.replyEphemeral) {
-            const threadTs = String(thread.id).split(':')[2];
-            await binder.replyEphemeral({
-              channelId: chatId,
-              text: staleScopeText,
-              threadTs,
-              userId: senderId,
-            });
-          } else {
-            await binder.sendDmText(chatId, staleScopeText);
-          }
+          await replyToSender(systemStrings.staleScope);
+          return;
+        }
+
+        const featureAccess = await getBotFeatureAccessState({
+          action: 'runtime',
+          platform,
+          userId: link.userId,
+          workspaceId: link.workspaceId ?? undefined,
+        });
+        if (!featureAccess.allowed) {
+          await replyToSender(
+            featureAccess.blockedMessage ??
+              'This messenger connection requires a paid plan. Upgrade in Biber Settings to continue.',
+          );
           return;
         }
 
@@ -595,7 +613,7 @@ export class MessengerRouter {
         log('handle: handler error: %O', error);
         try {
           await thread.post(
-            renderInlineError(replies.somethingWentWrong, messengerReplyLocale(platform)),
+            renderInlineError(systemStrings.genericError, messengerReplyLocale(platform)),
           );
         } catch {
           /* ignore */
@@ -734,12 +752,15 @@ export class MessengerRouter {
       await handle(thread, message, 'handleMention');
     });
 
-    // Native slash commands. Slack and Discord deliver them as slash events, and so does
-    // chat-sdk's Telegram adapter for a message that starts with a bot_command entity — which
-    // is what Telegram's Start button and its command menu send. Registered for every platform,
-    // so a command reaches its handler whichever way the adapter delivers it; the full set of
-    // names comes from the shared registry so every platform surfaces the same menu.
-    const slashPaths = this.commands.map((cmd) => `/${cmd.name}`);
+    // Native slash commands. chat-adapter routes a leading `/command` to the slash-command
+    // channel (not onNewMention / onSubscribedMessage), so a command reaches its handler only if
+    // it is registered here. Slack and Discord deliver them as slash events, and so does
+    // chat-sdk's Telegram adapter for a message that starts with a bot_command entity, which is
+    // what Telegram's Start button and its command menu send. Registered for every platform, so a
+    // command reaches its handler whichever way the adapter delivers it; platforms without
+    // `replyPrivately` get the reply as a direct message. The names come from the shared registry
+    // so every platform surfaces the same menu.
+    const slashPaths = commands.map((cmd) => `/${cmd.name}`);
     bot.onSlashCommand(slashPaths, async (event) => {
       await this.handleSlashCommand({ binder, bot, client, creds, event, serverDB });
     });
@@ -793,6 +814,7 @@ export class MessengerRouter {
       {
         description: 'Bind your account to Biber',
         handler: async (ctx) => {
+          const strings = getMessengerSystemStrings(ctx.platform);
           // Already-linked short-circuit: re-running `/start` while bound
           // would issue a fresh verify-im token and, on completion,
           // overwrite the user's `messenger_account_links` row via
@@ -801,7 +823,7 @@ export class MessengerRouter {
           // active agent and the conversation hangs at "typing…" with no
           // reply. Treat `/start` as the unbound-only onboarding command.
           if (ctx.link) {
-            await ctx.reply(messengerReplies(ctx.platform).alreadyLinked);
+            await ctx.reply(strings.accountAlreadyLinked);
             return;
           }
           // The verify-im URL is one-shot and account-binding; it must reach
@@ -810,8 +832,9 @@ export class MessengerRouter {
           //   • Slack — `chat.postEphemeral` in the channel is invoker-only
           //     and keeps the link flow inline (no DM context switch).
           //   • Discord — no text-channel ephemeral primitive for non-
-          //     interaction messages, so we still open a DM. Telegram has no
-          //     channel slash surface today, falls through to DM as well.
+          //     interaction messages, so we still open a DM.
+          // Telegram group `/start` is intercepted by `handleSlashCommand`
+          // before this handler and gets a safe prompt to open the bot DM.
           // Detection key: presence of `binder.replyEphemeral`, which is what
           // the @mention path also uses to decide ephemeral-vs-DM.
           const canEphemeralInChannel = !ctx.isDM && !!ctx.binder.replyEphemeral;
@@ -833,7 +856,7 @@ export class MessengerRouter {
           // For the Slack ephemeral path the prompt is already inline, a
           // second "check your DM" would be misleading.
           if (!ctx.isDM && !canEphemeralInChannel) {
-            await ctx.reply(messengerReplies(ctx.platform).checkDmForLink);
+            await ctx.reply(strings.checkDirectMessage);
           }
         },
         name: 'start',
@@ -864,15 +887,16 @@ export class MessengerRouter {
       {
         description: 'Start a new conversation',
         handler: async (ctx) => {
+          const strings = getMessengerSystemStrings(ctx.platform);
           if (!ctx.link) {
-            await ctx.reply(messengerReplies(ctx.platform).notLinked);
+            await ctx.reply(strings.needLink);
             return;
           }
           if (!ctx.thread) {
             // Slash dispatch has no chat-sdk Thread; setState lives on the
             // thread instance, so direct the user back to the DM where the
             // text path can pick the command up.
-            await ctx.reply(messengerReplies(ctx.platform).useDirectMessage('/new'));
+            await ctx.reply(strings.newDirectMessageOnly);
             return;
           }
           // Drop the cached topicId so the next message starts a fresh topic.
@@ -882,24 +906,25 @@ export class MessengerRouter {
           } catch (error) {
             log('command /new: setState failed: %O', error);
           }
-          await ctx.reply(messengerReplies(ctx.platform).newConversation);
+          await ctx.reply(strings.newStarted);
         },
         name: 'new',
       },
       {
         description: 'Stop the current execution',
         handler: async (ctx) => {
+          const strings = getMessengerSystemStrings(ctx.platform);
           if (!ctx.link) {
-            await ctx.reply(messengerReplies(ctx.platform).notLinked);
+            await ctx.reply(strings.needLink);
             return;
           }
           if (!ctx.thread) {
-            await ctx.reply(messengerReplies(ctx.platform).useDirectMessage('/stop'));
+            await ctx.reply(strings.stopDirectMessageOnly);
             return;
           }
           const isActive = AgentBridgeService.isThreadActive(ctx.thread.id);
           if (!isActive) {
-            await ctx.reply(messengerReplies(ctx.platform).nothingToStop);
+            await ctx.reply(strings.stopNotActive);
             return;
           }
           const operationId = AgentBridgeService.getActiveOperationId(ctx.thread.id);
@@ -911,14 +936,14 @@ export class MessengerRouter {
               const result = await aiAgentService.interruptTask({ operationId });
               if (!result.success) {
                 log('command /stop: runtime interrupt rejected for op=%s', operationId);
-                await ctx.reply(messengerReplies(ctx.platform).unableToStop);
+                await ctx.reply(strings.stopUnable);
                 return;
               }
               AgentBridgeService.clearActiveThread(ctx.thread.id);
               log('command /stop: interrupted op=%s', operationId);
             } catch (error) {
               log('command /stop: interruptTask failed: %O', error);
-              await ctx.reply(messengerReplies(ctx.platform).unableToStop);
+              await ctx.reply(strings.stopUnable);
               return;
             }
           } else {
@@ -927,7 +952,7 @@ export class MessengerRouter {
             AgentBridgeService.requestStop(ctx.thread.id);
             log('command /stop: queued deferred stop for thread=%s', ctx.thread.id);
           }
-          await ctx.reply(messengerReplies(ctx.platform).stopRequested);
+          await ctx.reply(strings.stopRequested);
         },
         name: 'stop',
       },
@@ -944,18 +969,18 @@ export class MessengerRouter {
           },
         ],
         handler: async (ctx) => {
+          const replyLocale = messengerReplyLocale(ctx.platform);
+          const strings = getMessengerSystemStrings(ctx.platform);
           // Feedback is tied to a LobeHub account so the team can follow up;
           // an unbound user has no email/identity to attach. Mirror the
           // `/new` / `/stop` "you need to /start" guard for consistency.
           if (!ctx.link) {
-            await ctx.reply(messengerReplies(ctx.platform).notLinked);
+            await ctx.reply(strings.needLink);
             return;
           }
           const body = ctx.args.trim();
           if (!body) {
-            await ctx.reply(
-              renderCommandReply('cmdFeedbackUsage', messengerReplyLocale(ctx.platform)),
-            );
+            await ctx.reply(renderCommandReply('cmdFeedbackUsage', replyLocale));
             return;
           }
           const result = await submitBotFeedback(ctx.serverDB, {
@@ -965,21 +990,17 @@ export class MessengerRouter {
             userId: ctx.link.userId,
           });
           if (!result.success) {
-            await ctx.reply(
-              renderCommandReply('cmdFeedbackError', messengerReplyLocale(ctx.platform)),
-            );
+            await ctx.reply(renderCommandReply('cmdFeedbackError', replyLocale));
             return;
           }
-          await ctx.reply(
-            renderFeedbackSubmitted(result.issueUrl, messengerReplyLocale(ctx.platform)),
-          );
+          await ctx.reply(renderFeedbackSubmitted(result.issueUrl, replyLocale));
         },
         name: 'feedback',
       },
       {
         description: 'Show usage',
         handler: async (ctx) => {
-          await ctx.reply(messengerReplies(ctx.platform).help);
+          await ctx.reply(getMessengerSystemStrings(ctx.platform).help);
         },
         name: 'help',
       },
@@ -1014,17 +1035,21 @@ export class MessengerRouter {
     // the bare id so direct platform API calls see what they expect.
     const chatId = client.extractChatId((event.channel as any).id as string);
     const args = event.text?.trim() ?? '';
+    const isTelegramGroup = creds.platform === 'telegram' && chatId.startsWith('-');
+    const replyChatId = isTelegramGroup ? senderId : chatId;
 
-    // Slack and Discord answer only the invoker. Telegram has no private reply in a chat, and
-    // its commands come from the user's own chat with the bot, so the answer goes there.
+    // Slack / Discord reply privately (ephemeral / DM); Telegram has no
+    // `replyPrivately`, so fall back to a direct message in the slash
+    // command's chat. Both keep the reply scoped to the invoker.
     const replyPrivately = binder.replyPrivately;
     const reply = replyPrivately
       ? (text: string) => replyPrivately.call(binder, event.channel, event.user, text)
-      : (text: string) => binder.sendDmText(chatId, text);
+      : (text: string) => binder.sendDmText(replyChatId, text);
+    const systemStrings = getMessengerSystemStrings(creds.platform);
 
-    const command = this.commands.find((c) => c.name === cmdName);
+    const command = this.getCommandsForPlatform(creds.platform).find((c) => c.name === cmdName);
     if (!command) {
-      await reply(messengerReplies(creds.platform).unknownCommand(cmdName));
+      await reply(systemStrings.unknownCommand(cmdName));
       return;
     }
 
@@ -1034,6 +1059,16 @@ export class MessengerRouter {
       senderId,
       creds.tenantId,
     );
+
+    // Telegram bots cannot initiate a private conversation with a user. A
+    // first-time user invoking `/start` from a group therefore cannot receive
+    // the account-link button at `senderId`. Keep the one-shot link out of the
+    // group and post only a safe instruction back to the originating chat (or
+    // forum topic); the user can then open the bot DM and retry `/start`.
+    if (isTelegramGroup && cmdName === 'start' && !link) {
+      await event.channel.post(systemStrings.startDirectMessageOnly);
+      return;
+    }
 
     // Slash command events have no chat-sdk Thread attached (slash isn't
     // posted into any specific thread). Worse, chat-sdk's
@@ -1060,11 +1095,10 @@ export class MessengerRouter {
     // raw Slack ids that start with `D` are 1:1 DMs (`G` / `MPDM` are
     // group DMs, `C` is public). For other platforms (Discord today) the
     // chat-sdk flag is reliable so we keep that path too.
-    // Telegram's adapter passes the message as `raw`; its chat type says whether it is private.
     const isDmChannel =
       event.channel.isDM === true ||
       (creds.platform === 'slack' && chatId.startsWith('D')) ||
-      (event.raw as { chat?: { type?: string } } | undefined)?.chat?.type === 'private';
+      (creds.platform === 'telegram' && !isTelegramGroup);
 
     // Discord slash commands arrive as deferred interactions (the
     // `patchDiscordForwardedInteractions` patch ack's them with type 5
@@ -1081,7 +1115,7 @@ export class MessengerRouter {
         authorUserId: senderId,
         authorUserName: event.user.userName,
         binder,
-        chatId,
+        chatId: replyChatId,
         interaction,
         // `isDM` lets handlers like `/agents` keep the picker public in
         // DMs (so it stays in history) and widen to an ephemeral when
@@ -1098,7 +1132,7 @@ export class MessengerRouter {
     } catch (error) {
       log('handleSlashCommand: handler error for /%s: %O', cmdName, error);
       try {
-        await reply(messengerReplies(creds.platform).somethingWentWrong);
+        await reply(systemStrings.genericError);
       } catch {
         /* ignore */
       }
@@ -1113,16 +1147,16 @@ export class MessengerRouter {
    */
   private async runAgentsCommand(ctx: MessengerCommandContext): Promise<void> {
     const { binder, chatId, link, serverDB } = ctx;
-    const replies = messengerReplies(ctx.platform);
+    const strings = getMessengerSystemStrings(ctx.platform);
 
     if (!link) {
-      await ctx.reply(replies.notLinked);
+      await ctx.reply(strings.needLink);
       return;
     }
 
     const userAgents = await this.fetchUserAgents(serverDB, link.userId, link.workspaceId);
     if (userAgents.length === 0) {
-      await ctx.reply(replies.noAgentsYet);
+      await ctx.reply(strings.agentsEmpty);
       return;
     }
 
@@ -1132,22 +1166,22 @@ export class MessengerRouter {
     if (args && !binder.sendAgentPicker) {
       const index = Number.parseInt(args, 10);
       if (!Number.isInteger(index) || index < 1 || index > userAgents.length) {
-        await ctx.reply(replies.agentsUsage(userAgents.length));
+        await ctx.reply(strings.agentsUsage(userAgents.length));
         return;
       }
       const target = userAgents[index - 1];
       if (link.activeAgentId === target.id) {
-        await ctx.reply(replies.agentAlreadyActive(target.title));
+        await ctx.reply(strings.activeAgentAlready(target.title));
         return;
       }
       await MessengerAccountLinkModel.setActiveAgentById(serverDB, link.id, target.id);
-      await ctx.reply(replies.agentSwitched(target.title));
+      await ctx.reply(strings.activeAgentChanged(target.title));
       return;
     }
 
     if (binder.sendAgentPicker) {
       await binder.sendAgentPicker(chatId, {
-        entries: this.toPickerEntries(userAgents, link.activeAgentId),
+        entries: this.toPickerEntries(userAgents, link.activeAgentId, strings),
         // Channel invocation → render ephemeral so only the invoker sees
         // their personal agent list (otherwise `/agents` from a public
         // channel would broadcast everyone's `Biber / Claude Code / …`
@@ -1157,17 +1191,53 @@ export class MessengerRouter {
         // complete the deferred reply via the follow-up webhook. Without
         // this, Discord keeps "Thinking..." until it times out.
         interaction: ctx.interaction,
-        text: replies.agentPickerPrompt,
+        text: strings.agentsPicker,
       });
       return;
     }
 
     // Final fallback: numbered list + usage hint for `/agents <n>`.
-    const lines = userAgents.map((agent, i) => {
-      const marker = link.activeAgentId === agent.id ? replies.listActiveMarker : '';
+    await ctx.reply(this.renderAgentsList(userAgents, link.activeAgentId, strings));
+  }
+
+  /**
+   * Render the numbered `/agents` text list. In a workspace scope where both
+   * shared workspace agents and the caller's private agents are present, the
+   * list splits into two headed sections (workspace first — matching the
+   * `fetchUserAgents` partition) while keeping numbering continuous, so
+   * `/agents <n>` still maps 1:1 onto the fetched array.
+   */
+  private renderAgentsList(
+    userAgents: AgentSummary[],
+    activeAgentId: string | null | undefined,
+    strings: ReturnType<typeof getMessengerSystemStrings>,
+  ): string {
+    const line = (agent: AgentSummary, i: number) => {
+      const marker = activeAgentId === agent.id ? ` (${strings.activeMarker})` : '';
       return `${i + 1}. ${agent.title}${marker}`;
-    });
-    await ctx.reply(replies.agentsList(lines.join('\n')));
+    };
+
+    const privateCount = userAgents.filter((agent) => agent.isPrivate).length;
+    const grouped = privateCount > 0 && privateCount < userAgents.length;
+
+    if (!grouped) {
+      const lines = userAgents.map((agent, i) => line(agent, i));
+      return `${strings.agentsHeading}\n${lines.join('\n')}\n\n${strings.agentsHint}`;
+    }
+
+    // `fetchUserAgents` already partitioned workspace-first, so the two
+    // sections are contiguous slices and the shared numbering stays in order.
+    const workspaceLines: string[] = [];
+    const privateLines: string[] = [];
+    for (const [i, agent] of userAgents.entries()) {
+      (agent.isPrivate ? privateLines : workspaceLines).push(line(agent, i));
+    }
+
+    return [
+      `${strings.agentsWorkspaceHeading}\n${workspaceLines.join('\n')}`,
+      `${strings.agentsPrivateHeading}\n${privateLines.join('\n')}`,
+      strings.agentsHint,
+    ].join('\n\n');
   }
 
   /**
@@ -1183,13 +1253,13 @@ export class MessengerRouter {
    */
   private async runSwitchCommand(ctx: MessengerCommandContext): Promise<void> {
     const { binder, chatId, link, serverDB } = ctx;
-    const replies = messengerReplies(ctx.platform);
+    const strings = getMessengerSystemStrings(ctx.platform);
     if (!link) {
-      await ctx.reply(replies.notLinked);
+      await ctx.reply(strings.needLink);
       return;
     }
 
-    const scopes = await this.fetchUserScopes(serverDB, link.userId, replies.personalScope);
+    const scopes = await this.fetchUserScopes(serverDB, link.userId, ctx.platform);
 
     // Text-fallback path: `/switch 2` switches without needing the keyboard,
     // for platforms (or clients) where tap-buttons aren't available.
@@ -1197,16 +1267,16 @@ export class MessengerRouter {
     if (arg && !binder.sendAgentPicker) {
       const index = Number.parseInt(arg, 10);
       if (!Number.isInteger(index) || index < 1 || index > scopes.length) {
-        await ctx.reply(replies.switchUsage(scopes.length));
+        await ctx.reply(strings.scopesUsage(scopes.length));
         return;
       }
       const target = scopes[index - 1];
       if ((link.workspaceId ?? null) === target.id) {
-        await ctx.reply(replies.alreadyInScope(target.name));
+        await ctx.reply(strings.scopeAlready(target.name));
         return;
       }
       const defaultAgent = await this.applyScopeSwitch(serverDB, link.id, link.userId, target);
-      await ctx.reply(replies.scopeSwitched(target.name, defaultAgent?.title));
+      await ctx.reply(strings.scopeSwitched(target.name, defaultAgent?.title));
       return;
     }
 
@@ -1220,17 +1290,17 @@ export class MessengerRouter {
         // Discord-only: forward the slash interaction so the binder can
         // complete the deferred reply via the follow-up webhook.
         interaction: ctx.interaction,
-        text: replies.scopePickerPrompt,
+        text: strings.scopePicker,
       });
       return;
     }
 
     // Final fallback: numbered list + usage hint for `/switch <n>`.
     const lines = scopes.map((scope, i) => {
-      const marker = (link.workspaceId ?? null) === scope.id ? replies.listCurrentMarker : '';
+      const marker = (link.workspaceId ?? null) === scope.id ? ` (${strings.currentMarker})` : '';
       return `${i + 1}. ${scope.name}${marker}`;
     });
-    await ctx.reply(replies.scopesList(lines.join('\n')));
+    await ctx.reply(`${strings.scopesHeading}\n${lines.join('\n')}\n\n${strings.scopesHint}`);
   }
 
   /**
@@ -1240,13 +1310,13 @@ export class MessengerRouter {
   private async fetchUserScopes(
     serverDB: LobeChatDatabase,
     userId: string,
-    personalName: string,
+    platform: MessengerPlatform,
   ): Promise<{ id: string | null; name: string }[]> {
-    const personal = { id: null, name: personalName };
-    if (!(await isWorkspaceFeatureEnabledForUser(userId))) return [personal];
+    const personalScope = { id: null, name: getMessengerSystemStrings(platform).personalScope };
+    if (!(await isWorkspaceFeatureEnabledForUser(userId))) return [personalScope];
 
     const workspaces = await new WorkspaceModel(serverDB, userId).listUserWorkspaces();
-    return [personal, ...workspaces.map((w) => ({ id: w.id, name: w.name }))];
+    return [personalScope, ...workspaces.map((w) => ({ id: w.id, name: w.name }))];
   }
 
   /**
@@ -1283,14 +1353,24 @@ export class MessengerRouter {
     }));
   }
 
+  /**
+   * Button grids can't render section headings, so the workspace/private
+   * distinction rides on the button label instead: private agents get a
+   * localized suffix (e.g. `（私人）`). Only applied when the list actually
+   * mixes both groups — an all-private or all-workspace list needs no marker.
+   */
   private toPickerEntries(
     userAgents: AgentSummary[],
     activeAgentId: string | null | undefined,
+    strings: ReturnType<typeof getMessengerSystemStrings>,
   ): AgentPickerEntry[] {
+    const privateCount = userAgents.filter((agent) => agent.isPrivate).length;
+    const marked = privateCount > 0 && privateCount < userAgents.length;
+
     return userAgents.map((agent) => ({
       id: agent.id,
       isActive: agent.id === activeAgentId,
-      title: agent.title,
+      title: marked && agent.isPrivate ? `${agent.title}${strings.privateSuffix}` : agent.title,
     }));
   }
 
@@ -1426,6 +1506,7 @@ export class MessengerRouter {
     action: InboundCallbackAction,
     ack: (acknowledgement: CallbackAcknowledgement) => Promise<void>,
   ): Promise<void> {
+    const strings = getMessengerSystemStrings(creds.platform);
     const scopeMatch = action.data.match(/^messenger:scope:(.+)$/);
     if (scopeMatch) {
       await this.handleScopeCallback(creds, action, scopeMatch[1], ack);
@@ -1446,7 +1527,7 @@ export class MessengerRouter {
 
     const switchMatch = action.data.match(/^messenger:switch:(.+)$/);
     if (!switchMatch) {
-      await ack({ toast: messengerReplies(creds.platform).unknownAction });
+      await ack({ toast: strings.unknownAction });
       return;
     }
 
@@ -1459,28 +1540,28 @@ export class MessengerRouter {
       creds.tenantId,
     );
     if (!link) {
-      await ack({ toast: messengerReplies(creds.platform).notLinkedToast });
+      await ack({ toast: strings.notLinked });
       return;
     }
 
     const userAgents = await this.fetchUserAgents(serverDB, link.userId, link.workspaceId);
     const target = userAgents.find((agent) => agent.id === targetAgentId);
     if (!target) {
-      await ack({ toast: messengerReplies(creds.platform).agentNotFound });
+      await ack({ toast: strings.agentNotFound });
       return;
     }
 
     if (link.activeAgentId === targetAgentId) {
-      await ack({ toast: `${target.title} is already active.` });
+      await ack({ toast: strings.activeAgentAlreadyToast(target.title) });
       return;
     }
 
     await MessengerAccountLinkModel.setActiveAgentById(serverDB, link.id, targetAgentId);
     await ack({
-      toast: messengerReplies(creds.platform).agentSwitchedToast(target.title),
+      toast: strings.activeAgentChangedToast(target.title),
       updatedPicker: {
-        entries: this.toPickerEntries(userAgents, targetAgentId),
-        text: messengerReplies(creds.platform).agentPickerPrompt,
+        entries: this.toPickerEntries(userAgents, targetAgentId, strings),
+        text: strings.receiveMessagesPicker,
       },
     });
   }
@@ -1500,7 +1581,7 @@ export class MessengerRouter {
     serverDB,
     thread,
   }: {
-    link: MessengerAccountLinkItem;
+    link: SafeMessengerAccountLink;
     message: Message;
     platform: MessengerPlatform;
     reply: (text: string) => Promise<void>;
@@ -1583,7 +1664,7 @@ export class MessengerRouter {
       creds.tenantId,
     );
     if (!link) {
-      await ack({ toast: messengerReplies(creds.platform).notLinkedToast });
+      await ack({ toast: getMessengerSystemStrings(creds.platform).notLinked });
       return;
     }
 
@@ -1627,6 +1708,7 @@ export class MessengerRouter {
     scopeToken: string,
     ack: (ack: CallbackAcknowledgement) => Promise<void>,
   ): Promise<void> {
+    const strings = getMessengerSystemStrings(creds.platform);
     const serverDB = await getServerDB();
     const link = await MessengerAccountLinkModel.findByPlatformUser(
       serverDB,
@@ -1635,34 +1717,30 @@ export class MessengerRouter {
       creds.tenantId,
     );
     if (!link) {
-      await ack({ toast: messengerReplies(creds.platform).notLinkedToast });
+      await ack({ toast: strings.notLinked });
       return;
     }
 
     const targetScopeId = scopeToken === PERSONAL_SCOPE_ID ? null : scopeToken;
-    const scopes = await this.fetchUserScopes(
-      serverDB,
-      link.userId,
-      messengerReplies(creds.platform).personalScope,
-    );
+    const scopes = await this.fetchUserScopes(serverDB, link.userId, creds.platform);
     const target = scopes.find((scope) => scope.id === targetScopeId);
     if (!target) {
-      await ack({ toast: messengerReplies(creds.platform).scopeNotFound });
+      await ack({ toast: strings.scopeNotFound });
       return;
     }
 
     if ((link.workspaceId ?? null) === target.id) {
-      await ack({ toast: messengerReplies(creds.platform).alreadyInScope(target.name) });
+      await ack({ toast: strings.scopeAlready(target.name) });
       return;
     }
 
     const defaultAgent = await this.applyScopeSwitch(serverDB, link.id, link.userId, target);
     await ack({
-      toast: messengerReplies(creds.platform).scopeSwitched(target.name, defaultAgent?.title),
+      toast: strings.scopeSwitched(target.name, defaultAgent?.title),
       updatedPicker: {
         action: 'scope',
         entries: this.toScopeEntries(scopes, target.id),
-        text: messengerReplies(creds.platform).scopePickerPrompt,
+        text: strings.scopePicker,
       },
     });
   }
@@ -1691,14 +1769,27 @@ export class MessengerRouter {
     ).listMessengerBindableAgents({ fallbackTitle: 'Custom Agent' });
 
     // `fallbackTitle` guarantees a non-null title for every row.
-    return rows.map((row) => ({ id: row.id, title: row.title! }));
+    const summaries = rows.map((row) => ({
+      id: row.id,
+      isPrivate: row.isPrivate,
+      title: row.title!,
+    }));
+
+    // Workspace scope: stable-partition shared workspace agents ahead of the
+    // caller's private ones so every surface (text list, pickers, the default
+    // agent picked on scope switch) presents the two groups consistently.
+    // Personal scope is untouched — `isPrivate` is always false there.
+    return [
+      ...summaries.filter((agent) => !agent.isPrivate),
+      ...summaries.filter((agent) => agent.isPrivate),
+    ];
   }
 
   private async dispatchToAgent(
     thread: any,
     message: Message,
     client: PlatformClient,
-    link: MessengerAccountLinkItem,
+    link: SafeMessengerAccountLink,
     agentId: string,
     platform: MessengerPlatform,
     bridgeMethod: 'handleMention' | 'handleSubscribedMessage',

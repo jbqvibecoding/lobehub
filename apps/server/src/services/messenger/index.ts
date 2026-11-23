@@ -12,7 +12,15 @@ export { MessengerImessageBinder } from './platforms/imessage';
 export { MessengerLarkBinder } from './platforms/lark';
 export { MessengerSlackBinder } from './platforms/slack';
 export { MessengerTelegramBinder } from './platforms/telegram';
+export { MessengerWechatBinder } from './platforms/wechat';
 export { MessengerWechatMpBinder } from './platforms/wechatmp';
 export { wechatFollowQrUrl } from './platforms/wechatmp/followQr';
 export { startWechatLinkCode, WECHAT_LINK_CODE_TTL_SECONDS } from './platforms/wechatmp/linkCode';
 export type { MessengerPlatformBinder } from './types';
+export {
+  acquireWechatQrFinalizeLock,
+  consumeWechatQrSession,
+  issueWechatQrSession,
+  peekWechatQrSession,
+  releaseWechatQrFinalizeLock,
+} from './wechatQrSessionStore';
