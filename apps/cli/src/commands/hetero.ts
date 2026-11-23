@@ -531,6 +531,9 @@ const exec = async (options: ExecOptions): Promise<void> => {
               client: await getTrpcClient(),
               cwd: options.cwd || process.cwd(),
               topicId: options.topic!,
+              // A push waits on the same bridge as a question: its request and the user's
+              // answer travel the run's stream in order
+              waitForUser: (args, pendingOptions) => askBridge!.pending(args, pendingOptions),
             })
           : undefined,
     });

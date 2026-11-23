@@ -13,6 +13,7 @@ import { messagePlugins, messages } from '@/database/schemas';
 import type { LobeChatDatabase } from '@/database/type';
 import { createStreamEventManager } from '@/server/modules/AgentRuntime/factory';
 import { notifyPendingApprovals } from '@/server/services/approvalNotification';
+import { GithubConnectionService, pushSummary } from '@/server/services/githubApp';
 
 const log = debug('lobe-server:hetero-interventions');
 
@@ -21,6 +22,9 @@ export const HETERO_TOOL_IDENTIFIER = 'claude-code';
 
 /** Claude Code's question to the user (`mcp__lobe_cc__ask_user_question`, as stored). */
 export const ASK_USER_API_NAME = 'askUserQuestion';
+
+/** The coding run's request to push to the user's GitHub (`mcp__lobe_cc__push_changes`). */
+export const PUSH_CHANGES_API_NAME = 'pushChanges';
 
 /** What the user answered: per question, the option(s) picked; or their own words. */
 export type HeteroAnswer = Record<string, string | string[]>;
@@ -76,9 +80,17 @@ export const trackHeteroInterventions = async (
         log('op %s: no tool message for intervention %s', operationId, toolCallId);
         continue;
       }
+      // A push shows what it would change, as the server holds it, not what the run said it was
+      const push =
+        call.apiName === PUSH_CHANGES_API_NAME
+          ? await new GithubConnectionService(db, userId).pendingPush(toolCallId)
+          : undefined;
       await db
         .update(messagePlugins)
-        .set({ intervention: { operationId, status: 'pending' } })
+        .set({
+          ...(push && { arguments: JSON.stringify(pushSummary(push)) }),
+          intervention: { operationId, status: 'pending' },
+        })
         .where(eq(messagePlugins.id, call.id));
       log('op %s: %s (%s) waits for the user', operationId, toolCallId, call.apiName);
       await notifyPendingApprovals(db, {
@@ -165,8 +177,8 @@ export const sendHeteroAnswer = async ({
     data: {
       cancelReason: rejected ? 'user_cancelled' : undefined,
       cancelled: rejected || undefined,
-      reason: rejected ? reason : undefined,
-      result: rejected ? undefined : (answer ?? {}),
+      // The sandbox hands `result` to the waiting call either way: a refusal carries its reason
+      result: rejected ? (reason ? { reason } : undefined) : (answer ?? {}),
       toolCallId,
     },
     stepIndex: 0,

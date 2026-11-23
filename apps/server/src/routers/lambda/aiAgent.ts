@@ -20,6 +20,7 @@ import { MessageModel } from '@/database/models/message';
 import { ThreadModel } from '@/database/models/thread';
 import { TopicModel } from '@/database/models/topic';
 import { agentOperations, topics } from '@/database/schemas';
+import type { LobeChatDatabase } from '@/database/type';
 import { heteroAuthedProcedure, router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { signUserJWT } from '@/libs/trpc/utils/internalJwt';
@@ -28,6 +29,7 @@ import { AgentRuntimeService } from '@/server/services/agentRuntime';
 import { AiAgentService } from '@/server/services/aiAgent';
 import { AiChatService } from '@/server/services/aiChat';
 import { getFileProxyUrl } from '@/server/services/file';
+import { GithubConnectionError, GithubConnectionService } from '@/server/services/githubApp';
 import { HeterogeneousAgentService } from '@/server/services/heterogeneousAgent';
 import {
   abortHeteroInterventions,
@@ -522,6 +524,46 @@ const aiAgentProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) 
 // and carries no workspace claim). Handlers must resolve wsId from the row keyed
 // by `topicId` and construct `HeterogeneousAgentService` per request.
 const heteroAgentProcedure = heteroAuthedProcedure.use(serverDatabase);
+
+/**
+ * A call from a cloud coding run's own tools: its run token, for its own run, in a conversation of
+ * its user. Returns the conversation's workspace.
+ */
+const assertCodingRun = async (
+  ctx: {
+    heteroAuthKind: 'operation' | 'run' | 'user';
+    heteroRunScope?: { operationId: string; topicId: string };
+    serverDB: LobeChatDatabase;
+    userId: string;
+  },
+  call: { operationId: string; topicId: string },
+) => {
+  assertRunScope(ctx.heteroRunScope, call);
+  if (ctx.heteroAuthKind !== 'run') {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Only a cloud coding run may call this' });
+  }
+  const [topicRow] = await ctx.serverDB
+    .select({ workspaceId: topics.workspaceId })
+    .from(topics)
+    .where(and(eq(topics.id, call.topicId), eq(topics.userId, ctx.userId)))
+    .limit(1);
+  if (!topicRow) throw new TRPCError({ code: 'FORBIDDEN', message: 'Topic not found' });
+  return { workspaceId: topicRow.workspaceId ?? undefined };
+};
+
+/** A GitHub connection problem, as the run's tool sees it. */
+const githubError = (error: unknown): never => {
+  if (!(error instanceof GithubConnectionError)) throw error;
+  throw new TRPCError({
+    code: error.code === 'FORBIDDEN' ? 'FORBIDDEN' : 'BAD_REQUEST',
+    message:
+      error.code === 'NOT_CONNECTED'
+        ? 'The user has not connected GitHub. Ask them to connect it in the Biber app under Account → GitHub.'
+        : error.message,
+  });
+};
+
+const runCall = z.object({ operationId: z.string().min(1), topicId: z.string().min(1) });
 
 /**
  * A `hetero-run` token reports only the run it was issued for: refuse it for any other run or
@@ -1452,21 +1494,7 @@ export const aiAgentRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const { operationId, path, topicId } = input;
-      assertRunScope(ctx.heteroRunScope, { operationId, topicId });
-      if (ctx.heteroAuthKind !== 'run') {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Only a cloud coding run delivers files',
-        });
-      }
-      const [topicRow] = await ctx.serverDB
-        .select({ workspaceId: topics.workspaceId })
-        .from(topics)
-        .where(and(eq(topics.id, topicId), eq(topics.userId, ctx.userId)))
-        .limit(1);
-      if (!topicRow) throw new TRPCError({ code: 'FORBIDDEN', message: 'Topic not found' });
-
-      const workspaceId = topicRow.workspaceId ?? undefined;
+      const { workspaceId } = await assertCodingRun(ctx, { operationId, topicId });
       // Loaded here: the sandbox graph touches server-only env when it loads
       const [{ createSandboxService }, { FileService }, { MarketService }] = await Promise.all([
         import('@/server/services/sandbox'),
@@ -1498,6 +1526,78 @@ export const aiAgentRouter = router({
         size: delivered.size,
         url: delivered.url,
       };
+    }),
+
+  /** The repositories the user gave Biber's GitHub App, for the coding run's `list_repos`. */
+  heteroListRepos: heteroAgentProcedure.input(runCall).query(async ({ ctx, input }) => {
+    await assertCodingRun(ctx, input);
+    try {
+      const github = new GithubConnectionService(ctx.serverDB, ctx.userId);
+      return { repositories: await github.repositories() };
+    } catch (error) {
+      return githubError(error);
+    }
+  }),
+
+  /**
+   * A snapshot of one of the user's repositories for the coding run's `open_repo`: a short-lived
+   * download link and the commit it is, never a token.
+   */
+  heteroOpenRepo: heteroAgentProcedure
+    .input(
+      runCall.extend({
+        ref: z.string().max(255).optional(),
+        repository: z.string().min(3).max(200),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await assertCodingRun(ctx, input);
+      try {
+        return await new GithubConnectionService(ctx.serverDB, ctx.userId).openRepository(
+          input.repository,
+          input.ref,
+        );
+      } catch (error) {
+        return githubError(error);
+      }
+    }),
+
+  /**
+   * The coding run's `push_changes`: keeps what it changed until the user answers on the phone.
+   * The run then waits on its tool call; the push happens only once the user approves.
+   */
+  heteroRequestPush: heteroAgentProcedure
+    .input(
+      runCall.extend({
+        baseRef: z.string().min(1).max(255),
+        baseSha: z.string().regex(/^[\da-f]{40}$/),
+        body: z.string().max(20_000).default(''),
+        files: z
+          .array(
+            z.object({
+              content: z.string().optional(),
+              mode: z.enum(['100644', '100755']).optional(),
+              path: z.string().min(1).max(1024),
+              status: z.enum(['added', 'deleted', 'modified']),
+            }),
+          )
+          .max(1000),
+        repository: z.string().min(3).max(200),
+        title: z.string().min(1).max(256),
+        toolCallId: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { toolCallId, topicId, ...request } = input;
+      await assertCodingRun(ctx, { operationId: input.operationId, topicId });
+      try {
+        return await new GithubConnectionService(ctx.serverDB, ctx.userId).requestPush(
+          toolCallId,
+          request,
+        );
+      } catch (error) {
+        return githubError(error);
+      }
     }),
 
   /**

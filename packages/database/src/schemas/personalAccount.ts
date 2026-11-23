@@ -3,11 +3,14 @@ import { jsonb, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { createdAt, updatedAt } from './_helpers';
 import { users } from './user';
 
-/** What an account gives Biber: the user's mailbox or calendar. */
-export type PersonalAccountKind = 'calendar' | 'mail';
+/** What an account gives Biber: the user's mailbox, calendar, or code repositories. */
+export type PersonalAccountKind = 'calendar' | 'code' | 'mail';
 
-/** Where it lives: a mailbox reached over IMAP and SMTP, or a Feishu calendar. */
-export type PersonalAccountProvider = 'feishu' | 'imap';
+/**
+ * Where it lives: a mailbox reached over IMAP and SMTP, a Feishu calendar, or the repositories the
+ * user gave the Biber GitHub App.
+ */
+export type PersonalAccountProvider = 'feishu' | 'github' | 'imap';
 
 /** `needs_reauth`: the password or the authorization no longer works, the user must connect again */
 export type PersonalAccountStatus = 'active' | 'needs_reauth';

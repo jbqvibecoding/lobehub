@@ -15,9 +15,21 @@ import {
 } from '../interventions';
 
 const mocks = vi.hoisted(() => ({
+  declinePush: vi.fn(),
   execAgent: vi.fn(),
   notify: vi.fn(),
+  pendingPush: vi.fn(),
   publish: vi.fn(),
+  push: vi.fn(),
+}));
+
+vi.mock('@/server/services/githubApp', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  GithubConnectionService: vi.fn().mockImplementation(() => ({
+    declinePush: mocks.declinePush,
+    pendingPush: mocks.pendingPush,
+    push: mocks.push,
+  })),
 }));
 
 vi.mock('@/server/services/approvalNotification', async (importOriginal) => ({
@@ -74,6 +86,9 @@ const ask = (call: Awaited<ReturnType<typeof ccCall>>, toolCallId: string) =>
   });
 
 beforeEach(async () => {
+  mocks.pendingPush.mockReset().mockResolvedValue(undefined);
+  mocks.push.mockReset();
+  mocks.declinePush.mockReset();
   db = await getTestDB();
   mocks.notify.mockReset().mockResolvedValue(undefined);
   mocks.publish.mockReset().mockResolvedValue('1');
@@ -142,7 +157,7 @@ describe('a Claude Code question', () => {
     expect(mocks.publish.mock.calls[0][1].data).toEqual({
       cancelReason: 'user_cancelled',
       cancelled: true,
-      reason: 'Not on main',
+      result: { reason: 'Not on main' },
       toolCallId: 'toolu_p1',
     });
   });
@@ -194,5 +209,78 @@ describe('a Claude Code question', () => {
 
     expect(await interventionOf(call.toolMessageId)).toBeNull();
     expect(mocks.notify).not.toHaveBeenCalled();
+  });
+});
+
+describe('a push the coding run asks for', () => {
+  const pending = {
+    baseRef: 'main',
+    baseSha: 'a'.repeat(40),
+    body: '',
+    branch: 'biber/add-a-readme-abc123',
+    files: [{ content: 'eA==', path: 'README.md', status: 'added' }],
+    operationId: 'op-cc',
+    repository: 'acme/app',
+    title: 'Add a README',
+  };
+
+  it('shows on the phone what the server holds, not what the run said', async () => {
+    const call = await ccCall('pushChanges', 'toolu_push1');
+    mocks.pendingPush.mockResolvedValue(pending);
+
+    await ask(call, 'toolu_push1');
+
+    const [row] = await db
+      .select()
+      .from(messagePlugins)
+      .where(eq(messagePlugins.id, call.toolMessageId));
+    expect(JSON.parse(row.arguments!)).toEqual({
+      branch: 'biber/add-a-readme-abc123',
+      files: 'README.md (added)',
+      pullRequest: 'Add a README',
+      repository: 'acme/app',
+    });
+    expect(mocks.notify.mock.calls[0][1].actions).toBe(true);
+  });
+
+  it('is pushed on approval, and the run is told where', async () => {
+    const call = await ccCall('pushChanges', 'toolu_push2');
+    mocks.pendingPush.mockResolvedValue(pending);
+    await ask(call, 'toolu_push2');
+    mocks.push.mockResolvedValue({
+      branch: pending.branch,
+      commit: 'c'.repeat(40),
+      pullRequestUrl: 'https://github.com/acme/app/pull/5',
+    });
+
+    await answerToolApproval(db, { ...call, decision: 'approved', via: 'mobile' });
+
+    expect(mocks.push).toHaveBeenCalledWith('toolu_push2');
+    expect(mocks.publish.mock.calls[0][1].data).toEqual({
+      result: {
+        branch: pending.branch,
+        commit: 'c'.repeat(40),
+        pullRequestUrl: 'https://github.com/acme/app/pull/5',
+      },
+      toolCallId: 'toolu_push2',
+    });
+  });
+
+  it('tells the run when the approved push failed, and drops a declined one', async () => {
+    const failed = await ccCall('pushChanges', 'toolu_push3');
+    await ask(failed, 'toolu_push3');
+    mocks.push.mockRejectedValue(new Error('Reference already exists'));
+
+    await answerToolApproval(db, { ...failed, decision: 'approved', via: 'mobile' });
+    expect(mocks.publish.mock.calls[0][1].data).toMatchObject({
+      cancelled: true,
+      result: { reason: 'The push failed: Reference already exists' },
+    });
+
+    const declined = await ccCall('pushChanges', 'toolu_push4');
+    await ask(declined, 'toolu_push4');
+    await answerToolApproval(db, { ...declined, decision: 'rejected', via: 'mobile' });
+    expect(mocks.declinePush).toHaveBeenCalledWith('toolu_push4');
+    expect(mocks.push).toHaveBeenCalledTimes(1);
   });
 });

@@ -39,6 +39,7 @@ import { activityRouter } from './activity';
 import { approvalRouter } from './approval';
 import { chatRouter } from './chat';
 import { expertsRouter } from './experts';
+import { githubRouter } from './github';
 import { loginsRouter } from './logins';
 import { memoriesRouter } from './memories';
 import { proactiveRouter } from './proactive';
@@ -58,6 +59,7 @@ export const mobileRouter = router({
   aiModel: aiModelRouter,
   aiProvider: aiProviderRouter,
   approval: approvalRouter,
+  github: githubRouter,
   chunk: chunkRouter,
   composio: composioRouter,
   computer: computerRouter,

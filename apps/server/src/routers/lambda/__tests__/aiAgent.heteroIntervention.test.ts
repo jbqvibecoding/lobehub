@@ -51,6 +51,15 @@ vi.mock('@/server/services/sandbox', () => ({
   createSandboxService: vi.fn(() => ({ exportAndUploadFile: hetero.exportFile })),
 }));
 vi.mock('@/server/services/file', () => ({ FileService: vi.fn() }));
+const github = vi.hoisted(() => ({ open: vi.fn(), repositories: vi.fn(), requestPush: vi.fn() }));
+vi.mock('@/server/services/githubApp', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  GithubConnectionService: vi.fn().mockImplementation(() => ({
+    openRepository: github.open,
+    repositories: github.repositories,
+    requestPush: github.requestPush,
+  })),
+}));
 vi.mock('@/server/services/market', () => ({ MarketService: vi.fn() }));
 vi.mock('@/server/services/heterogeneousAgent', () => ({
   HeterogeneousAgentService: vi
@@ -394,6 +403,86 @@ describe('aiAgentRouter — remote Human-in-the-loop', () => {
         code: 'FORBIDDEN',
       });
       expect(hetero.exportFile).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the coding run and the user’s GitHub', () => {
+    const runCaller = (op: string, topic: string) =>
+      aiAgentRouter.createCaller({
+        jwtPayload: { userId },
+        oidcAuth: { op, purpose: 'hetero-run', sub: userId, topic },
+      } as any);
+
+    beforeEach(async () => {
+      github.open.mockReset();
+      github.repositories.mockReset();
+      github.requestPush.mockReset();
+      const { topics } = await import('@/database/schemas');
+      await serverDB.insert(topics).values({ id: 'tpc-gh', title: 'Code', userId });
+    });
+
+    it('lists, opens and asks to push for its own run only', async () => {
+      github.repositories.mockResolvedValue([
+        { defaultBranch: 'main', fullName: 'acme/app', private: true },
+      ]);
+      const caller = runCaller('op-gh', 'tpc-gh');
+
+      expect(await caller.heteroListRepos({ operationId: 'op-gh', topicId: 'tpc-gh' })).toEqual({
+        repositories: [{ defaultBranch: 'main', fullName: 'acme/app', private: true }],
+      });
+      await expect(
+        runCaller('op-other', 'tpc-gh').heteroListRepos({
+          operationId: 'op-gh',
+          topicId: 'tpc-gh',
+        }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(
+        heteroCaller().heteroOpenRepo({
+          operationId: 'op-gh',
+          repository: 'acme/app',
+          topicId: 'tpc-gh',
+        }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      expect(github.open).not.toHaveBeenCalled();
+    });
+
+    it('tells the run to have the user connect GitHub when they have not', async () => {
+      const { GithubConnectionError } = await import('@/server/services/githubApp');
+      github.repositories.mockRejectedValue(
+        new GithubConnectionError('NOT_CONNECTED', 'GitHub is not connected'),
+      );
+
+      await expect(
+        runCaller('op-gh', 'tpc-gh').heteroListRepos({ operationId: 'op-gh', topicId: 'tpc-gh' }),
+      ).rejects.toMatchObject({
+        code: 'BAD_REQUEST',
+        message: expect.stringContaining('Account → GitHub'),
+      });
+    });
+
+    it('hands the push to the service under the run’s tool call', async () => {
+      github.requestPush.mockResolvedValue({ branch: 'biber/x-abc123', repository: 'acme/app' });
+
+      await runCaller('op-gh', 'tpc-gh').heteroRequestPush({
+        baseRef: 'main',
+        baseSha: 'a'.repeat(40),
+        files: [{ content: 'eA==', path: 'README.md', status: 'added' }],
+        operationId: 'op-gh',
+        repository: 'acme/app',
+        title: 'Add a README',
+        toolCallId: 'toolu_push',
+        topicId: 'tpc-gh',
+      });
+
+      expect(github.requestPush).toHaveBeenCalledWith(
+        'toolu_push',
+        expect.objectContaining({
+          baseSha: 'a'.repeat(40),
+          operationId: 'op-gh',
+          repository: 'acme/app',
+        }),
+      );
+      expect(github.requestPush.mock.calls[0][1]).not.toHaveProperty('topicId');
     });
   });
 });

@@ -95,8 +95,18 @@ export interface McpExtraTool {
   handler: (
     operationId: string,
     args: Record<string, unknown>,
-    /** Claude Code's own tool_use id for this call, when it sends one */
-    call: { toolCallId?: string },
+    call: {
+      /**
+       * Keeps a long call alive (a progress notification), for a tool that waits on the user;
+       * CC drops an MCP call that is silent for about five minutes. Absent when CC sent no
+       * progress token.
+       */
+      onProgress?: (elapsedMs: number, totalMs: number) => Promise<void>;
+      /** How often to call `onProgress` */
+      progressIntervalMs: number;
+      /** Claude Code's own tool_use id for this call, when it sends one */
+      toolCallId?: string;
+    },
   ) => Promise<McpToolResult>;
   inputSchema: z.ZodRawShape;
   name: string;
@@ -418,8 +428,33 @@ export class LobeBuiltinMcpServer {
           );
         }
         const ccToolUseId = extra._meta?.['claudecode/toolUseId'];
+        const rawProgressToken = extra._meta?.progressToken;
+        const progressToken =
+          typeof rawProgressToken === 'string' || typeof rawProgressToken === 'number'
+            ? rawProgressToken
+            : undefined;
+        const onProgress =
+          progressToken !== undefined && extra?.sendNotification
+            ? async (elapsedMs: number, totalMs: number) => {
+                try {
+                  await extra.sendNotification!({
+                    method: 'notifications/progress',
+                    params: {
+                      message: `Waiting for user (${Math.round(elapsedMs / 1000)}s)`,
+                      progress: elapsedMs,
+                      progressToken,
+                      total: totalMs,
+                    },
+                  });
+                } catch {
+                  // The transport may be gone; the next tick skips too
+                }
+              }
+            : undefined;
         try {
           return await tool.handler(operationId, (args ?? {}) as Record<string, unknown>, {
+            onProgress,
+            progressIntervalMs: this.progressIntervalMs,
             toolCallId: typeof ccToolUseId === 'string' ? ccToolUseId : undefined,
           });
         } catch (error) {

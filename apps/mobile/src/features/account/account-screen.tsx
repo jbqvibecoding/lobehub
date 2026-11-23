@@ -28,6 +28,7 @@ const SETTINGS: {
     | '/chat-apps'
     | '/computer'
     | '/experts'
+    | '/github'
     | '/logins'
     | '/memories'
     | '/proactive'
@@ -42,6 +43,7 @@ const SETTINGS: {
   { hint: 'proactiveEntryHint', href: '/proactive', title: 'proactiveTitle' },
   { hint: 'computerEntryHint', href: '/computer', title: 'computerTitle' },
   { hint: 'loginsEntryHint', href: '/logins', title: 'loginsTitle' },
+  { hint: 'githubEntryHint', href: '/github', title: 'githubTitle' },
 ];
 
 export const AccountScreen = () => {

@@ -8,6 +8,7 @@ import { type Palette, useColors } from '@/theme/colors';
 
 import { AccountsView } from './accounts';
 import { ExpertsView } from './experts';
+import { GithubView } from './github';
 import { LinkedChatsView } from './linked-chats';
 import { SavedLoginsView } from './logins';
 import { AboutYouView } from './profile';
@@ -57,6 +58,21 @@ export const SavedLoginsScreen = () => {
     >
       <Stack.Screen options={{ title: t('loginsTitle') }} />
       <SavedLoginsView api={api} />
+    </ScrollView>
+  );
+};
+
+export const GithubScreen = () => {
+  const styles = createStyles(useColors());
+
+  return (
+    <ScrollView
+      contentContainerStyle={styles.content}
+      contentInsetAdjustmentBehavior="automatic"
+      style={styles.screen}
+    >
+      <Stack.Screen options={{ title: t('githubTitle') }} />
+      <GithubView api={api} />
     </ScrollView>
   );
 };

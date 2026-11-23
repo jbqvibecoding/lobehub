@@ -10,10 +10,12 @@ import type { LobeChatDatabase } from '@/database/type';
 import { AiAgentService } from '@/server/services/aiAgent';
 import { toolApprovalDedupeKey } from '@/server/services/approvalNotification';
 import { botTopicWebhookBody, buildBotDeliveryHooks } from '@/server/services/bot/deliveryHooks';
+import { GithubConnectionService } from '@/server/services/githubApp';
 import {
   ASK_USER_API_NAME,
   HETERO_TOOL_IDENTIFIER,
   type HeteroAnswer,
+  PUSH_CHANGES_API_NAME,
   sendHeteroAnswer,
 } from '@/server/services/heterogeneousAgent/interventions';
 import { TaskLifecycleService } from '@/server/services/taskLifecycle';
@@ -96,13 +98,41 @@ export const answerToolApproval = async (
       throw new ToolApprovalError('CONFLICT', 'This tool call was already answered');
     }
     log('answering %s of run %s (%s via %s)', toolMessageId, operationId, decision, via);
-    await sendHeteroAnswer({
-      answer,
-      decision,
-      operationId,
-      reason,
-      toolCallId: plugin.toolCallId,
-    });
+    if (plugin.apiName === PUSH_CHANGES_API_NAME) {
+      // The push itself happens here, on approval, exactly as it was shown; the run learns how
+      // it went from the answer
+      const github = new GithubConnectionService(db, userId);
+      if (decision === 'rejected') {
+        await github.declinePush(plugin.toolCallId);
+        await sendHeteroAnswer({ decision, operationId, reason, toolCallId: plugin.toolCallId });
+      } else {
+        try {
+          const pushed = await github.push(plugin.toolCallId);
+          await sendHeteroAnswer({
+            answer: pushed,
+            decision,
+            operationId,
+            toolCallId: plugin.toolCallId,
+          });
+        } catch (error) {
+          log('push of %s failed: %O', toolMessageId, error);
+          await sendHeteroAnswer({
+            decision: 'rejected',
+            operationId,
+            reason: `The push failed: ${(error as Error).message}`,
+            toolCallId: plugin.toolCallId,
+          });
+        }
+      }
+    } else {
+      await sendHeteroAnswer({
+        answer,
+        decision,
+        operationId,
+        reason,
+        toolCallId: plugin.toolCallId,
+      });
+    }
     // Answered: its "needs you" notification is done with, on every device
     await new NotificationModel(db, userId)
       .markAsReadByDedupeKeys([toolApprovalDedupeKey(plugin.toolCallId)])
