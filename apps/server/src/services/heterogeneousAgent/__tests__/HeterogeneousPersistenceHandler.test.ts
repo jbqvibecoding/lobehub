@@ -353,6 +353,29 @@ describe('HeterogeneousPersistenceHandler', () => {
       );
     });
 
+    it('writes a run’s turns as the agent it was started for, not the group’s host', async () => {
+      const operationId = 'op_1700000000000_agt_coder_tpc_group_abc';
+      const h = createHarness({
+        assistantMessageId: 'asst-1',
+        operationId,
+        topicAgentId: 'agt_host',
+        topicId: 'topic-1',
+      });
+
+      await h.handler.ingest({
+        events: [
+          buildEvent('stream_chunk', 0, { chunkType: 'text', content: 'step1' }),
+          buildEvent('stream_start', 1, { newStep: true }),
+          buildEvent('stream_chunk', 2, { chunkType: 'text', content: 'step2' }),
+        ],
+        operationId,
+        topicId: 'topic-1',
+      });
+
+      const [[created]] = h.messageModel.create.mock.calls as [any][];
+      expect(created).toMatchObject({ agentId: 'agt_coder', role: 'assistant' });
+    });
+
     it('drops only a failed member’s own session, never the one the topic resumes', async () => {
       const h = createHarness({
         assistantMessageId: 'asst-member',

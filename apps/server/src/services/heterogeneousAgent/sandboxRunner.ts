@@ -124,7 +124,9 @@ export async function spawnHeteroSandbox(
   // finds session files at the same path on every invocation (session files live under
   // ~/.claude/projects/<encoded-cwd>/). Without a consistent --cwd the session id stored
   // in topic.metadata.heteroSessionId can't be resolved on --resume after a page reload.
-  const cwd = params.cwd ?? '/workspace';
+  // LOBEHUB_HETERO_SANDBOX_CWD is for a cloud computer run locally (development, smoke runs),
+  // whose workspace is a temporary directory rather than the image's /workspace
+  const cwd = params.cwd ?? process.env.LOBEHUB_HETERO_SANDBOX_CWD ?? '/workspace';
 
   // Build the `lh hetero exec` command string.
   // Prompt is passed via --input-json stdin ('-') to avoid shell quoting issues

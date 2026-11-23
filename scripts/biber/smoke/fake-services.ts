@@ -11,6 +11,9 @@
  *   there (see `computerStep`); with its profile tool, it runs the "About you" interview and
  *   answers profile checks (see `profileStep`); as the document maker, it writes and exports files
  *   on the cloud computer (see `documentStep`);
+ *   when the user mentions several experts in a group, Biber broadcasts to exactly them;
+ * - an Anthropic-format model behind the coding gateway (`startFakeAnthropic`), and GitHub as the
+ *   Biber GitHub App sees it (`startFakeGithub`);
  * - Expo's push service, recording every notification it is asked to send;
  * - object storage for exported files (`startFakeS3`);
  * - Feishu's open platform for a user's calendar (`startFakeFeishuApi`).
@@ -18,14 +21,19 @@
  * Point the server at them with OPENAI_PROXY_URL=http://127.0.0.1:<model>/v1 and
  * EXPO_BASE_URL=http://127.0.0.1:<push>.
  */
-import { createHmac, createPublicKey, verify } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { createHmac, createPublicKey, randomBytes, verify } from 'node:crypto';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createHttp2Server } from 'node:http2';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { deflateSync } from 'node:zlib';
 
 export const CODE_TOOL = 'lobe-cloud-sandbox____executeCode';
 export const REMIND_TOOL = 'lobe-reminders____addReminder';
 export const SPEAK_TOOL = 'lobe-group-management____speak';
+export const BROADCAST_TOOL = 'lobe-group-management____broadcast';
 export const MAIL_SEARCH_TOOL = 'lobe-mail____searchMail';
 export const MAIL_READ_TOOL = 'lobe-mail____readMail';
 export const MAIL_SEND_TOOL = 'lobe-mail____sendMail';
@@ -45,6 +53,7 @@ export const tomorrowInChina = (hour: number) => {
 
 /** The expert names the fake model knows, in both languages, as their prompts introduce them. */
 const EXPERT_NAMES: Record<string, string[]> = {
+  Coder: ['Coder', '编程助手'],
   Researcher: ['Researcher', '研究员'],
   Writer: ['Writer', '写手'],
 };
@@ -462,6 +471,23 @@ export const decideReply = (request: Pick<ModelRequest, 'messages' | 'tools'>): 
 
   // Hosting a group, Biber hands "ask the researcher …" to the researcher, who closes the round
   const said = textOf(request.messages[lastUser]?.content);
+
+  // The user mentioned several experts: exactly they answer, together (see mentionedInstructions)
+  const prompt = request.messages.map((message) => textOf(message.content)).join('\n');
+  const addressed = /The user addressed (.+?) in this message/.exec(prompt)?.[1];
+  if (!toolAnswered && addressed && request.tools.includes(BROADCAST_TOOL)) {
+    const names = [...addressed.matchAll(/@([^,]+)/g)].map((match) => match[1].trim());
+    const agentIds = names.map((name) => memberId(request.messages, [name]));
+    if (agentIds.every(Boolean)) {
+      return {
+        toolCall: {
+          arguments: JSON.stringify({ agentIds, instruction: said, skipCallSupervisor: true }),
+          name: BROADCAST_TOOL,
+        },
+      };
+    }
+  }
+
   if (
     !toolAnswered &&
     /ask the researcher|请研究员/i.test(said) &&
@@ -1505,4 +1531,238 @@ export const startFakeApns = async (port: number, publicKeyPem: string) => {
   });
   await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
   return { close: () => server.close(), sent };
+};
+
+/** One call the coding gateway made: the key it sent and the model it asked for. */
+export interface AnthropicCall {
+  apiKey: string;
+  model: string;
+  stream: boolean;
+  text: string;
+}
+
+/**
+ * The provider behind the coding gateway, in Anthropic's format: `/v1/messages`, streamed or
+ * not, with usage in `message_start` and `message_delta` as the gateway meters it. Point the
+ * server at it with CODING_BASE_URL=http://127.0.0.1:<port>.
+ */
+export const startFakeAnthropic = async (port: number) => {
+  const calls: AnthropicCall[] = [];
+  const server = createServer(async (req, res) => {
+    if (req.method !== 'POST' || !(req.url ?? '').endsWith('/v1/messages')) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'not here', type: 'not_found_error' } }));
+      return;
+    }
+    const body = await readJson(req);
+    const said = (body.messages ?? [])
+      .filter((message: any) => message.role === 'user')
+      .map((message: any) => textOf(message.content))
+      .join('\n');
+    calls.push({
+      apiKey: String(req.headers['x-api-key'] ?? ''),
+      model: body.model,
+      stream: body.stream === true,
+      text: said,
+    });
+    const text = /readme/i.test(said) ? 'I will add a README.' : 'three things worth knowing.';
+    const id = `msg_${Date.now()}`;
+    const usage = { input_tokens: 1200, output_tokens: 300 };
+    if (body.stream !== true) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          content: [{ text, type: 'text' }],
+          id,
+          model: body.model,
+          role: 'assistant',
+          stop_reason: 'end_turn',
+          type: 'message',
+          usage,
+        }),
+      );
+      return;
+    }
+    res.writeHead(200, { 'Cache-Control': 'no-cache', 'Content-Type': 'text/event-stream' });
+    const events: [string, object][] = [
+      [
+        'message_start',
+        {
+          message: {
+            content: [],
+            id,
+            model: body.model,
+            role: 'assistant',
+            type: 'message',
+            usage: { input_tokens: usage.input_tokens, output_tokens: 1 },
+          },
+          type: 'message_start',
+        },
+      ],
+      [
+        'content_block_start',
+        { content_block: { text: '', type: 'text' }, index: 0, type: 'content_block_start' },
+      ],
+      [
+        'content_block_delta',
+        { delta: { text, type: 'text_delta' }, index: 0, type: 'content_block_delta' },
+      ],
+      ['content_block_stop', { index: 0, type: 'content_block_stop' }],
+      [
+        'message_delta',
+        {
+          delta: { stop_reason: 'end_turn' },
+          type: 'message_delta',
+          usage: { output_tokens: usage.output_tokens },
+        },
+      ],
+      ['message_stop', { type: 'message_stop' }],
+    ];
+    for (const [event, data] of events)
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    res.end();
+  });
+  await listen(server, port);
+  return { calls, close: () => server.close() };
+};
+
+/** A branch GitHub was asked to make, with its commit and the files in it. */
+export interface GithubPush {
+  branch: string;
+  files: Record<string, string | null>;
+  message: string;
+  pullRequest?: { base: string; head: string; title: string };
+}
+
+/**
+ * GitHub as the Biber GitHub App sees it: one installation (77) on the account `acme`, holding
+ * one repository, acme/demo, whose default branch is `main`. It authorizes the code `smoke-code`
+ * for a user who may use that installation, hands out a new installation token each time (all
+ * kept in `tokens`), serves the repository as a real tarball behind a short-lived link, and keeps
+ * every branch, commit and pull request it is asked to make. Point the server at it with
+ * GITHUB_API_URL and GITHUB_WEB_URL=http://127.0.0.1:<port>.
+ */
+export const startFakeGithub = async (port: number) => {
+  const base = `http://127.0.0.1:${port}`;
+  const headSha = 'a'.repeat(40);
+  const tokens: string[] = [];
+  const calls: { method: string; path: string }[] = [];
+  const pushes: GithubPush[] = [];
+  const blobs = new Map<string, string>();
+  const trees = new Map<string, Record<string, string | null>>();
+  const commits = new Map<string, { message: string; tree: string }>();
+
+  // The repository's contents, as the archive GitHub serves: one top folder, named for the commit
+  const source = mkdtempSync(path.join(tmpdir(), 'biber-github-'));
+  const top = `acme-demo-${headSha.slice(0, 7)}`;
+  mkdirSync(path.join(source, top, 'src'), { recursive: true });
+  writeFileSync(path.join(source, top, 'package.json'), '{ "name": "demo", "version": "1.0.0" }\n');
+  writeFileSync(path.join(source, top, 'src', 'index.js'), "console.log('demo');\n");
+  execFileSync('tar', ['-czf', path.join(source, 'demo.tar.gz'), '-C', source, top]);
+  const tarball = readFileSync(path.join(source, 'demo.tar.gz'));
+
+  const json = (res: ServerResponse, status: number, data: unknown) => {
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(data));
+  };
+
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url ?? '/', base);
+    const method = req.method ?? 'GET';
+    const auth = String(req.headers.authorization ?? '').replace(/^Bearer /, '');
+    calls.push({ method, path: `${url.pathname}${url.search}` });
+    const body = method === 'POST' ? await readJson(req).catch(() => ({})) : {};
+
+    if (url.pathname === '/login/oauth/access_token') {
+      return json(res, 200, body.code === 'smoke-code' ? { access_token: 'gho_user' } : {});
+    }
+    if (url.pathname === '/user/installations') {
+      if (auth !== 'gho_user') return json(res, 401, { message: 'Bad credentials' });
+      return json(res, 200, { installations: [{ id: 77 }] });
+    }
+    // The App's own JWT
+    if (url.pathname.startsWith('/app/')) {
+      if (!auth.startsWith('eyJ')) return json(res, 401, { message: 'A JSON web token is needed' });
+      if (url.pathname === '/app/installations/77') {
+        return json(res, 200, { account: { login: 'acme', type: 'Organization' } });
+      }
+      if (url.pathname === '/app/installations/77/access_tokens' && method === 'POST') {
+        const token = `ghs_smoke${randomBytes(12).toString('hex')}`;
+        tokens.push(token);
+        return json(res, 201, { token });
+      }
+      return json(res, 404, { message: 'Not Found' });
+    }
+    // GitHub's short-lived download link, which needs no token
+    if (url.pathname === `/codeload/acme/demo/legacy.tar.gz/${headSha}`) {
+      res.writeHead(200, { 'Content-Type': 'application/x-gzip' });
+      res.end(tarball);
+      return;
+    }
+
+    // Everything else needs an installation token
+    if (!tokens.includes(auth)) return json(res, 401, { message: 'Bad credentials' });
+    if (url.pathname === '/installation/repositories') {
+      return json(res, 200, {
+        repositories: [{ default_branch: 'main', full_name: 'acme/demo', private: true }],
+        total_count: 1,
+      });
+    }
+    const repo = /^\/repos\/acme\/demo(\/.*)$/.exec(url.pathname)?.[1];
+    if (!repo) return json(res, 404, { message: 'Not Found' });
+    if (repo === '/commits/main' || repo === `/commits/${headSha}`) {
+      return json(res, 200, { sha: headSha });
+    }
+    if (repo === `/tarball/${headSha}`) {
+      res.writeHead(302, {
+        Location: `${base}/codeload/acme/demo/legacy.tar.gz/${headSha}?token=short-lived`,
+      });
+      res.end();
+      return;
+    }
+    if (repo === `/git/commits/${headSha}`) return json(res, 200, { tree: { sha: 'tree-base' } });
+    if (repo === '/git/blobs' && method === 'POST') {
+      const sha = `blob-${blobs.size + 1}`;
+      blobs.set(sha, Buffer.from(body.content ?? '', 'base64').toString('utf8'));
+      return json(res, 201, { sha });
+    }
+    if (repo === '/git/trees' && method === 'POST') {
+      const sha = `tree-${trees.size + 1}`;
+      trees.set(
+        sha,
+        Object.fromEntries(
+          (body.tree ?? []).map((entry: { path: string; sha: string | null }) => [
+            entry.path,
+            entry.sha === null ? null : (blobs.get(entry.sha) ?? ''),
+          ]),
+        ),
+      );
+      return json(res, 201, { sha });
+    }
+    if (repo === '/git/commits' && method === 'POST') {
+      const sha = randomBytes(20).toString('hex');
+      commits.set(sha, { message: body.message, tree: body.tree });
+      return json(res, 201, { sha });
+    }
+    if (repo === '/git/refs' && method === 'POST') {
+      const commit = commits.get(body.sha);
+      if (!commit) return json(res, 422, { message: 'Object does not exist' });
+      pushes.push({
+        branch: String(body.ref).replace('refs/heads/', ''),
+        files: trees.get(commit.tree) ?? {},
+        message: commit.message,
+      });
+      return json(res, 201, { ref: body.ref });
+    }
+    if (repo === '/pulls' && method === 'POST') {
+      const push = pushes.find((item) => item.branch === body.head);
+      if (!push) return json(res, 422, { message: 'No such branch' });
+      push.pullRequest = { base: body.base, head: body.head, title: body.title };
+      const number = pushes.indexOf(push) + 1;
+      return json(res, 201, { html_url: `${base}/acme/demo/pull/${number}`, number });
+    }
+    return json(res, 404, { message: 'Not Found' });
+  });
+  await listen(server, port);
+  return { calls, close: () => server.close(), pushes, tokens };
 };

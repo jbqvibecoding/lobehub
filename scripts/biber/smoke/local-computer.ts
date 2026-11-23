@@ -14,11 +14,16 @@ import { waitFor } from './client';
 export const computerIdForUser = (userId: string) =>
   `u-${createHash('sha256').update(userId).digest('hex').slice(0, 40)}`;
 
+/** The id of a user's coding computer, where Claude Code runs (`OPENBOT_COMPUTER_SCOPE=user`). */
+export const codingComputerIdForUser = (userId: string) =>
+  `c-${createHash('sha256').update(userId).digest('hex').slice(0, 40)}`;
+
 export const startLocalComputer = async ({
   computerId,
   env = {},
   port,
   secret,
+  workspace: fixedWorkspace,
 }: {
   computerId: string;
   /** More environment for the computer process, e.g. NODE_PATH */
@@ -26,8 +31,11 @@ export const startLocalComputer = async ({
   port: number;
   /** The server's OPENBOT_COMPUTER_TOKEN */
   secret: string;
+  /** Where its commands run, when the server must know it beforehand; a new folder otherwise */
+  workspace?: string;
 }) => {
   const dir = await mkdtemp(path.join(tmpdir(), 'biber-computer-'));
+  const workspace = fixedWorkspace ?? path.join(dir, 'workspace');
   const child = spawn('bun', ['src/index.ts'], {
     cwd: path.resolve('apps/computer/agent-computer'),
     env: {
@@ -38,7 +46,7 @@ export const startLocalComputer = async ({
       COMPUTER_TOKEN: createHmac('sha256', secret).update(`computer:${computerId}`).digest('hex'),
       PORT: String(port),
       PROFILES_DIR: path.join(dir, 'profiles'),
-      WORKSPACE_DIR: path.join(dir, 'workspace'),
+      WORKSPACE_DIR: workspace,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -63,6 +71,6 @@ export const startLocalComputer = async ({
       if (child.exitCode === null) child.kill('SIGKILL');
       await rm(dir, { force: true, recursive: true });
     },
-    workspace: path.join(dir, 'workspace'),
+    workspace,
   };
 };

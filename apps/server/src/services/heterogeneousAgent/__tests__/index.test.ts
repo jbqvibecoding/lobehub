@@ -437,6 +437,28 @@ describe('HeterogeneousAgentService', () => {
       dispatchSpy.mockRestore();
     });
 
+    it('does not finish again a run that already ended, as one the user stopped', async () => {
+      const { service } = createService();
+      const findByIdSpy = vi
+        .spyOn(AgentOperationModel.prototype, 'findById')
+        .mockResolvedValue({ status: 'interrupted' } as any);
+      const dispatchSpy = vi
+        .spyOn(CompletionLifecycle.prototype, 'dispatchHooks')
+        .mockResolvedValue();
+
+      // The CLI's own report as it is killed
+      await service.heteroFinish({
+        agentType: 'claude-code',
+        operationId: 'op-stopped',
+        result: 'success',
+        topicId: 'topic-stopped',
+      });
+
+      expect(dispatchSpy).not.toHaveBeenCalled();
+      findByIdSpy.mockRestore();
+      dispatchSpy.mockRestore();
+    });
+
     it('skips verify-plan instantiation for a non-task hetero run', async () => {
       const { service } = createService();
 

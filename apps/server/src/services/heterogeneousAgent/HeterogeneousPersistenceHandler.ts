@@ -1,4 +1,5 @@
 import type { AgentStreamEvent } from '@lobechat/agent-gateway-client';
+import { parseOperationId } from '@lobechat/agent-tracing';
 import { LOADING_FLAT } from '@lobechat/const';
 import type {
   MainAgentIntent,
@@ -433,7 +434,12 @@ export class HeterogeneousPersistenceHandler {
         : baseAssistantMessageId;
 
     state = {
-      agentId: ('agentId' in running ? running.agentId : topic?.agentId) ?? null,
+      // Whose turns these are: the agent the run was started for, which in a group is not the
+      // topic's own agent (the host)
+      agentId:
+        ('agentId' in running ? running.agentId : parseOperationId(operationId)?.agentId) ??
+        topic?.agentId ??
+        null,
       groupId: topic?.groupId ?? null,
       isMemberRun: 'agentId' in running,
       // Left undefined until the run's own stream_start reports it (or a cold

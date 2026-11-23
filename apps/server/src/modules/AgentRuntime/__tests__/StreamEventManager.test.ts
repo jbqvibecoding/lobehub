@@ -9,12 +9,18 @@ import {
 // Mock Redis client
 const mockRedis = {
   del: vi.fn(),
+  // A connection of its own, for blocking reads; it reads the same fake stream
+  duplicate: vi.fn(),
   expire: vi.fn(),
   keys: vi.fn(),
   quit: vi.fn(),
   xadd: vi.fn(),
   xread: vi.fn(),
   xrevrange: vi.fn(),
+};
+const reader = {
+  disconnect: vi.fn(),
+  xread: (...args: unknown[]) => mockRedis.xread(...args),
 };
 
 vi.mock('../redis', () => ({
@@ -26,6 +32,7 @@ describe('StreamEventManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRedis.duplicate.mockReturnValue(reader);
     streamManager = new StreamEventManager();
   });
 
@@ -299,6 +306,17 @@ describe('StreamEventManager', () => {
   });
 
   describe('readEventsOnce', () => {
+    it('blocks on a connection of its own and closes it, so publishing never waits behind it', async () => {
+      mockRedis.xrevrange.mockResolvedValue([]);
+      mockRedis.xread.mockResolvedValueOnce(null).mockRejectedValueOnce(new Error('lost'));
+
+      await streamManager.readEventsOnce('op-1', '$', 25_000);
+      await expect(streamManager.readEventsOnce('op-1', '5-0', 25_000)).rejects.toThrow('lost');
+
+      expect(mockRedis.duplicate).toHaveBeenCalledTimes(2);
+      expect(reader.disconnect).toHaveBeenCalledTimes(2);
+    });
+
     it("resolves '$' to the current tail and returns it (not '$') on timeout", async () => {
       // Stream has a tail entry; xread then times out (no newer events).
       mockRedis.xrevrange.mockResolvedValue([['7-0', ['type', 'stream_chunk']]]);

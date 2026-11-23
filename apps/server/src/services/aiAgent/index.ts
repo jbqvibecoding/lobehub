@@ -677,6 +677,26 @@ export class AiAgentService {
     const { createSandboxService } = await import('@/server/services/sandbox');
     for (const [memberOperationId, member] of members) {
       log('stopSandboxMemberRuns: op=%s command=%s', memberOperationId, member.commandId);
+      // Closed before the kill, as in stopSandboxHeteroRun, so the CLI's last report changes nothing
+      await this.topicModel.updateMetadataEntry(
+        topicId,
+        'heteroMemberRuns',
+        memberOperationId,
+        null,
+      );
+      await new CompletionLifecycle(this.db, this.userId, this.workspaceId)
+        .completeOperation(
+          {
+            agentId: member.agentId,
+            assistantMessageId: member.assistantMessageId,
+            operationId: memberOperationId,
+            serializedHooks: member.hooks as SerializedHook[] | undefined,
+            topicId,
+            userId: this.userId,
+          },
+          'interrupted',
+        )
+        .catch((error) => log('stopSandboxMemberRuns: completing failed: %O', error));
       if (member.commandId) {
         await createSandboxService({
           marketService: this.marketService,
@@ -695,25 +715,6 @@ export class AiAgentService {
           topicId,
         })
         .catch((error) => log('stopSandboxMemberRuns: closing the stream failed: %O', error));
-      await new CompletionLifecycle(this.db, this.userId, this.workspaceId)
-        .completeOperation(
-          {
-            agentId: member.agentId,
-            assistantMessageId: member.assistantMessageId,
-            operationId: memberOperationId,
-            serializedHooks: member.hooks as SerializedHook[] | undefined,
-            topicId,
-            userId: this.userId,
-          },
-          'interrupted',
-        )
-        .catch((error) => log('stopSandboxMemberRuns: completing failed: %O', error));
-      await this.topicModel.updateMetadataEntry(
-        topicId,
-        'heteroMemberRuns',
-        memberOperationId,
-        null,
-      );
       await abortHeteroInterventions(this.db, this.userId, memberOperationId).catch(() => {});
     }
     return isMember;
@@ -746,25 +747,12 @@ export class AiAgentService {
     }
 
     log('stopSandboxHeteroRun: op=%s command=%s', operationId, run.commandId);
-    const { createSandboxService } = await import('@/server/services/sandbox');
-    const killed = await createSandboxService({
-      marketService: this.marketService,
-      purpose: 'coding',
-      topicId,
-      userId: this.userId,
-    })
-      .callTool('killCommand', { commandId: run.commandId })
-      .catch((error: unknown) => ({ error, success: false }));
-    // A command that already ended cannot be killed; the run is closed all the same
-    if (!killed.success) log('stopSandboxHeteroRun: kill failed: %O', killed);
-
-    const hetero = new HeterogeneousAgentService(this.db, this.userId, {
-      workspaceId: this.workspaceId,
+    // The run is closed as interrupted before its command is killed: the CLI still reports on its
+    // way out, and finding the operation ended, that report changes nothing (see heteroFinish)
+    await this.topicModel.updateMetadata(topicId, {
+      heteroSandboxRun: null,
+      runningOperation: null,
     });
-    // Flushes what was streamed and ends the stream; on `cancelled` it leaves the hooks alone
-    await hetero
-      .heteroFinish({ agentType: run.heteroType, operationId, result: 'cancelled', topicId })
-      .catch((error) => log('stopSandboxHeteroRun: closing the stream failed: %O', error));
     await new CompletionLifecycle(this.db, this.userId, this.workspaceId)
       .completeOperation(
         {
@@ -778,10 +766,23 @@ export class AiAgentService {
         'interrupted',
       )
       .catch((error) => log('stopSandboxHeteroRun: completing the run failed: %O', error));
-    await this.topicModel.updateMetadata(topicId, {
-      heteroSandboxRun: null,
-      runningOperation: null,
-    });
+
+    const { createSandboxService } = await import('@/server/services/sandbox');
+    const killed = await createSandboxService({
+      marketService: this.marketService,
+      purpose: 'coding',
+      topicId,
+      userId: this.userId,
+    })
+      .callTool('killCommand', { commandId: run.commandId })
+      .catch((error: unknown) => ({ error, success: false }));
+    // A command that already ended cannot be killed; the run is closed all the same
+    if (!killed.success) log('stopSandboxHeteroRun: kill failed: %O', killed);
+
+    // Flushes what was streamed and ends the stream; on `cancelled` it leaves the hooks alone
+    await new HeterogeneousAgentService(this.db, this.userId, { workspaceId: this.workspaceId })
+      .heteroFinish({ agentType: run.heteroType, operationId, result: 'cancelled', topicId })
+      .catch((error) => log('stopSandboxHeteroRun: closing the stream failed: %O', error));
     // A question the stopped run asked no longer waits for an answer
     await abortHeteroInterventions(this.db, this.userId, operationId).catch((error) =>
       log('stopSandboxHeteroRun: releasing interventions failed: %O', error),

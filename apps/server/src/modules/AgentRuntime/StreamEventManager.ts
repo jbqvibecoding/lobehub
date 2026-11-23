@@ -391,7 +391,16 @@ export class StreamEventManager {
       fromId = tail.length > 0 ? tail[0][0] : '0';
     }
 
-    const results = await this.redis.xread('BLOCK', blockMs, 'STREAMS', streamKey, fromId);
+    // A blocking XREAD holds its connection until it returns, and every other command on that
+    // connection waits behind it: on the shared client a 25-second poll stalls this server's
+    // publishing (a cloud run's own ingest among it) for as long. So it gets a connection of its own.
+    const reader = this.redis.duplicate();
+    let results: Awaited<ReturnType<typeof reader.xread>>;
+    try {
+      results = await reader.xread('BLOCK', blockMs, 'STREAMS', streamKey, fromId);
+    } finally {
+      reader.disconnect();
+    }
     if (!results || results.length === 0) return { events: [], lastEventId: fromId };
 
     const [, messages] = results[0];

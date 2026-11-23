@@ -64,6 +64,31 @@ describe('spawnHeteroSandbox', () => {
     expect(command).not.toContain('"$(touch /tmp/pwned)"');
   });
 
+  it('runs in /workspace, or where a locally run computer keeps its workspace', async () => {
+    const run = () =>
+      spawnHeteroSandbox({
+        agentType: 'claude-code',
+        assistantMessageId: 'msg-1',
+        jwt: 'jwt',
+        marketService: {} as any,
+        operationId: 'op-1',
+        prompt: 'hi',
+        topicId: 'topic-1',
+        userId: 'user-1',
+      });
+
+    await run();
+    expect(mockCallTool.mock.calls[0][1].command).toContain("'--cwd' '/workspace'");
+
+    vi.stubEnv('LOBEHUB_HETERO_SANDBOX_CWD', '/tmp/computer/workspace');
+    try {
+      await run();
+      expect(mockCallTool.mock.calls[1][1].command).toContain("'--cwd' '/tmp/computer/workspace'");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('puts only the run token in the sandbox, and hands back the command to stop', async () => {
     mockCallTool.mockResolvedValue({ result: { commandId: 'bg-abc' }, success: true });
 

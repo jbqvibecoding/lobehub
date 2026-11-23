@@ -22,6 +22,9 @@ import { HeteroTraceRecorder } from './HeteroTraceRecorder';
 
 const log = debug('lobe-server:hetero-agent-service');
 
+/** Statuses an operation ends in; a parked or running one is still going. */
+const TERMINAL_OPERATION_STATUSES = new Set<string>(['done', 'error', 'interrupted']);
+
 export type HeterogeneousAgentType = 'claude-code' | 'codex';
 
 export type HeterogeneousFinishResult = 'success' | 'error' | 'cancelled';
@@ -217,6 +220,26 @@ export class HeterogeneousAgentService {
     // branch — and suppresses a spurious bot "stopped" message before the real
     // result lands.)
     if (result === 'cancelled') return;
+
+    // An operation that already ended is not ended again: a run the user stopped (the stop
+    // records it as interrupted before killing the CLI, which then still reports on its way out),
+    // or a report sent twice. Finishing it again would overwrite its outcome and fire its hooks
+    // twice.
+    try {
+      const op = await new AgentOperationModel(this.db, this.userId, this.workspaceId).findById(
+        operationId,
+      );
+      if (op && TERMINAL_OPERATION_STATUSES.has(op.status)) {
+        log(
+          'heteroFinish: op=%s already ended as %s; not finishing it again',
+          operationId,
+          op.status,
+        );
+        return;
+      }
+    } catch (err) {
+      log('heteroFinish: reading the operation failed (non-fatal): %O', err);
+    }
 
     let serializedHooks: SerializedHook[] | undefined;
     let assistantMessageId: string | undefined;
