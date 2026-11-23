@@ -1,4 +1,5 @@
-# The Bot's computer installs only the Playwright browser it launches.
+# The Bot's computer installs the Playwright browser it launches, CJK fonts, and the document
+# libraries scripts use (office/, on NODE_PATH): pptxgenjs, docx, exceljs and playwright-core.
 #
 # The image tag and Playwright dependency must be pinned to the same exact version. Bump both or
 # neither.
@@ -33,10 +34,19 @@ RUN if [ "${USE_CN_MIRROR}" = "true" ]; then \
         PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright; \
     fi \
   && apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl python3 unzip xz-utils \
+      ca-certificates curl fonts-noto-cjk python3 unzip xz-utils \
   && ln -s bun /usr/local/bin/bunx \
   && bunx --bun "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium \
   && rm -rf /root/.cache /tmp/* /var/lib/apt/lists/*
+
+# Document libraries for the Bot's scripts, pinned by their own lockfile and found through NODE_PATH,
+# so `require('pptxgenjs')` works from any folder. playwright-core matches PLAYWRIGHT_VERSION, so it
+# drives the Chromium installed above.
+WORKDIR /opt/biber-office
+COPY office/package.json office/bun.lock ./
+RUN if [ "${USE_CN_MIRROR}" = "true" ]; then export BUN_CONFIG_REGISTRY=https://registry.npmmirror.com; fi \
+  && bun install --frozen-lockfile --production
+ENV NODE_PATH=/opt/biber-office/node_modules
 
 WORKDIR /app
 # The lockfile as well as the manifest: `--frozen-lockfile` with no lockfile present resolves afresh

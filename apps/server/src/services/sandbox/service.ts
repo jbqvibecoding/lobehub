@@ -13,6 +13,7 @@ import {
   SANDBOX_INIT_TIMEOUT_MS,
   type SandboxInitDownload,
 } from './bootstrap';
+import { probeCommand, readProbe, refuseDeliverable } from './deliverable';
 import type {
   SandboxCommandResult,
   SandboxProvider,
@@ -23,6 +24,9 @@ import type {
 } from './types';
 
 const log = debug('lobe-server:sandbox:service');
+
+/** How long the check before an export may take. */
+const DELIVERABLE_CHECK_TIMEOUT_MS = 30_000;
 
 export class SandboxMiddlewareService implements SandboxService {
   readonly capabilities: SandboxProviderCapabilities;
@@ -102,6 +106,31 @@ export class SandboxMiddlewareService implements SandboxService {
     }
   }
 
+  /**
+   * Why the file should not be handed over (missing, empty, not the document it claims to be);
+   * undefined when it is fine, or when the sandbox cannot be asked, so a check that fails never
+   * blocks an export on its own.
+   */
+  private async checkDeliverable(path: string): Promise<string | undefined> {
+    if (!this.capabilities.shell) return;
+    try {
+      const result = normalizeSandboxCommandResult(
+        await this.callTool('runCommand', {
+          command: probeCommand(path),
+          timeout: DELIVERABLE_CHECK_TIMEOUT_MS,
+        }),
+      );
+      const probe = readProbe(result.output);
+      if (!probe) {
+        log('could not check %s before export: %s', path, result.stderr ?? result.output);
+        return;
+      }
+      return refuseDeliverable(path, probe);
+    } catch (error) {
+      log('could not check %s before export: %O', path, error);
+    }
+  }
+
   async exportAndUploadFile(path: string, filename: string): Promise<SandboxExportFileResult> {
     const { fileService, topicId } = this.options;
 
@@ -114,6 +143,12 @@ export class SandboxMiddlewareService implements SandboxService {
     }
 
     log('Exporting file: %s from path: %s, topicId: %s', filename, path, topicId);
+
+    const refusal = await this.checkDeliverable(path);
+    if (refusal) {
+      log('refused to export %s: %s', path, refusal);
+      return { error: { message: refusal, name: 'DeliverableRefused' }, filename, success: false };
+    }
 
     try {
       const now = Date.now();

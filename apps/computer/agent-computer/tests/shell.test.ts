@@ -62,6 +62,19 @@ describe("what a command inherits", () => {
     expect(JSON.stringify(env)).not.toContain("sk-secret");
   });
 
+  test("the image's document library and browser paths pass, so scripts find them", () => {
+    const env = environmentForCommand(
+      {
+        ...source(),
+        NODE_PATH: "/opt/biber-office/node_modules",
+        PLAYWRIGHT_BROWSERS_PATH: "/ms-playwright",
+      },
+      workspaceHome,
+    );
+    expect(env.NODE_PATH).toBe("/opt/biber-office/node_modules");
+    expect(env.PLAYWRIGHT_BROWSERS_PATH).toBe("/ms-playwright");
+  });
+
   test("HOME is the workspace, not the process's home", () => {
     const env = environmentForCommand(source(), workspaceHome);
     expect(env.HOME).toBe(workspaceHome);

@@ -17,6 +17,7 @@ import { emitAgentSignalSourceEvent } from '@/server/services/agentSignal';
 import { toAgentSignalTraceEvents } from '@/server/services/agentSignal/observability/traceEvents';
 import { extractSelfIterationCompletionPayload } from '@/server/services/agentSignal/services/selfIteration/completion';
 import { REPLY_HIDDEN_NOTICE, reviewModelReply } from '@/server/services/contentSafety';
+import { checkFileDelivery } from '@/server/services/experts/deliveryCheck';
 import { instantiateVerifyPlanOnStart, runVerifyOnCompletion } from '@/server/services/verify';
 
 import { hookDispatcher, type SerializedHook } from './hooks';
@@ -549,15 +550,27 @@ export class CompletionLifecycle {
       // Mainland content safety reviews the complete reply before anyone is told about it: a
       // flagged one is replaced in the store (what the app and the phone show) and in the event
       // (what chats are sent)
+      let replyHidden = false;
       if (reason === 'done' && event.lastAssistantContent?.trim()) {
         const verdict = await reviewModelReply(event.lastAssistantContent);
         if (verdict === 'hidden') {
           await this.hideReply(operationId, assistantMessageId, metadata?.userId || this.userId);
           event.lastAssistantContent = REPLY_HIDDEN_NOTICE;
+          replyHidden = true;
         }
       }
 
       await hookDispatcher.dispatch(operationId, 'onComplete', event, metadata._hooks);
+
+      // A file-making expert that names a file it never handed over gets one more turn to do it.
+      // Fire-and-forget and self-guarded: other agents and replies naming no file are a no-op.
+      if (reason === 'done' && !replyHidden && event.lastAssistantContent?.trim()) {
+        void checkFileDelivery(this.serverDB, metadata?.userId || this.userId, this.workspaceId, {
+          agentId: metadata?.agentId,
+          reply: event.lastAssistantContent,
+          topicId: metadata?.topicId,
+        }).catch((error) => log('[%s] delivery check failed (non-fatal): %O', operationId, error));
+      }
 
       // Delivery checker: on a successful completion, run the confirmed verify
       // plan against the deliverable. Fire-and-forget and self-guarded — a run

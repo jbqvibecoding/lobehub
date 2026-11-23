@@ -1,0 +1,12 @@
+{
+  "name": "biber-office",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Document libraries the cloud computer offers scripts on NODE_PATH",
+  "dependencies": {
+    "docx": "9.16.0",
+    "exceljs": "4.4.0",
+    "playwright-core": "1.62.1",
+    "pptxgenjs": "4.0.1"
+  }
+}

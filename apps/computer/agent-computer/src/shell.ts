@@ -60,9 +60,12 @@ export type ShellResult = {
  * `env` cannot print it. Naming the credentialed URL in COMPUTER_SHELL_ENV is an operator's decision
  * rather than the default. Everything else is named there too, read as names.
  *
+ * NODE_PATH and PLAYWRIGHT_BROWSERS_PATH pass for the same reason as PATH: the image sets them so
+ * that scripts find the document libraries and the browser it installed, and they hold no secret.
+ *
  * HOME is the workspace. A command that writes to ~ should write where the Bot's files already are.
  */
-const PATH_NAMES = ["PATH"] as const;
+const PATH_NAMES = ["PATH", "NODE_PATH", "PLAYWRIGHT_BROWSERS_PATH"] as const;
 const LOCALE_NAMES = ["LANG", "LANGUAGE"] as const;
 const TERMINAL_NAMES = ["TERM", "TERMINFO", "COLORTERM"] as const;
 const PROXY_NAMES = [
