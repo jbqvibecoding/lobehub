@@ -23,5 +23,11 @@ export interface PendingApproval {
 
 export type ApprovalDecision = 'approved' | 'rejected';
 
+/**
+ * An answer to the coding expert's question: the option(s) picked per question, or
+ * `{ __freeform__: text }` for an answer in the user's own words.
+ */
+export type QuestionAnswer = Record<string, string | string[]>;
+
 /** `findSecrets` on the server. */
 export type SecretKind = 'api_key' | 'card_number' | 'id_number' | 'password' | 'private_key';

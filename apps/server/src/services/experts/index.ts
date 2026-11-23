@@ -4,17 +4,23 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { AgentModel } from '@/database/models/agent';
 import { agents } from '@/database/schemas';
 import type { LobeChatDatabase } from '@/database/type';
+import { getSandboxProviderKind } from '@/server/services/sandbox/factory';
 
 import {
   EXPERT_CHAT_CONFIG,
   EXPERT_PLUGINS,
   expertMarketIdentifier,
   EXPERTS,
+  type ExpertTemplate,
   findExpert,
   localized,
 } from './catalog';
 
 const log = debug('lobe-server:experts');
+
+/** Whether this deployment can run the expert: the coding expert needs the coding computer. */
+const offered = (expert: ExpertTemplate) =>
+  !expert.requiresCodingComputer || getSandboxProviderKind() === 'openbot';
 
 export interface ExpertListItem {
   /** The user's agent for this expert, once added */
@@ -65,7 +71,7 @@ export class ExpertService {
   async list(locale: string): Promise<ExpertListItem[]> {
     const added = await this.added();
 
-    return EXPERTS.map((expert) => ({
+    return EXPERTS.filter(offered).map((expert) => ({
       agentId: added.get(expert.id) ?? null,
       avatar: expert.avatar,
       backgroundColor: expert.backgroundColor,
@@ -78,12 +84,13 @@ export class ExpertService {
   /** Adds the expert, named in the user's language; adding it again returns the same agent. */
   async add(id: string, locale: string) {
     const expert = findExpert(id);
-    if (!expert) return;
+    if (!expert || !offered(expert)) return;
 
     const existing = (await this.added()).get(id);
     if (existing) return { agentId: existing, created: false };
 
     const agent = await new AgentModel(this.db, this.userId).create({
+      ...(expert.agencyConfig && { agencyConfig: expert.agencyConfig }),
       avatar: expert.avatar,
       backgroundColor: expert.backgroundColor,
       // Web search and reading only: experts run unattended in group chats

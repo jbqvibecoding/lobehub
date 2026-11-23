@@ -158,6 +158,32 @@ describe('mobile chatRouter.history', () => {
     await cleanupTestUser(testDB, chat.userId);
   });
 
+  it('shows a file a Claude Code run delivered as a card too', async () => {
+    const chat = await createConversation();
+    await say(chat, 'm-cc', 'tool', '', '2026-11-17T09:00:01Z');
+    await testDB.insert(messagePlugins).values({
+      apiName: 'deliverFile',
+      id: 'm-cc',
+      identifier: 'claude-code',
+      state: {
+        downloadUrl: '/f/file-2',
+        fileId: 'file-2',
+        filename: 'patch.diff',
+        size: 900,
+        success: true,
+      },
+      type: 'default',
+      userId: chat.userId,
+    });
+
+    const { lines } = await callerFor(chat.userId).history({ topicId: chat.topicId });
+
+    expect(lines.find((line) => line.id === 'm-cc')).toMatchObject({
+      file: { id: 'file-2', name: 'patch.diff', url: expect.stringMatching(/\/f\/file-2$/) },
+    });
+    await cleanupTestUser(testDB, chat.userId);
+  });
+
   it('says a run is still writing while the runtime reports it active', async () => {
     const chat = await createConversation('op-2');
     await say(chat, 'm-user', 'user', 'Hi', '2026-11-17T09:00:00Z');

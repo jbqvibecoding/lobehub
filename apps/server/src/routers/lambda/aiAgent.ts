@@ -29,6 +29,11 @@ import { AiAgentService } from '@/server/services/aiAgent';
 import { AiChatService } from '@/server/services/aiChat';
 import { getFileProxyUrl } from '@/server/services/file';
 import { HeterogeneousAgentService } from '@/server/services/heterogeneousAgent';
+import {
+  abortHeteroInterventions,
+  settleHeteroIntervention,
+  trackHeteroInterventions,
+} from '@/server/services/heterogeneousAgent/interventions';
 import { backgroundInterventionConfig } from '@/server/services/toolApproval/background';
 
 const log = debug('lobe-server:ai-agent-router');
@@ -1342,6 +1347,14 @@ export const aiAgentRouter = router({
         operationId,
         topicId,
       });
+      // A question or approval the run now waits on goes to the phone's list
+      await trackHeteroInterventions(ctx.serverDB, {
+        events: events as AgentStreamEvent[],
+        operationId,
+        topicId,
+        userId: ctx.userId,
+        workspaceId: wsId,
+      }).catch((error) => log('heteroIngest: tracking interventions failed: %O', error));
       return { ack: true as const };
     } catch (error: any) {
       // Preserve deliberate auth errors (e.g. the ownership FORBIDDEN) instead
@@ -1403,6 +1416,12 @@ export const aiAgentRouter = router({
         sessionId,
         topicId,
       });
+      // Nothing of the ended run waits for the user any more
+      if (result !== 'cancelled') {
+        await abortHeteroInterventions(ctx.serverDB, ctx.userId, operationId).catch((error) =>
+          log('heteroFinish: releasing interventions failed: %O', error),
+        );
+      }
 
       return { ack: true as const };
     } catch (err: any) {
@@ -1417,6 +1436,69 @@ export const aiAgentRouter = router({
       });
     }
   }),
+
+  /**
+   * A Claude Code run on the coding computer hands a file to the user (`lobe_cc`'s `deliver_file`):
+   * the file is checked (there, not empty, a real Office file or PDF), stored as the user's, and
+   * shown in the chat as a file card. Only the run's own token may call it, for its own run.
+   */
+  heteroDeliverFile: heteroAgentProcedure
+    .input(
+      z.object({
+        operationId: z.string().min(1),
+        path: z.string().min(1).max(1024),
+        topicId: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { operationId, path, topicId } = input;
+      assertRunScope(ctx.heteroRunScope, { operationId, topicId });
+      if (ctx.heteroAuthKind !== 'run') {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only a cloud coding run delivers files',
+        });
+      }
+      const [topicRow] = await ctx.serverDB
+        .select({ workspaceId: topics.workspaceId })
+        .from(topics)
+        .where(and(eq(topics.id, topicId), eq(topics.userId, ctx.userId)))
+        .limit(1);
+      if (!topicRow) throw new TRPCError({ code: 'FORBIDDEN', message: 'Topic not found' });
+
+      const workspaceId = topicRow.workspaceId ?? undefined;
+      // Loaded here: the sandbox graph touches server-only env when it loads
+      const [{ createSandboxService }, { FileService }, { MarketService }] = await Promise.all([
+        import('@/server/services/sandbox'),
+        import('@/server/services/file'),
+        import('@/server/services/market'),
+      ]);
+      const filename = path.split('/').findLast(Boolean) ?? path;
+      const delivered = await createSandboxService({
+        fileService: new FileService(ctx.serverDB, ctx.userId, workspaceId),
+        marketService: new MarketService({ userInfo: { userId: ctx.userId } }),
+        purpose: 'coding',
+        serverDB: ctx.serverDB,
+        topicId,
+        userId: ctx.userId,
+      }).exportAndUploadFile(path, filename);
+
+      if (!delivered.success || !delivered.fileId) {
+        log('heteroDeliverFile: %s refused: %s', path, delivered.error?.message);
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: delivered.error?.message ?? 'The file could not be delivered',
+        });
+      }
+      log('heteroDeliverFile: op=%s delivered %s as %s', operationId, path, delivered.fileId);
+      return {
+        fileId: delivered.fileId,
+        filename: delivered.filename,
+        mimeType: delivered.mimeType,
+        size: delivered.size,
+        url: delivered.url,
+      };
+    }),
 
   /**
    * Exec-side long-poll for remote Human-in-the-loop (op-JWT auth, same as
@@ -1482,8 +1564,25 @@ export const aiAgentRouter = router({
    */
   submitHeteroIntervention: aiAgentWriteProcedure
     .input(SubmitHeteroInterventionSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const { operationId, toolCallId, stepIndex, result, cancelled, cancelReason } = input;
+
+      // Only the run's owner answers it; any other caller would be writing into a stranger's run
+      const [operationRow] = await ctx.serverDB
+        .select({ userId: agentOperations.userId })
+        .from(agentOperations)
+        .where(eq(agentOperations.id, operationId))
+        .limit(1);
+      if (operationRow && operationRow.userId !== ctx.userId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Operation not owned by the caller' });
+      }
+      // Answered here: the phone stops listing it
+      await settleHeteroIntervention(
+        ctx.serverDB,
+        ctx.userId,
+        toolCallId,
+        cancelled ? 'rejected' : 'approved',
+      );
 
       log(
         'submitHeteroIntervention: op=%s toolCallId=%s cancelled=%s',

@@ -10,12 +10,17 @@ import { expertMarketIdentifier, EXPERTS } from '../catalog';
 import { ExpertService } from '../index';
 
 vi.mock('@/database/server', () => ({ serverDB: {} }));
+const sandbox = vi.hoisted(() => ({ kind: 'market' }));
+vi.mock('@/server/services/sandbox/factory', () => ({
+  getSandboxProviderKind: () => sandbox.kind,
+}));
 
 const db = await getTestDB();
 const userId = 'experts-user';
 const otherId = 'experts-other';
 
 beforeEach(async () => {
+  sandbox.kind = 'market';
   await db.delete(users);
   await db.insert(users).values([{ id: userId }, { id: otherId }]);
 });
@@ -24,7 +29,10 @@ describe('ExpertService', () => {
   it('lists the whole roster in the user’s language, none added yet', async () => {
     const list = await new ExpertService(db, userId).list('zh-CN');
 
-    expect(list.map((expert) => expert.id)).toEqual(EXPERTS.map((expert) => expert.id));
+    // The coding expert needs the coding computer, which the Market sandbox does not have
+    expect(list.map((expert) => expert.id)).toEqual(
+      EXPERTS.filter((expert) => expert.id !== 'coder').map((expert) => expert.id),
+    );
     expect(list.find((expert) => expert.id === 'researcher')).toMatchObject({
       agentId: null,
       title: '研究员',
@@ -67,6 +75,24 @@ describe('ExpertService', () => {
     });
     expect(agent.systemRole).toContain('hand over with exportFile');
     expect(agent.systemRole).not.toContain('You can search the web and read pages. You cannot');
+  });
+
+  it('offers the coder where the coding computer runs, as a Claude Code agent', async () => {
+    const experts = new ExpertService(db, userId);
+    expect(await experts.add('coder', 'en-US')).toBeUndefined();
+
+    sandbox.kind = 'openbot';
+    expect((await experts.list('zh-CN')).find((expert) => expert.id === 'coder')).toMatchObject({
+      title: '编程助手',
+    });
+    const { agentId } = (await experts.add('coder', 'zh-CN'))!;
+    const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+    expect(agent.agencyConfig).toMatchObject({
+      executionTarget: 'sandbox',
+      heterogeneousProvider: { type: 'claude-code' },
+    });
+    expect(agent.agencyConfig?.heterogeneousProvider?.systemContext).toContain('push_changes');
+    expect(agent.plugins).toEqual([]);
   });
 
   it('gives an expert without tools of its own web search and reading only, and says so', () => {

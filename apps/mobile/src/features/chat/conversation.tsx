@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 
 import { ApprovalCard } from '@/features/approvals/approval-card';
+import type { QuestionAnswer } from '@/features/approvals/types';
 import { useRespondToApproval } from '@/features/approvals/use-approvals';
 import { t, tf } from '@/i18n/strings';
 import type { ApiClient } from '@/lib/api-client';
@@ -135,8 +136,13 @@ export const Conversation = ({
   };
 
   const answer =
-    (line: Extract<ChatLine, { kind: 'tool' }>) => async (decision: 'approved' | 'rejected') => {
-      const result = await respond.mutateAsync({ decision, toolMessageId: line.id });
+    (line: Extract<ChatLine, { kind: 'tool' }>) =>
+    async (decision: 'approved' | 'rejected', given?: QuestionAnswer) => {
+      const result = await respond.mutateAsync({
+        answer: given,
+        decision,
+        toolMessageId: line.id,
+      });
       if (topicId) await queryClient.invalidateQueries({ queryKey: chatHistoryKey(topicId) });
       return result;
     };

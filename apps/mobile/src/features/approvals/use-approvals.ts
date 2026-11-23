@@ -4,7 +4,7 @@ import { activityKey } from '@/features/activity/use-activity';
 import type { ApiClient } from '@/lib/api-client';
 import { apiErrorCode } from '@/lib/api-client';
 
-import type { ApprovalDecision, PendingApproval } from './types';
+import type { ApprovalDecision, PendingApproval, QuestionAnswer } from './types';
 
 export const pendingApprovalsKey = ['approvals', 'pending'] as const;
 
@@ -15,6 +15,8 @@ export const usePendingApprovals = (api: ApiClient) =>
   });
 
 export interface RespondInput {
+  /** The answer to a coding expert's question, with `approved` */
+  answer?: QuestionAnswer;
   decision: ApprovalDecision;
   reason?: string;
   toolMessageId: string;

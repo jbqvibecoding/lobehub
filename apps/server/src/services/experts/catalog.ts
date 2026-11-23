@@ -15,7 +15,7 @@
  */
 import { CloudSandboxIdentifier } from '@lobechat/builtin-tool-cloud-sandbox';
 import { WebBrowsingManifest } from '@lobechat/builtin-tool-web-browsing';
-import type { LobeAgentChatConfig } from '@lobechat/types';
+import type { LobeAgentAgencyConfig, LobeAgentChatConfig } from '@lobechat/types';
 
 /**
  * The tools an expert gets unless it names its own: web search and page reading, nothing else. In
@@ -34,6 +34,8 @@ export interface ExpertText {
 }
 
 export interface ExpertTemplate {
+  /** An expert that runs as Claude Code instead of a model with tools */
+  agencyConfig?: LobeAgentAgencyConfig;
   avatar: string;
   backgroundColor: string;
   description: ExpertText;
@@ -41,6 +43,8 @@ export interface ExpertTemplate {
   id: string;
   /** Its tools; `EXPERT_PLUGINS` when not given */
   plugins?: string[];
+  /** Offered only where the deployment has the user's coding computer (`openbot`) */
+  requiresCodingComputer?: boolean;
   systemRole: string;
   title: ExpertText;
   /** Raised when the prompt changes, so an update can tell an old copy from a new one */
@@ -64,6 +68,42 @@ const MAKES_FILES =
   'You can search the web and read pages, and you can write and run scripts on the cloud computer to make files, which you hand over with exportFile. You cannot send messages, publish, buy, book or change anything outside this chat; when something needs doing, say what and leave it to the user or Biber.';
 
 const prompt = (body: string, abilities = WEB_ONLY) => `${body.trim()}\n\n${teamRules(abilities)}`;
+
+/**
+ * What the coding expert is told before every request, in Claude Code. The workspace and the
+ * absence of credentials are described by the run itself (`buildCloudHeteroContext`).
+ */
+const CODER_CONTEXT = `
+You are Coder, the coding expert on the user's team, working in Claude Code on the user's coding computer. Biber, the user's personal assistant, hosts group chats and may hand you a request there; answer it directly and completely, as yourself.
+
+How you work:
+1. Get the code: for one of the user's GitHub repositories, call list_repos to see which ones you may use and open_repo to get one; otherwise work in a folder of your own under /workspace.
+2. Read before you change: follow the project's conventions, keep changes small and on topic.
+3. Check your work: run the project's tests, type checks or build, whichever it has, and fix what breaks. Say plainly what you could not run.
+4. Hand it over: a change for the user's repository goes through push_changes, which asks the user on their phone before anything reaches GitHub; never run git push yourself. A file the user should get (a report, a build, a patch) goes through deliver_file.
+5. Finish with a short summary: what you changed, how you checked it, and what is left.
+
+Never invent results, test runs or file contents. Reply in the language the user writes in.`.trim();
+
+/** The coding expert, offered where the coding computer exists. */
+export const CODER: ExpertTemplate = {
+  agencyConfig: {
+    executionTarget: 'sandbox',
+    heterogeneousProvider: { systemContext: CODER_CONTEXT, type: 'claude-code' },
+  },
+  avatar: '🧑‍💻',
+  backgroundColor: 'rgba(91,180,140,0.15)',
+  description: {
+    en: 'Works on your code in Claude Code: reads it, changes it, runs the tests, and asks you on your phone before anything reaches GitHub.',
+    zh: '用 Claude Code 改你的代码：读懂、修改、跑测试；推到 GitHub 之前先在手机上问你。',
+  },
+  id: 'coder',
+  plugins: [],
+  requiresCodingComputer: true,
+  systemRole: CODER_CONTEXT,
+  title: { en: 'Coder', zh: '编程助手' },
+  version: 1,
+};
 
 export const EXPERTS: ExpertTemplate[] = [
   {
@@ -200,6 +240,7 @@ Stay true: every number, name and claim comes from the user, from a source you r
     title: { en: 'Document Maker', zh: '文档助手' },
     version: 1,
   },
+  CODER,
 ];
 
 export const expertMarketIdentifier = (id: string) => `biber-expert:${id}`;

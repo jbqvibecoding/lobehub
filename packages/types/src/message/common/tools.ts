@@ -5,11 +5,14 @@ import type { LobeToolRenderType } from '../../tool';
 
 // ToolIntervention must be defined first to avoid circular dependency
 export interface ToolIntervention {
+  /** A Claude Code / Codex run's call: the run that waits for the answer */
+  operationId?: string;
   rejectedReason?: string;
   status?: 'pending' | 'approved' | 'rejected' | 'aborted' | 'none';
 }
 
 export const ToolInterventionSchema = z.object({
+  operationId: z.string().optional(),
   rejectedReason: z.string().optional(),
   status: z.enum(['pending', 'approved', 'rejected', 'aborted', 'none']).optional(),
 });

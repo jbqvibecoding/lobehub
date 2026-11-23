@@ -148,6 +148,7 @@ import { resolveAttachmentsByFileIds } from '@/server/services/file/resolveAttac
 import { HeterogeneousAgentService } from '@/server/services/heterogeneousAgent';
 import type { ConversationHistoryEntry } from '@/server/services/heterogeneousAgent/cloudHeteroContext';
 import { buildCloudHeteroContext } from '@/server/services/heterogeneousAgent/cloudHeteroContext';
+import { abortHeteroInterventions } from '@/server/services/heterogeneousAgent/interventions';
 import { buildRemoteDeviceHeteroContext } from '@/server/services/heterogeneousAgent/remoteDeviceHeteroContext';
 import { MarketService } from '@/server/services/market';
 import { loadUserMemoryForRun } from '@/server/services/memory/userMemory/forRun';
@@ -706,6 +707,10 @@ export class AiAgentService {
       heteroSandboxRun: null,
       runningOperation: null,
     });
+    // A question the stopped run asked no longer waits for an answer
+    await abortHeteroInterventions(this.db, this.userId, operationId).catch((error) =>
+      log('stopSandboxHeteroRun: releasing interventions failed: %O', error),
+    );
     return true;
   }
 

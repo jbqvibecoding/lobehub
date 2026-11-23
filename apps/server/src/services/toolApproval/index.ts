@@ -2,12 +2,20 @@ import { RequestTrigger } from '@lobechat/types';
 import debug from 'debug';
 
 import { MessageModel } from '@/database/models/message';
+import { NotificationModel } from '@/database/models/notification';
 import { TaskModel } from '@/database/models/task';
 import { TaskTopicModel } from '@/database/models/taskTopic';
 import { TopicModel } from '@/database/models/topic';
 import type { LobeChatDatabase } from '@/database/type';
 import { AiAgentService } from '@/server/services/aiAgent';
+import { toolApprovalDedupeKey } from '@/server/services/approvalNotification';
 import { botTopicWebhookBody, buildBotDeliveryHooks } from '@/server/services/bot/deliveryHooks';
+import {
+  ASK_USER_API_NAME,
+  HETERO_TOOL_IDENTIFIER,
+  type HeteroAnswer,
+  sendHeteroAnswer,
+} from '@/server/services/heterogeneousAgent/interventions';
 import { TaskLifecycleService } from '@/server/services/taskLifecycle';
 import { taskCompletionHook } from '@/server/services/taskRunner/completionHook';
 
@@ -29,6 +37,8 @@ export class ToolApprovalError extends Error {
 }
 
 interface AnswerToolApprovalParams {
+  /** The user's answer to a Claude Code question (`askUserQuestion`), with `approved` */
+  answer?: HeteroAnswer;
   /**
    * The chat message that shows the request, when the answer came from that chat; the resumed
    * run edits it into its progress and reply instead of posting a new message.
@@ -52,6 +62,7 @@ interface AnswerToolApprovalParams {
 export const answerToolApproval = async (
   db: LobeChatDatabase,
   {
+    answer,
     chatMessageId,
     decision,
     reason,
@@ -73,6 +84,32 @@ export const answerToolApproval = async (
   if (!plugin.toolCallId) {
     throw new ToolApprovalError('BAD_REQUEST', 'This tool call has no id to resume');
   }
+
+  // A Claude Code call waits in its sandbox: the answer goes to that run, no new run starts
+  if (plugin.identifier === HETERO_TOOL_IDENTIFIER) {
+    const operationId = plugin.intervention?.operationId;
+    if (!operationId) throw new ToolApprovalError('BAD_REQUEST', 'This call has no run waiting');
+    if (decision === 'approved' && plugin.apiName === ASK_USER_API_NAME && !answer) {
+      throw new ToolApprovalError('BAD_REQUEST', 'A question needs an answer');
+    }
+    if (!(await messageModel.claimPendingIntervention(toolMessageId, decision))) {
+      throw new ToolApprovalError('CONFLICT', 'This tool call was already answered');
+    }
+    log('answering %s of run %s (%s via %s)', toolMessageId, operationId, decision, via);
+    await sendHeteroAnswer({
+      answer,
+      decision,
+      operationId,
+      reason,
+      toolCallId: plugin.toolCallId,
+    });
+    // Answered: its "needs you" notification is done with, on every device
+    await new NotificationModel(db, userId)
+      .markAsReadByDedupeKeys([toolApprovalDedupeKey(plugin.toolCallId)])
+      .catch((error) => log('clearing the notification of %s failed: %O', toolMessageId, error));
+    return { operationId };
+  }
+
   if (!(await messageModel.claimPendingIntervention(toolMessageId, decision))) {
     throw new ToolApprovalError('CONFLICT', 'This tool call was already answered');
   }

@@ -41,6 +41,13 @@ export const approvalRouter = router({
     .use(withScopedPermission('message:create'))
     .input(
       z.object({
+        /** The answer to a coding expert's question, with `approved` */
+        answer: z
+          .record(
+            z.string().max(2000),
+            z.union([z.string().max(4000), z.array(z.string().max(2000))]),
+          )
+          .optional(),
         decision: z.enum(['approved', 'rejected']),
         /** Shown to the agent when the call is refused. */
         reason: z.string().max(2000).optional(),

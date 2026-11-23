@@ -179,6 +179,8 @@ export async function spawnHeteroSandbox(
           // No telemetry, error reports or update checks from the sandbox
           'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1',
           'DISABLE_AUTOUPDATER=1',
+          // `lh` mounts Biber's coding tools (deliver_file, ...) on its lobe_cc MCP server
+          'LOBEHUB_CODING_TOOLS=1',
         ]
       : []),
   ].join(' ');

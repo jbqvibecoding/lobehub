@@ -953,6 +953,57 @@ describe('ClaudeCodeAdapter', () => {
     });
   });
 
+  describe('Biber’s lobe_cc tools', () => {
+    const drive = (name: string, content: string, isError = false) => {
+      const adapter = new ClaudeCodeAdapter();
+      adapter.adapt({ subtype: 'init', type: 'system' });
+      const started = adapter.adapt({
+        message: {
+          content: [{ id: 'toolu_d', input: { path: 'out/report.pdf' }, name, type: 'tool_use' }],
+          id: 'msg_1',
+        },
+        type: 'assistant',
+      });
+      const ended = adapter.adapt({
+        message: {
+          content: [{ content, is_error: isError, tool_use_id: 'toolu_d', type: 'tool_result' }],
+          role: 'user',
+        },
+        type: 'user',
+      });
+      return { ended, started };
+    };
+    const file = {
+      fileId: 'file-1',
+      filename: 'report.pdf',
+      mimeType: 'application/pdf',
+      size: 1234,
+      url: '/f/file-1',
+    };
+
+    it('stores deliver_file as deliverFile, and its result as the file card', () => {
+      const { ended, started } = drive('mcp__lobe_cc__deliver_file', JSON.stringify(file));
+
+      expect(JSON.stringify(started)).toContain('"apiName":"deliverFile"');
+      expect(ended.find((event) => event.type === 'tool_result')!.data.pluginState).toEqual({
+        downloadUrl: '/f/file-1',
+        fileId: 'file-1',
+        filename: 'report.pdf',
+        mimeType: 'application/pdf',
+        size: 1234,
+        success: true,
+      });
+    });
+
+    it('shows no card for a refused file, or for another tool that prints JSON', () => {
+      const refused = drive('mcp__lobe_cc__deliver_file', 'report.pdf is empty', true);
+      const other = drive('Bash', JSON.stringify(file));
+
+      expect(refused.ended.find((e) => e.type === 'tool_result')!.data.pluginState).toBeUndefined();
+      expect(other.ended.find((e) => e.type === 'tool_result')!.data.pluginState).toBeUndefined();
+    });
+  });
+
   describe('TodoWrite pluginState synthesis', () => {
     const driveTodoWrite = (adapter: ClaudeCodeAdapter, input: unknown, toolId = 't1') => {
       adapter.adapt({ subtype: 'init', type: 'system' });

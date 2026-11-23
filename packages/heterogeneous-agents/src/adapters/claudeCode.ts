@@ -139,6 +139,38 @@ const ASK_USER_MCP_TOOL_NAME = 'mcp__lobe_cc__ask_user_question';
  */
 const ASK_USER_API_NAME = 'askUserQuestion';
 
+/**
+ * Biber's `lobe_cc` tools, renamed to stable apiNames like `ask_user_question` above.
+ * `deliver_file` hands a file from the coding computer to the user; its result is the delivered
+ * file as JSON, which becomes the same `pluginState` as the cloud sandbox's `exportFile`, so the
+ * chat shows it as a file card.
+ */
+const LOBE_CC_API_NAMES: Record<string, string> = {
+  [ASK_USER_MCP_TOOL_NAME]: ASK_USER_API_NAME,
+  mcp__lobe_cc__deliver_file: 'deliverFile',
+  mcp__lobe_cc__list_repos: 'listRepos',
+  mcp__lobe_cc__open_repo: 'openRepo',
+  mcp__lobe_cc__push_changes: 'pushChanges',
+};
+
+/** The file card state for a `deliver_file` result; undefined when it delivered nothing. */
+export const deliveredFileState = (content: string) => {
+  try {
+    const file = JSON.parse(content) as Record<string, unknown>;
+    if (typeof file?.fileId !== 'string' || typeof file.filename !== 'string') return;
+    return {
+      downloadUrl: typeof file.url === 'string' ? file.url : undefined,
+      fileId: file.fileId,
+      filename: file.filename,
+      mimeType: typeof file.mimeType === 'string' ? file.mimeType : undefined,
+      size: typeof file.size === 'number' ? file.size : undefined,
+      success: true,
+    };
+  } catch {
+    return undefined;
+  }
+};
+
 /** Status of a single todo item in CC's `TodoWrite` tool_use. */
 type ClaudeCodeTodoStatus = 'pending' | 'in_progress' | 'completed';
 
@@ -759,6 +791,8 @@ export class ClaudeCodeAdapter implements AgentEventAdapter {
    * bounded.
    */
   private todoWriteInputs = new Map<string, TodoWriteArgs>();
+  /** `deliver_file` calls waiting for their result, whose JSON becomes a file card. */
+  private deliverFileCalls = new Set<string>();
   /**
    * Cached `TaskCreate.input` keyed by `tool_use.id`. Drained in `handleUser`
    * once the matching tool_result lands: at that point we parse the
@@ -1089,7 +1123,7 @@ export class ClaudeCodeAdapter implements AgentEventAdapter {
           // apiName so the renderer routes on `askUserQuestion` (clean,
           // domain-named) instead of the wire-prefixed MCP form. Identifier
           // stays `claude-code` because this remains a CC-side tool.
-          const apiName = block.name === ASK_USER_MCP_TOOL_NAME ? ASK_USER_API_NAME : block.name;
+          const apiName = LOBE_CC_API_NAMES[block.name] ?? block.name;
           const toolPayload: ToolCallPayload = {
             apiName,
             arguments: JSON.stringify(block.input || {}),
@@ -1117,6 +1151,7 @@ export class ClaudeCodeAdapter implements AgentEventAdapter {
           if (block.name === CC_TODO_WRITE_TOOL_NAME && block.input) {
             this.todoWriteInputs.set(block.id, block.input as TodoWriteArgs);
           }
+          if (block.name === 'mcp__lobe_cc__deliver_file') this.deliverFileCalls.add(block.id);
           // Task* tool inputs cached for the tool_result-time reducer.
           // Only TaskCreate / TaskUpdate carry payloads worth caching;
           // TaskList carries no input but we still need to remember the
@@ -1299,7 +1334,7 @@ export class ClaudeCodeAdapter implements AgentEventAdapter {
           // apiName so the renderer routes on `askUserQuestion` (clean,
           // domain-named) instead of the wire-prefixed MCP form. Identifier
           // stays `claude-code` because this remains a CC-side tool.
-          const apiName = block.name === ASK_USER_MCP_TOOL_NAME ? ASK_USER_API_NAME : block.name;
+          const apiName = LOBE_CC_API_NAMES[block.name] ?? block.name;
           const toolPayload: ToolCallPayload = {
             apiName,
             arguments: JSON.stringify(block.input || {}),
@@ -1552,6 +1587,9 @@ export class ClaudeCodeAdapter implements AgentEventAdapter {
       // carries both doesn't clobber one. `data` is still raw base64 here; the
       // runtime pipeline uploads and rewrites these entries before persistence.
       let pluginState: Record<string, any> | undefined = todoWritePluginState ?? taskPluginState;
+      if (this.deliverFileCalls.delete(toolCallId) && !block.is_error) {
+        pluginState = deliveredFileState(resultContent) ?? pluginState;
+      }
       if (images.length > 0) {
         pluginState = { ...pluginState, images };
       }

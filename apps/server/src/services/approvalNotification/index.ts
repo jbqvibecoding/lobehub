@@ -33,12 +33,15 @@ export const APPROVAL_PUSH_CATEGORY = 'approval';
 export const notifyPendingApprovals = async (
   db: LobeChatDatabase,
   {
+    actions = true,
     agentId,
     pendingTools,
     topicId,
     userId,
     workspaceId,
   }: {
+    /** Approve and Reject buttons on a single call's push; off for a question that needs words */
+    actions?: boolean;
     agentId?: string;
     pendingTools: PendingTool[];
     topicId?: string;
@@ -76,7 +79,7 @@ export const notifyPendingApprovals = async (
       : undefined;
   const result = await push.deliver({
     actionUrl,
-    ...(toolMessageId && { categoryId: APPROVAL_PUSH_CATEGORY }),
+    ...(toolMessageId && actions && { categoryId: APPROVAL_PUSH_CATEGORY }),
     // `kind` tells the phone this is an approval, unlike routine results and proactive messages
     data: { kind: 'approval', ...(toolMessageId && { toolMessageId }) },
     content: TEXT.en.summary(tools),

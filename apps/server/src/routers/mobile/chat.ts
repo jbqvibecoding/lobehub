@@ -102,8 +102,12 @@ const deliveredFile = (row: {
   plugin?: { apiName?: string; identifier?: string };
   pluginState?: unknown;
 }): ChatFile | undefined => {
-  if (row.plugin?.identifier !== 'lobe-cloud-sandbox' || row.plugin.apiName !== 'exportFile')
-    return;
+  const exported =
+    row.plugin?.identifier === 'lobe-cloud-sandbox' && row.plugin.apiName === 'exportFile';
+  // A Claude Code run's `deliver_file`, with the same state (see the claude-code adapter)
+  const delivered =
+    row.plugin?.identifier === 'claude-code' && row.plugin.apiName === 'deliverFile';
+  if (!exported && !delivered) return;
   const state = row.pluginState as
     | {
         downloadUrl?: string;

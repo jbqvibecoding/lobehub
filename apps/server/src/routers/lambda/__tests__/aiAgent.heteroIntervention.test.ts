@@ -46,7 +46,12 @@ vi.mock('@/server/services/aiAgent', () => ({
 vi.mock('@/server/services/aiChat', () => ({
   AiChatService: vi.fn().mockImplementation(() => ({})),
 }));
-const hetero = vi.hoisted(() => ({ finish: vi.fn(), ingest: vi.fn() }));
+const hetero = vi.hoisted(() => ({ exportFile: vi.fn(), finish: vi.fn(), ingest: vi.fn() }));
+vi.mock('@/server/services/sandbox', () => ({
+  createSandboxService: vi.fn(() => ({ exportAndUploadFile: hetero.exportFile })),
+}));
+vi.mock('@/server/services/file', () => ({ FileService: vi.fn() }));
+vi.mock('@/server/services/market', () => ({ MarketService: vi.fn() }));
 vi.mock('@/server/services/heterogeneousAgent', () => ({
   HeterogeneousAgentService: vi
     .fn()
@@ -176,11 +181,13 @@ describe('aiAgentRouter — remote Human-in-the-loop', () => {
       const otherUserId = await createTestUser(serverDB);
       await insertOperation('op-others', otherUserId);
       // The victim's answer lands on the stream…
-      await userCaller().submitHeteroIntervention({
-        operationId: 'op-others',
-        result: { secret: 'leak me' },
-        toolCallId: 't-victim',
-      });
+      await aiAgentRouter
+        .createCaller({ jwtPayload: { userId: otherUserId }, userId: otherUserId } as any)
+        .submitHeteroIntervention({
+          operationId: 'op-others',
+          result: { secret: 'leak me' },
+          toolCallId: 't-victim',
+        });
 
       // …but a different signed-in user must not be able to long-poll it.
       await expect(
@@ -297,6 +304,96 @@ describe('aiAgentRouter — remote Human-in-the-loop', () => {
       });
 
       expect(res.events[0].data).toMatchObject({ toolCallId: 't-run' });
+    });
+  });
+
+  it('refuses an answer to someone else’s run', async () => {
+    const otherUserId = await createTestUser(serverDB);
+    await insertOperation('op-not-mine', otherUserId);
+
+    await expect(
+      userCaller().submitHeteroIntervention({
+        operationId: 'op-not-mine',
+        result: { answer: 'yes' },
+        toolCallId: 't-x',
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(store.events).toHaveLength(0);
+    await cleanupTestUser(serverDB, otherUserId);
+  });
+
+  describe('heteroDeliverFile', () => {
+    const runCaller = (op: string, topic: string) =>
+      aiAgentRouter.createCaller({
+        jwtPayload: { userId },
+        oidcAuth: { op, purpose: 'hetero-run', sub: userId, topic },
+      } as any);
+
+    beforeEach(async () => {
+      hetero.exportFile.mockReset();
+      const { topics } = await import('@/database/schemas');
+      await serverDB.insert(topics).values({ id: 'tpc-file', title: 'Report', userId });
+    });
+
+    it('stores the run’s file from the coding computer and returns what the card shows', async () => {
+      hetero.exportFile.mockResolvedValue({
+        fileId: 'file-1',
+        filename: 'report.pdf',
+        mimeType: 'application/pdf',
+        size: 1234,
+        success: true,
+        url: '/f/file-1',
+      });
+
+      const file = await runCaller('op-file', 'tpc-file').heteroDeliverFile({
+        operationId: 'op-file',
+        path: '/workspace/out/report.pdf',
+        topicId: 'tpc-file',
+      });
+
+      expect(file).toEqual({
+        fileId: 'file-1',
+        filename: 'report.pdf',
+        mimeType: 'application/pdf',
+        size: 1234,
+        url: '/f/file-1',
+      });
+      expect(hetero.exportFile).toHaveBeenCalledWith('/workspace/out/report.pdf', 'report.pdf');
+      const { createSandboxService } = await import('@/server/services/sandbox');
+      expect(createSandboxService).toHaveBeenCalledWith(
+        expect.objectContaining({ purpose: 'coding', topicId: 'tpc-file', userId }),
+      );
+    });
+
+    it('tells the run why a file was refused', async () => {
+      hetero.exportFile.mockResolvedValue({
+        error: { message: '/workspace/out/empty.pdf is empty (0 bytes).' },
+        filename: 'empty.pdf',
+        success: false,
+      });
+
+      await expect(
+        runCaller('op-file', 'tpc-file').heteroDeliverFile({
+          operationId: 'op-file',
+          path: '/workspace/out/empty.pdf',
+          topicId: 'tpc-file',
+        }),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: expect.stringContaining('empty') });
+    });
+
+    it('is only for a run’s own token, for its own run', async () => {
+      const input = { operationId: 'op-file', path: '/workspace/a.pdf', topicId: 'tpc-file' };
+
+      await expect(
+        runCaller('op-other', 'tpc-file').heteroDeliverFile(input),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(heteroCaller().heteroDeliverFile(input)).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+      await expect(ownerTokenCaller(userId).heteroDeliverFile(input)).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+      expect(hetero.exportFile).not.toHaveBeenCalled();
     });
   });
 });

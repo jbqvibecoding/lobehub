@@ -92,7 +92,12 @@ export interface McpToolResult {
  */
 export interface McpExtraTool {
   description: string;
-  handler: (operationId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
+  handler: (
+    operationId: string,
+    args: Record<string, unknown>,
+    /** Claude Code's own tool_use id for this call, when it sends one */
+    call: { toolCallId?: string },
+  ) => Promise<McpToolResult>;
   inputSchema: z.ZodRawShape;
   name: string;
   title?: string;
@@ -412,8 +417,11 @@ export class LobeBuiltinMcpServer {
             "Missing 'op' query parameter on MCP server URL — producer should append ?op=<operationId>",
           );
         }
+        const ccToolUseId = extra._meta?.['claudecode/toolUseId'];
         try {
-          return await tool.handler(operationId, (args ?? {}) as Record<string, unknown>);
+          return await tool.handler(operationId, (args ?? {}) as Record<string, unknown>, {
+            toolCallId: typeof ccToolUseId === 'string' ? ccToolUseId : undefined,
+          });
         } catch (error) {
           return errorResult(String((error as Error)?.message ?? error));
         }

@@ -6,7 +6,8 @@ import { type Palette, useColors } from '@/theme/colors';
 
 import { confirmWithBiometrics } from './confirm-with-biometrics';
 import { describeToolCall } from './describe-tool-call';
-import type { ApprovalDecision, PendingApproval, SecretKind } from './types';
+import { isQuestion, QuestionCard } from './question-card';
+import type { ApprovalDecision, PendingApproval, QuestionAnswer, SecretKind } from './types';
 
 const SECRET_NAMES: Record<SecretKind, StringKey> = {
   api_key: 'secretApiKey',
@@ -18,11 +19,21 @@ const SECRET_NAMES: Record<SecretKind, StringKey> = {
 
 interface ApprovalCardProps {
   approval: PendingApproval;
-  /** Resolves once the server took the answer; rejects to keep the card with an error. */
-  onRespond: (decision: ApprovalDecision) => Promise<{ alreadyAnswered: boolean }>;
+  /**
+   * Resolves once the server took the answer; rejects to keep the card with an error. `answer`
+   * comes with a coding expert's question.
+   */
+  onRespond: (
+    decision: ApprovalDecision,
+    answer?: QuestionAnswer,
+  ) => Promise<{ alreadyAnswered: boolean }>;
 }
 
-export const ApprovalCard = ({ approval, onRespond }: ApprovalCardProps) => {
+/** A waiting call: a question to answer, or a call to approve or reject. */
+export const ApprovalCard = (props: ApprovalCardProps) =>
+  isQuestion(props.approval) ? <QuestionCard {...props} /> : <ApproveOrReject {...props} />;
+
+const ApproveOrReject = ({ approval, onRespond }: ApprovalCardProps) => {
   const colors = useColors();
   const styles = createStyles(colors);
   const summary = describeToolCall(approval);

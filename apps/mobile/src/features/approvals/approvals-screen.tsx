@@ -87,7 +87,9 @@ export const ApprovalsScreen = () => {
         renderItem={({ item }) => (
           <ApprovalCard
             approval={item}
-            onRespond={(decision) => respond.mutateAsync({ decision, toolMessageId: item.id })}
+            onRespond={(decision, answer) =>
+              respond.mutateAsync({ answer, decision, toolMessageId: item.id })
+            }
           />
         )}
       />

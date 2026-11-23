@@ -21,6 +21,7 @@ import type { Command } from 'commander';
 import { getTrpcClient } from '../api/client';
 import { log } from '../utils/logger';
 import { TrpcIngestSink } from '../utils/TrpcIngestSink';
+import { buildCodingTools } from './hetero/codingTools';
 
 const SUPPORTED_AGENT_TYPES = new Set(['claude-code', 'codex']);
 const CODEX_REASONING_EFFORT_CONFIG_KEY = 'model_reasoning_effort';
@@ -522,7 +523,17 @@ const exec = async (options: ExecOptions): Promise<void> => {
   let askMcpConfigPath: string | undefined;
   const askPollAbort = new AbortController();
   if (serverIngest && agentType === 'claude-code' && serverIngester) {
-    askServer = new LobeBuiltinMcpServer();
+    // A cloud coding run (the server sets LOBEHUB_CODING_TOOLS) also gets Biber's coding tools
+    askServer = new LobeBuiltinMcpServer({
+      extraTools:
+        process.env.LOBEHUB_CODING_TOOLS === '1'
+          ? buildCodingTools({
+              client: await getTrpcClient(),
+              cwd: options.cwd || process.cwd(),
+              topicId: options.topic!,
+            })
+          : undefined,
+    });
     await askServer.start();
     askBridge = askServer.registerOperation(operationId);
     askMcpConfigPath = path.join(os.tmpdir(), `lobe-cc-mcp-${operationId}.json`);
