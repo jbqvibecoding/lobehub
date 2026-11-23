@@ -94,6 +94,8 @@ export interface GlobalServerConfig {
    * content away from services abroad, so it treats a missing value the same way.
    */
   region?: 'cn' | 'global';
+  /** Which cloud sandbox runs code here (`market`, `openbot` for Biber's cloud computer, …) */
+  sandboxProvider?: string;
   systemAgent?: PartialDeep<UserServiceModelConfig>;
   telemetry: {
     langfuse?: boolean;

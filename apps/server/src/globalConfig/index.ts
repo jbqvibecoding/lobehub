@@ -16,6 +16,7 @@ import { parseSSOProviders } from '@/libs/better-auth/utils/server';
 import { parseSystemAgent } from '@/server/globalConfig/parseSystemAgent';
 import { isStripeOffered } from '@/server/services/billing/stripe';
 import { isCloudComputerAvailable } from '@/server/services/computerTools';
+import { getSandboxProviderKind } from '@/server/services/sandbox/factory';
 import { isPhoneSignInEnabled } from '@/server/services/sms';
 import { type GlobalServerConfig } from '@/types/serverConfig';
 import { cleanObject } from '@/utils/object';
@@ -144,6 +145,7 @@ export const getServerGlobalConfig = async () => {
     },
     oAuthSSOProviders: getBetterAuthSSOProviders(),
     region: isMainlandRegion(regionEnv.APP_REGION) ? 'cn' : 'global',
+    sandboxProvider: getSandboxProviderKind(),
     systemAgent: parseSystemAgent(appEnv.SYSTEM_AGENT),
     telemetry: {
       langfuse: langfuseEnv.ENABLE_LANGFUSE,

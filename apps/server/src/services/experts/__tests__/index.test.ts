@@ -55,6 +55,13 @@ describe('ExpertService', () => {
     expect(await experts.add('no-such-expert', 'en-US')).toBeUndefined();
   });
 
+  it('gives an expert without tools of its own web search and reading only, and says so', () => {
+    for (const expert of EXPERTS.filter((item) => !item.plugins)) {
+      expect(expert.systemRole).toContain('You can search the web and read pages.');
+      expect(expert.systemRole).toContain('Reply in the language the user writes in.');
+    }
+  });
+
   it('keeps each user’s roster to themselves', async () => {
     const { agentId } = (await new ExpertService(db, userId).add('writer', 'en-US'))!;
     const other = new ExpertService(db, otherId);

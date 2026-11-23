@@ -7,16 +7,17 @@
  *   the DeepResearcher, ContentWriter, SeoGeoAgent, ECommerceResearcher and ECommerceWriter agents;
  * - OpenGrokBot (https://github.com/wolfqing/OpenGrokBot), MIT License, Copyright (c) 2026 wolfqing
  *   and OpenGrokBot contributors: the Scout research teammate's temperament.
- * See NOTICE at the repository root. The prompts are rewritten for Biber's tools: the experts can
- * search and read the web, nothing else, so nothing here asks for files, a sandbox or publishing.
+ * See NOTICE at the repository root. The prompts are rewritten for Biber's tools. Most experts can
+ * search and read the web and nothing else; an expert with tools of its own lists them in
+ * `plugins` and says what it can do in its prompt.
  */
 import { WebBrowsingManifest } from '@lobechat/builtin-tool-web-browsing';
 import type { LobeAgentChatConfig } from '@lobechat/types';
 
 /**
- * The tools an expert gets: web search and page reading, nothing else. In `custom` tool mode the
- * tool set is exactly the agent's plugins, so the defaults an ordinary agent gets (the cloud
- * computer, memory writes, skills, agent management) stay off.
+ * The tools an expert gets unless it names its own: web search and page reading, nothing else. In
+ * `custom` tool mode the tool set is exactly the agent's plugins, so the defaults an ordinary agent
+ * gets (the cloud computer, memory writes, skills, agent management) stay off.
  */
 export const EXPERT_PLUGINS = [WebBrowsingManifest.identifier];
 export const EXPERT_CHAT_CONFIG = {
@@ -35,20 +36,27 @@ export interface ExpertTemplate {
   description: ExpertText;
   /** Stable; stored on the user's agent as `biber-expert:<id>` */
   id: string;
+  /** Its tools; `EXPERT_PLUGINS` when not given */
+  plugins?: string[];
   systemRole: string;
   title: ExpertText;
   /** Raised when the prompt changes, so an update can tell an old copy from a new one */
   version: number;
 }
 
+/** What an expert without tools of its own can do. */
+const WEB_ONLY =
+  'You can search the web and read pages. You cannot send messages, publish, buy, book or change anything outside this chat; when something needs doing, say what and leave it to the user or Biber.';
+
 /** What every expert knows about where they work. */
-const TEAM_RULES = `
+const teamRules = (abilities: string) =>
+  `
 You are one of the experts on the user's team. Biber, the user's personal assistant, hosts group chats and may hand you a request there; answer that request directly and completely, as yourself.
-You can search the web and read pages. You cannot send messages, publish, buy, book or change anything outside this chat; when something needs doing, say what and leave it to the user or Biber.
+${abilities}
 Never invent sources, numbers, quotes, prices or product facts. Say plainly what you could not verify.
 Reply in the language the user writes in.`.trim();
 
-const prompt = (body: string) => `${body.trim()}\n\n${TEAM_RULES}`;
+const prompt = (body: string, abilities = WEB_ONLY) => `${body.trim()}\n\n${teamRules(abilities)}`;
 
 export const EXPERTS: ExpertTemplate[] = [
   {

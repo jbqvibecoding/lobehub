@@ -90,7 +90,7 @@ export class ExpertService {
       chatConfig: EXPERT_CHAT_CONFIG,
       description: localized(expert.description, locale),
       marketIdentifier: expertMarketIdentifier(expert.id),
-      plugins: EXPERT_PLUGINS,
+      plugins: expert.plugins ?? EXPERT_PLUGINS,
       systemRole: expert.systemRole,
       title: localized(expert.title, locale),
       // Not virtual: removing it from a group or deleting the group must not delete it

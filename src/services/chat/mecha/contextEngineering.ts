@@ -1,7 +1,10 @@
 import { LobeActivatorIdentifier } from '@lobechat/builtin-tool-activator';
 import { AgentBuilderIdentifier } from '@lobechat/builtin-tool-agent-builder';
 import { AgentManagementIdentifier } from '@lobechat/builtin-tool-agent-management';
-import { formatUploadedFilesPrompt } from '@lobechat/builtin-tool-cloud-sandbox';
+import {
+  formatUploadedFilesPrompt,
+  sandboxEnvironmentFor,
+} from '@lobechat/builtin-tool-cloud-sandbox';
 import {
   type ComposioServiceSummary,
   CredsIdentifier,
@@ -807,6 +810,13 @@ export const contextEngineering = async ({
       // NOTICE: required by builtin-tool-cloud-sandbox/src/systemRole.ts —
       // lists the topic files synced into the sandbox upload dir. Read lazily
       // from the chat store so we only pay the cost when the placeholder renders.
+      // What the sandbox has: the Market image or Biber's cloud computer
+      sandbox_environment: () =>
+        sandboxEnvironmentFor(
+          typeof window === 'undefined'
+            ? undefined
+            : window.global_serverConfigStore?.getState()?.serverConfig?.sandboxProvider,
+        ),
       sandbox_uploaded_files: () =>
         tools?.includes('lobe-cloud-sandbox')
           ? formatUploadedFilesPrompt(chatSelectors.currentUserFiles(getChatStoreState()))

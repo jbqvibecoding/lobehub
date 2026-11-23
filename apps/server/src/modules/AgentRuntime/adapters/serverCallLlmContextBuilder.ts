@@ -1,4 +1,5 @@
 import type { AgentState, CallLLMPayload } from '@lobechat/agent-runtime';
+import { sandboxEnvironmentFor } from '@lobechat/builtin-tool-cloud-sandbox';
 import {
   type ComposioServiceSummary,
   type CredSummary,
@@ -40,6 +41,7 @@ import { serverMessagesEngine } from '@/server/modules/Mecha/ContextEngineering'
 import { AgentDocumentsService } from '@/server/services/agentDocuments';
 import { MarketService } from '@/server/services/market';
 import { OnboardingService } from '@/server/services/onboarding';
+import { getSandboxProviderKind } from '@/server/services/sandbox/factory';
 import { UserProfileService } from '@/server/services/userProfile';
 import { toAgentContextDocuments } from '@/utils/agentDocumentContextMapping';
 
@@ -474,6 +476,7 @@ export const buildServerCallLlmContext = async ({
       language: serverLanguage,
       memory_effort: memoryEffort,
       sandbox_enabled: sandboxEnabled,
+      sandbox_environment: sandboxEnvironmentFor(getSandboxProviderKind()),
       sandbox_uploaded_files: sandboxUploadedFiles,
       session_date: sessionDate,
       username: serverUsername,
