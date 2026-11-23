@@ -122,6 +122,31 @@ export const signOperationJwt = async (userId: string): Promise<string> => {
 };
 
 /**
+ * Sign the token a cloud sandbox gets for one agent run. It names the run (`op`) and its
+ * conversation (`topic`) and is accepted only by the endpoints that run streams back through,
+ * and only for that run: code in the sandbox can report the run's output and nothing else.
+ * Every other endpoint refuses it (see `RUN_TOKEN_PURPOSES`).
+ */
+export const signHeteroRunJwt = async ({
+  operationId,
+  topicId,
+  userId,
+}: {
+  operationId: string;
+  topicId: string;
+  userId: string;
+}): Promise<string> => {
+  const { key, kid } = await getSigningKey();
+
+  return new SignJWT({ op: operationId, purpose: 'hetero-run', topic: topicId })
+    .setProtectedHeader({ alg: 'RS256', kid })
+    .setSubject(userId)
+    .setIssuedAt()
+    .setExpirationTime('4h')
+    .sign(key);
+};
+
+/**
  * Sign a connection token for a WORKSPACE-owned device. The device gateway reads
  * the `workspace_id` claim and routes the socket to the `workspace:<id>`
  * principal (so every workspace member can reach the device), instead of the

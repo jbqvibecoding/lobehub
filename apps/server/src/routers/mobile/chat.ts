@@ -2,6 +2,7 @@ import { BUILTIN_AGENT_SLUGS } from '@lobechat/builtin-agents';
 import { RequestTrigger } from '@lobechat/types';
 import { TRPCError } from '@trpc/server';
 import debug from 'debug';
+import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { withScopedPermission } from '@/business/server/trpc-middlewares/rbacPermission';
@@ -9,6 +10,8 @@ import { wsCompatProcedure } from '@/business/server/trpc-middlewares/workspaceA
 import { AgentModel } from '@/database/models/agent';
 import { MessageModel } from '@/database/models/message';
 import { TopicModel } from '@/database/models/topic';
+import { agentOperations } from '@/database/schemas';
+import type { LobeChatDatabase } from '@/database/type';
 import { appEnv } from '@/envs/app';
 import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
@@ -18,6 +21,18 @@ import { GROUP_MEMBER_LIMIT, GroupChatService } from '@/server/services/experts/
 import { describeApprovalCall } from '@/server/services/toolApproval/describe';
 
 const log = debug('lobe-server:mobile:chat');
+
+const HETERO_PROVIDERS = new Set(['claude-code', 'codex']);
+
+/** Whether an operation is a Claude Code / Codex run that has not finished. */
+const isHeteroRunGoing = async (db: LobeChatDatabase, userId: string, operationId: string) => {
+  const [row] = await db
+    .select({ provider: agentOperations.provider, status: agentOperations.status })
+    .from(agentOperations)
+    .where(and(eq(agentOperations.id, operationId), eq(agentOperations.userId, userId)))
+    .limit(1);
+  return row?.status === 'running' && HETERO_PROVIDERS.has(row.provider ?? '');
+};
 
 const chatProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) => {
   const { ctx } = opts;
@@ -235,6 +250,8 @@ export const chatRouter = router({
           .catch(() => null);
         if (status?.needsHumanInput) run = 'waiting';
         else if (status?.isActive) run = 'running';
+        // A Claude Code / Codex run is not in the runtime's registry; its operation row says
+        else if (await isHeteroRunGoing(ctx.serverDB, ctx.userId, operationId)) run = 'running';
       }
 
       const speakers: ChatSpeakers = {};

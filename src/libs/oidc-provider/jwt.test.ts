@@ -57,4 +57,33 @@ describe('validateOIDCJWT', () => {
     expect(error).not.toBeInstanceOf(TRPCError);
     expect((error as Error).message).toBe('JWKS_KEY public key retrieval failed: invalid JWK');
   });
+
+  it('refuses a run token unless the caller accepts them, and keeps the run it names', async () => {
+    for (const purpose of ['hetero-run', 'hetero-operation']) {
+      jwtVerifyMock.mockResolvedValue({
+        payload: { op: 'op-1', purpose, sub: 'user-1', topic: 'tpc-1' },
+      });
+      const { validateOIDCJWT } = await import('./jwt');
+
+      await expect(validateOIDCJWT('header.payload.signature')).rejects.toMatchObject({
+        code: 'UNAUTHORIZED',
+      });
+      const accepted = await validateOIDCJWT('header.payload.signature', { allowRunTokens: true });
+      expect(accepted.tokenData).toMatchObject({
+        op: 'op-1',
+        purpose,
+        sub: 'user-1',
+        topic: 'tpc-1',
+      });
+    }
+  });
+
+  it('accepts a user token wherever it is used', async () => {
+    jwtVerifyMock.mockResolvedValue({ payload: { purpose: 'cli-sandbox', sub: 'user-1' } });
+    const { validateOIDCJWT } = await import('./jwt');
+
+    await expect(validateOIDCJWT('header.payload.signature')).resolves.toMatchObject({
+      userId: 'user-1',
+    });
+  });
 });

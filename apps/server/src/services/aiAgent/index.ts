@@ -9,6 +9,7 @@ import {
   GeneralChatAgent,
   GraphAgent,
 } from '@lobechat/agent-runtime';
+import { parseOperationId } from '@lobechat/agent-tracing';
 import { BUILTIN_AGENT_SLUGS, getAgentRuntimeConfig } from '@lobechat/builtin-agents';
 import { builtinSkills } from '@lobechat/builtin-skills';
 import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
@@ -101,7 +102,7 @@ import {
 import { shouldEnableBuiltinSkill } from '@/helpers/skillFilters';
 import { buildConnectorManifests } from '@/libs/mcp/buildConnectorManifests';
 import { patchManifestWithPermissions } from '@/libs/mcp/connectorPermissionCheck';
-import { signOperationJwt, signUserJWT } from '@/libs/trpc/utils/internalJwt';
+import { signHeteroRunJwt, signOperationJwt, signUserJWT } from '@/libs/trpc/utils/internalJwt';
 import { createStreamEventManager } from '@/server/modules/AgentRuntime/factory';
 import { KeyVaultsGateKeeper } from '@/server/modules/KeyVaultsEncrypt';
 import type { EvalContext, ServerAgentToolsContext } from '@/server/modules/Mecha';
@@ -120,7 +121,7 @@ import { AgentRuntimeService } from '@/server/services/agentRuntime';
 import { getAbortError, isAbortError, throwIfAborted } from '@/server/services/agentRuntime/abort';
 import { CompletionLifecycle } from '@/server/services/agentRuntime/CompletionLifecycle';
 import { hookDispatcher } from '@/server/services/agentRuntime/hooks';
-import type { AgentHook } from '@/server/services/agentRuntime/hooks/types';
+import type { AgentHook, SerializedHook } from '@/server/services/agentRuntime/hooks/types';
 import type {
   ExecGroupMemberParams,
   ExecGroupMemberResult,
@@ -138,6 +139,7 @@ import {
 import { shouldSuppressSignal } from '@/server/services/agentSignal/suppressSignal';
 import { toolApprovalDedupeKey } from '@/server/services/approvalNotification';
 import { ComposioService } from '@/server/services/composio';
+import { assertUserInputAllowed, refusalMessageOf } from '@/server/services/contentSafety';
 import { deviceGateway } from '@/server/services/deviceGateway';
 import { getScopedOnlineDevices } from '@/server/services/deviceGateway/scopedDevices';
 import { DocumentService } from '@/server/services/document';
@@ -150,6 +152,7 @@ import { buildRemoteDeviceHeteroContext } from '@/server/services/heterogeneousA
 import { MarketService } from '@/server/services/market';
 import { loadUserMemoryForRun } from '@/server/services/memory/userMemory/forRun';
 import { resolveTimeZone } from '@/server/services/proactive/biber';
+import { getSandboxProviderKind } from '@/server/services/sandbox/factory';
 import { markdownToTxt } from '@/utils/markdownToTxt';
 
 import { resolveDeviceAccessPolicy } from './deviceAccessPolicy';
@@ -649,6 +652,60 @@ export class AiAgentService {
     } catch (err) {
       log('finalizeHeteroDispatchError: clear runningOperation failed (non-fatal): %O', err);
     }
+  }
+
+  /**
+   * Stops a Claude Code / Codex run going on in the cloud sandbox: kills its background command
+   * (the whole process group, so the CLI and the agent go together), then closes the run the way
+   * a finished one closes, since the killed CLI never reports back: the stream ends, the
+   * operation row becomes `interrupted`, the run's hooks fire and the topic is free again.
+   * Returns false when the topic's current run is not one.
+   */
+  private async stopSandboxHeteroRun(topicId: string, operationId: string): Promise<boolean> {
+    const topic = await this.topicModel.findById(topicId);
+    const run = topic?.metadata?.heteroSandboxRun;
+    const running = topic?.metadata?.runningOperation;
+    if (!run || run.operationId !== operationId || running?.operationId !== operationId) {
+      return false;
+    }
+
+    log('stopSandboxHeteroRun: op=%s command=%s', operationId, run.commandId);
+    const { createSandboxService } = await import('@/server/services/sandbox');
+    const killed = await createSandboxService({
+      marketService: this.marketService,
+      topicId,
+      userId: this.userId,
+    })
+      .callTool('killCommand', { commandId: run.commandId })
+      .catch((error: unknown) => ({ error, success: false }));
+    // A command that already ended cannot be killed; the run is closed all the same
+    if (!killed.success) log('stopSandboxHeteroRun: kill failed: %O', killed);
+
+    const hetero = new HeterogeneousAgentService(this.db, this.userId, {
+      workspaceId: this.workspaceId,
+    });
+    // Flushes what was streamed and ends the stream; on `cancelled` it leaves the hooks alone
+    await hetero
+      .heteroFinish({ agentType: run.heteroType, operationId, result: 'cancelled', topicId })
+      .catch((error) => log('stopSandboxHeteroRun: closing the stream failed: %O', error));
+    await new CompletionLifecycle(this.db, this.userId, this.workspaceId)
+      .completeOperation(
+        {
+          agentId: parseOperationId(operationId)?.agentId,
+          assistantMessageId: running.assistantMessageId,
+          operationId,
+          serializedHooks: running.hooks as SerializedHook[] | undefined,
+          topicId,
+          userId: this.userId,
+        },
+        'interrupted',
+      )
+      .catch((error) => log('stopSandboxHeteroRun: completing the run failed: %O', error));
+    await this.topicModel.updateMetadata(topicId, {
+      heteroSandboxRun: null,
+      runningOperation: null,
+    });
+    return true;
   }
 
   /**
@@ -1776,29 +1833,8 @@ export class AiAgentService {
       const topic = await this.topicModel.findById(topicId);
       const topicRepos: string[] = topic?.metadata?.repos ?? [];
 
-      // Resolve GitHub OAuth token for the sandbox. Always attempt so CC can use
-      // git / gh CLI even when no repos are pre-selected. Falls back to the
-      // standard 'github' key (LobeHub OAuth connector default); agent config can
-      // override via GITHUB_CRED_KEY.
-      let githubToken: string | undefined;
-      const githubCredKey =
-        agentConfig.agencyConfig?.heterogeneousProvider?.env?.GITHUB_CRED_KEY ?? 'github';
-      try {
-        // Inside a workspace, the GitHub cred must come from the workspace's shared
-        // organization credentials, not the operator's personal creds (LOBE-10978).
-        const credsAccessor = this.workspaceId
-          ? this.marketService.market.organizations.creds({ workspaceId: this.workspaceId })
-          : this.marketService.market.creds;
-        const list = await credsAccessor.list();
-        const cred = list.data?.find((c: { key: string }) => c.key === githubCredKey);
-        if (cred) {
-          const full = await credsAccessor.get(cred.id, { decrypt: true });
-          const vals = (full as any).plaintext ?? (full as any).values ?? {};
-          githubToken = vals.access_token ?? vals.token;
-        }
-      } catch (err) {
-        log('execAgent: failed to resolve GitHub token: %O', err);
-      }
+      // No GitHub token is resolved for the run: none goes into the sandbox. Code reaches it
+      // through the coding tools, which act on the server with the user's approval.
 
       // When resuming, inject the recent conversation turns as context so CC can
       // orient itself even if the native session file was cleared (sandbox recycled
@@ -1832,7 +1868,7 @@ export class AiAgentService {
       const systemContext = buildCloudHeteroContext({
         agentSystemContext: agentConfig.agencyConfig?.heterogeneousProvider?.systemContext,
         conversationHistory,
-        githubToken,
+        persistentWorkspace: getSandboxProviderKind() === 'openbot',
         repos: topicRepos,
       });
 
@@ -1856,7 +1892,6 @@ export class AiAgentService {
       const heteroParams = {
         agentType: heteroType,
         assistantMessageId: assistantMessageRecord.id,
-        githubToken,
         imageList: heteroImageList,
         jwt: operationJwt,
         operationId,
@@ -1898,6 +1933,39 @@ export class AiAgentService {
           threadId: appContext?.threadId ?? undefined,
         },
       });
+
+      // The mainland edition reviews what the user asks before a model sees it. A CLI agent's
+      // model calls do not go through this server's model runtime, so the prompt is checked
+      // here; a refused one ends the run like a failed dispatch.
+      try {
+        await assertUserInputAllowed([{ content: prompt, role: 'user' }]);
+      } catch (error) {
+        const refusal =
+          refusalMessageOf(error) ?? (error instanceof Error ? error.message : String(error));
+        log('execAgent: hetero prompt refused: %s', refusal);
+        await this.finalizeHeteroDispatchError({
+          agentId: resolvedAgentId,
+          assistantMessageId: assistantMessageRecord.id,
+          detail: refusal,
+          message: refusal,
+          operationId,
+          topicId,
+        });
+        return {
+          agentId: resolvedAgentId,
+          assistantMessageId: assistantMessageRecord.id,
+          autoStarted: false,
+          createdAt: new Date().toISOString(),
+          error: refusal,
+          message: 'Hetero agent prompt refused',
+          operationId,
+          status: 'error',
+          success: false,
+          timestamp: new Date().toISOString(),
+          topicId,
+          userMessageId: userMessageRecord?.id ?? parentMessageId ?? '',
+        };
+      }
 
       // Remote hetero agents (openclaw / hermes) dispatch to the device identified
       // by agencyConfig.boundDeviceId and communicate back via agentNotify.notify.
@@ -2202,30 +2270,51 @@ export class AiAgentService {
           // Mint a user-scoped `cli-sandbox` token instead (still `sub: userId`,
           // ownership-gated on heteroIngest/heteroFinish) with a run-length TTL
           // so it outlives a multi-hour run.
-          const sandboxJwt = await signUserJWT(this.userId, '4h');
+          // The sandbox runs code the user does not see, so it gets a token for this run only:
+          // it streams the run back (heteroIngest / heteroFinish / waitInterventionResponse for
+          // this operation and topic) and every other endpoint refuses it. CC capabilities that
+          // need user-scoped endpoints (e.g. echoing a `Read`-on-image result through the file
+          // store) degrade to their text fallback.
+          const sandboxJwt = await signHeteroRunJwt({
+            operationId,
+            topicId,
+            userId: this.userId,
+          });
+          const sandboxType = heteroType as 'claude-code' | 'codex';
           spawnHeteroSandbox({
             ...heteroParams,
-            agentType: heteroType as 'claude-code' | 'codex',
+            agentType: sandboxType,
             args: heteroExecArgs,
             jwt: sandboxJwt,
             marketService: this.marketService,
-          }).catch(async (err) => {
-            // Fire-and-forget: execAgent has already returned `autoStarted`, and
-            // the sandbox never reached the point of calling heteroFinish. Drive
-            // the same terminal funnel so the stranded run surfaces an error and
-            // its task is marked failed instead of hanging in `running`.
-            log('execAgent: hetero sandbox spawn failed: %O', err);
-            await this.finalizeHeteroDispatchError({
-              agentId: resolvedAgentId,
-              assistantMessageId: assistantMessageRecord.id,
-              detail: err instanceof Error ? err.message : String(err),
-              message: 'Hetero sandbox spawn failed',
-              operationId,
-              topicId,
-            }).catch((finalizeErr) =>
-              log('execAgent: sandbox-failure finalize failed: %O', finalizeErr),
-            );
-          });
+          })
+            .then(async (started) => {
+              // Remembered so stopping the run can kill it (see `stopSandboxHeteroRun`)
+              const commandId = started?.commandId;
+              if (!commandId) return;
+              await this.topicModel
+                .updateMetadata(topicId, {
+                  heteroSandboxRun: { commandId, heteroType: sandboxType, operationId },
+                })
+                .catch((err) => log('execAgent: recording the sandbox command failed: %O', err));
+            })
+            .catch(async (err) => {
+              // Fire-and-forget: execAgent has already returned `autoStarted`, and
+              // the sandbox never reached the point of calling heteroFinish. Drive
+              // the same terminal funnel so the stranded run surfaces an error and
+              // its task is marked failed instead of hanging in `running`.
+              log('execAgent: hetero sandbox spawn failed: %O', err);
+              await this.finalizeHeteroDispatchError({
+                agentId: resolvedAgentId,
+                assistantMessageId: assistantMessageRecord.id,
+                detail: err instanceof Error ? err.message : String(err),
+                message: 'Hetero sandbox spawn failed',
+                operationId,
+                topicId,
+              }).catch((finalizeErr) =>
+                log('execAgent: sandbox-failure finalize failed: %O', finalizeErr),
+              );
+            });
         }
       }
 
@@ -4856,6 +4945,12 @@ export class AiAgentService {
           )
           .catch((err) => log('interruptTask: cancelHeteroTask dispatch failed: %O', err));
       }
+    }
+
+    // 2b. A Claude Code / Codex run in the cloud sandbox is not in the runtime registry: kill its
+    // command and close the run here.
+    if (topicId && (await this.stopSandboxHeteroRun(topicId, resolvedOperationId))) {
+      return { operationId: resolvedOperationId, success: true, threadId: thread?.id };
     }
 
     // 3. Interrupt the runtime operation first. Only mark the thread cancelled

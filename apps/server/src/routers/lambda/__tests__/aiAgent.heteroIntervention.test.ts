@@ -46,8 +46,11 @@ vi.mock('@/server/services/aiAgent', () => ({
 vi.mock('@/server/services/aiChat', () => ({
   AiChatService: vi.fn().mockImplementation(() => ({})),
 }));
+const hetero = vi.hoisted(() => ({ finish: vi.fn(), ingest: vi.fn() }));
 vi.mock('@/server/services/heterogeneousAgent', () => ({
-  HeterogeneousAgentService: vi.fn().mockImplementation(() => ({})),
+  HeterogeneousAgentService: vi
+    .fn()
+    .mockImplementation(() => ({ heteroFinish: hetero.finish, heteroIngest: hetero.ingest })),
 }));
 
 describe('aiAgentRouter — remote Human-in-the-loop', () => {
@@ -208,6 +211,92 @@ describe('aiAgentRouter — remote Human-in-the-loop', () => {
       });
 
       expect(res.events).toHaveLength(0);
+    });
+  });
+
+  describe('run tokens (hetero-run) report only their own run', () => {
+    const runCaller = (op: string, topic: string) =>
+      aiAgentRouter.createCaller({
+        jwtPayload: { userId },
+        oidcAuth: { op, purpose: 'hetero-run', sub: userId, topic },
+      } as any);
+
+    const ownTopic = async () => {
+      const { topics } = await import('@/database/schemas');
+      await serverDB.insert(topics).values({ id: 'tpc-run', title: 'Run', userId });
+      return 'tpc-run';
+    };
+
+    const ingest = (caller: ReturnType<typeof runCaller>, operationId: string, topicId: string) =>
+      caller.heteroIngest({
+        agentType: 'claude-code',
+        events: [
+          { data: {}, operationId, stepIndex: 0, timestamp: Date.now(), type: 'stream_chunk' },
+        ],
+        operationId,
+        topicId,
+      } as any);
+
+    it('streams its own run back', async () => {
+      const topicId = await ownTopic();
+
+      await expect(ingest(runCaller('op-run', topicId), 'op-run', topicId)).resolves.toEqual({
+        ack: true,
+      });
+      await runCaller('op-run', topicId).heteroFinish({
+        agentType: 'claude-code',
+        operationId: 'op-run',
+        result: 'success',
+        topicId,
+      });
+
+      expect(hetero.ingest).toHaveBeenCalledTimes(1);
+      expect(hetero.finish).toHaveBeenCalledTimes(1);
+    });
+
+    it('is refused for another run, another conversation, or a topic not its user’s', async () => {
+      const topicId = await ownTopic();
+      const caller = runCaller('op-run', topicId);
+
+      await expect(ingest(caller, 'op-other', topicId)).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+      await expect(ingest(caller, 'op-run', 'tpc-other')).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+      await expect(
+        caller.heteroFinish({
+          agentType: 'claude-code',
+          operationId: 'op-other',
+          result: 'success',
+          topicId,
+        }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(
+        caller.waitInterventionResponse({ lastEventId: '0', operationId: 'op-other' }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      // Scoped to a conversation that is not this user's
+      await expect(
+        ingest(runCaller('op-x', 'tpc-missing'), 'op-x', 'tpc-missing'),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+
+      expect(hetero.ingest).not.toHaveBeenCalled();
+      expect(hetero.finish).not.toHaveBeenCalled();
+    });
+
+    it('reads the answers to its own run’s questions', async () => {
+      await userCaller().submitHeteroIntervention({
+        operationId: 'op-run',
+        result: { answer: 'yes' },
+        toolCallId: 't-run',
+      });
+
+      const res = await runCaller('op-run', 'tpc-run').waitInterventionResponse({
+        lastEventId: '0',
+        operationId: 'op-run',
+      });
+
+      expect(res.events[0].data).toMatchObject({ toolCallId: 't-run' });
     });
   });
 });

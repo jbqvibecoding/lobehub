@@ -119,6 +119,15 @@ export interface ChatTopicMetadata {
    */
   heteroCurrentMsgId?: { msgId: string; operationId: string };
   /**
+   * The Claude Code / Codex run going on in the cloud sandbox: the background command to kill
+   * when the user stops it. Current only while `operationId` matches `runningOperation`'s.
+   */
+  heteroSandboxRun?: {
+    commandId: string;
+    heteroType: 'claude-code' | 'codex';
+    operationId: string;
+  } | null;
+  /**
    * Persistent session id for a heterogeneous agent.
    * Saved after each turn so the next message in the same topic can resume
    * the conversation (e.g. Claude Code CLI uses `--resume <sessionId>`).

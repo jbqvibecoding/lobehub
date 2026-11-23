@@ -59,6 +59,8 @@ vi.mock('@/libs/observability/traceparent', () => ({
 }));
 
 vi.mock('@/libs/oidc-provider/jwt', () => ({
+  isRunTokenPurpose: (purpose: unknown) =>
+    purpose === 'hetero-operation' || purpose === 'hetero-run',
   validateOIDCJWT: mockValidateOIDCJWT,
 }));
 
@@ -261,7 +263,23 @@ describe('createLambdaContext', () => {
 
     expect(context.userId).toBeNull();
     expect(context.oidcAuth).toBeUndefined();
-    expect(mockValidateOIDCJWT).toHaveBeenCalledWith('oidc-token');
+    expect(mockValidateOIDCJWT).toHaveBeenCalledWith('oidc-token', { allowRunTokens: true });
+    expect(mockGetSession).not.toHaveBeenCalled();
+  });
+
+  it('lets a run token through for its endpoints only, never as the signed-in user', async () => {
+    mockValidateOIDCJWT.mockResolvedValueOnce({
+      tokenData: { op: 'op-1', purpose: 'hetero-run', sub: 'oidc-user', topic: 'tpc-1' },
+      userId: 'oidc-user',
+    });
+    const request = new NextRequest('https://example.com/trpc/lambda', {
+      headers: { 'Oidc-Auth': 'run-token' },
+    });
+
+    const context = await createLambdaContext(request);
+
+    expect(context.userId).toBeNull();
+    expect(context.oidcAuth).toMatchObject({ op: 'op-1', purpose: 'hetero-run', sub: 'oidc-user' });
     expect(mockGetSession).not.toHaveBeenCalled();
   });
 });

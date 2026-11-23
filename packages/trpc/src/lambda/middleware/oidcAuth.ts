@@ -1,5 +1,7 @@
 import { TRPCError } from '@trpc/server';
 
+import { isRunTokenPurpose } from '@/libs/oidc-provider/jwt';
+
 import { trpc } from '../init';
 
 export const oidcAuth = trpc.middleware(async (opts) => {
@@ -7,13 +9,13 @@ export const oidcAuth = trpc.middleware(async (opts) => {
 
   // Check OIDC authentication
   if (ctx.oidcAuth) {
-    // hetero-operation tokens are long-lived (4h) and scoped exclusively to
-    // heteroIngest / heteroFinish.  Reject them here so a leaked sandbox JWT
+    // Run tokens (hetero-operation, hetero-run) are long-lived (4h) and scoped exclusively to
+    // the endpoints a run streams back through. Reject them here so a leaked sandbox JWT
     // cannot be replayed against any other authed route.
-    if (ctx.oidcAuth.purpose === 'hetero-operation') {
+    if (isRunTokenPurpose(ctx.oidcAuth.purpose)) {
       throw new TRPCError({
         code: 'UNAUTHORIZED',
-        message: 'hetero-operation tokens are not accepted on this endpoint',
+        message: `${ctx.oidcAuth.purpose} tokens are not accepted on this endpoint`,
       });
     }
 

@@ -25,20 +25,24 @@ export interface SandboxRunParams {
    * to re-read topic.metadata.runningOperation on every cold Lambda start. */
   assistantMessageId: string;
   cwd?: string;
-  /** GitHub OAuth token for cloning private repos. */
-  githubToken?: string;
   /**
    * Image attachments from the user message, as URLs the sandbox can fetch
    * (signed S3 URLs). Appended as image content blocks after the prompt so
    * the CLI gets vision input.
    */
   imageList?: HeteroExecImageRef[];
-  /** Operation-scoped JWT injected as LOBEHUB_JWT env in the sandbox. */
+  /**
+   * Run-scoped JWT (`hetero-run`) injected as LOBEHUB_JWT env in the sandbox: it reports this
+   * run back and nothing else.
+   */
   jwt: string;
   marketService: MarketService;
   operationId: string;
   prompt: string;
-  /** GitHub repos to clone before running the agent (e.g. ['owner/repo', ...]). */
+  /**
+   * GitHub repos to clone before running the agent (e.g. ['owner/repo', ...]). Cloned without
+   * credentials: no GitHub token ever enters the sandbox, so only public repos clone.
+   */
   repos?: string[];
   resumeSessionId?: string;
   /**
@@ -62,52 +66,20 @@ function repoToLocalDir(repo: string): string {
 }
 
 /**
- * Write GitHub credentials into the sandbox in the same format produced by
- * `injectCredsToSandbox(["github"])` so CC can source them from sub-shells:
- *
- *   source ~/.creds/env          # exports GITHUB_ACCESS_TOKEN
- *   echo $GITHUB_ACCESS_TOKEN | gh auth login --hostname github.com --with-token
- *
- * Also authenticates the `gh` CLI upfront so all `gh` commands work out of
- * the box without CC having to call inject first.
- *
- * Returns null when no token is available.
- */
-function buildCredsSetupScript(githubToken?: string): string | null {
-  if (!githubToken) return null;
-  const tokenArg = shellQuote(githubToken);
-  return [
-    'mkdir -p ~/.creds',
-    // Write GITHUB_ACCESS_TOKEN matching the injectCredsToSandbox oauth naming scheme
-    `printf 'GITHUB_ACCESS_TOKEN=%s\\n' ${tokenArg} > ~/.creds/env`,
-    // Pre-authenticate gh CLI so CC can use it immediately (gh also picks up
-    // GITHUB_TOKEN from env, but explicit login ensures ~/.config/gh/hosts.yml
-    // is populated for cases where env is reset in a sub-shell)
-    `echo ${tokenArg} | gh auth login --hostname github.com --with-token 2>/dev/null || true`,
-  ].join(' && \\\n');
-}
-
-/**
  * Build an idempotent setup script that clones each repo if not already present.
  * Uses `[ -d <dir> ] || git clone ...` so re-runs on the same sandbox are no-ops.
  * Returns null when repos is empty.
  */
-function buildRepoSetupScript(repos: string[], githubToken?: string): string | null {
+function buildRepoSetupScript(repos: string[]): string | null {
   if (!repos || repos.length === 0) return null;
 
   const lines = repos.map((repo) => {
     const dir = repoToLocalDir(repo);
     // Normalise to "owner/repo" for the clone URL
     const repoPath = repo.startsWith('http') ? (repo.split('github.com/')[1] ?? repo) : repo;
-    // Use git's insteadOf rewrite (passed via -c, not stored in .git/config) so the token
-    // never ends up in the cloned repo's remote URL.
     const dirArg = shellQuote(dir);
     const repoUrlArg = shellQuote(`https://github.com/${repoPath}`);
-    const cloneCmd = githubToken
-      ? `git -c ${shellQuote(
-          `url.https://oauth2:${githubToken}@github.com/.insteadOf=https://github.com/`,
-        )} clone -q ${repoUrlArg} ${dirArg}`
-      : `git clone -q ${repoUrlArg} ${dirArg}`;
+    const cloneCmd = `git clone -q ${repoUrlArg} ${dirArg}`;
 
     // `|| true` makes clone failures non-fatal — CC still runs even if a repo can't be cloned.
     return `{ [ -d ${dirArg} ] || ${cloneCmd}; } || true`;
@@ -123,18 +95,21 @@ function buildRepoSetupScript(repos: string[], githubToken?: string): string | n
  * sandboxes share the same launch path.
  *
  * The sandbox container already has `lh` (the LobeHub CLI) installed.
- * The operation-scoped JWT is injected as `LOBEHUB_JWT` so the CLI can
+ * The run-scoped JWT is injected as `LOBEHUB_JWT` so the CLI can
  * authenticate against `heteroIngest` / `heteroFinish` without user creds.
+ * Nothing else that could act for the user goes in: no GitHub token, no platform model key.
  *
- * Fire-and-forget: the caller does NOT await this — the sandbox pushes events
- * back to the server via `heteroIngest` tRPC batches independently.
+ * The caller does not wait on the run: the sandbox pushes events back to the server via
+ * `heteroIngest` tRPC batches independently. It resolves once the command has started, with the
+ * id of the background command, which stopping the run kills.
  */
-export async function spawnHeteroSandbox(params: SandboxRunParams): Promise<void> {
+export async function spawnHeteroSandbox(
+  params: SandboxRunParams,
+): Promise<{ commandId?: string }> {
   const {
     agentType,
     args: extraArgs,
     assistantMessageId,
-    githubToken,
     jwt,
     marketService,
     operationId,
@@ -195,18 +170,11 @@ export async function spawnHeteroSandbox(params: SandboxRunParams): Promise<void
     `LOBEHUB_JWT=${shellQuote(jwt)}`,
     `LOBEHUB_SERVER=${shellQuote(serverUrl)}`,
     `LOBEHUB_ASSISTANT_MESSAGE_ID=${shellQuote(assistantMessageId)}`,
-    // Inject GitHub token so CC can authenticate git operations and GitHub API
-    // calls inside the sandbox (e.g. gh CLI, git push, API requests).
-    ...(githubToken ? [`GITHUB_TOKEN=${shellQuote(githubToken)}`] : []),
   ].join(' ');
   const shellArgs = args.map(shellQuote).join(' ');
   const mainCommand = `echo ${shellQuote(base64Payload)} | base64 -d | ${envVars} ${shellArgs}`;
-  // Creds first (writes ~/.creds/env + authenticates gh CLI), then repo clone.
-  const credsScript = buildCredsSetupScript(githubToken);
-  const repoScript = buildRepoSetupScript(repos ?? [], githubToken);
-  const setupParts = [credsScript, repoScript].filter(Boolean);
-  const shellCommand =
-    setupParts.length > 0 ? `${setupParts.join(' && \\\n')} && \\\n${mainCommand}` : mainCommand;
+  const repoScript = buildRepoSetupScript(repos ?? []);
+  const shellCommand = repoScript ? `${repoScript} && \\\n${mainCommand}` : mainCommand;
 
   log(
     'spawnHeteroSandbox: userId=%s op=%s type=%s topic=%s',
@@ -226,4 +194,7 @@ export async function spawnHeteroSandbox(params: SandboxRunParams): Promise<void
   if (!result.success) {
     throw new Error(result.error?.message || 'Failed to spawn heterogeneous sandbox');
   }
+
+  const commandId = (result.result as { commandId?: unknown } | undefined)?.commandId;
+  return { commandId: typeof commandId === 'string' ? commandId : undefined };
 }

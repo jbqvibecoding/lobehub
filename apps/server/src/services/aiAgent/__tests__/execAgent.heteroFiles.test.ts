@@ -59,9 +59,20 @@ vi.mock('@/libs/trusted-client', () => ({
   isTrustedClientEnabled: vi.fn().mockReturnValue(false),
 }));
 
+const { mockAssertUserInputAllowed, mockSignHeteroRunJwt } = vi.hoisted(() => ({
+  mockAssertUserInputAllowed: vi.fn().mockResolvedValue(undefined),
+  mockSignHeteroRunJwt: vi.fn().mockResolvedValue('run-jwt'),
+}));
+
 vi.mock('@/libs/trpc/utils/internalJwt', () => ({
+  signHeteroRunJwt: mockSignHeteroRunJwt,
   signOperationJwt: vi.fn().mockResolvedValue('op-jwt'),
   signUserJWT: vi.fn().mockResolvedValue('user-jwt'),
+}));
+
+vi.mock('@/server/services/contentSafety', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  assertUserInputAllowed: mockAssertUserInputAllowed,
 }));
 
 vi.mock('@/database/models/message', () => ({
@@ -659,5 +670,74 @@ describe('AiAgentService.execAgent - hetero early-exit file attachments', () => 
         expect.objectContaining({ heteroType: 'claude-code' }),
       );
     });
+  });
+});
+
+describe('AiAgentService.execAgent - Claude Code in the cloud sandbox', () => {
+  const mockDb = {} as any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    topicMock.create.mockResolvedValue({ id: 'topic-1', metadata: undefined });
+    topicMock.findById.mockResolvedValue(undefined);
+    topicMock.updateMetadata.mockResolvedValue(undefined);
+    mockMessageCreate.mockResolvedValue({ id: 'msg-1' });
+    mockResolveAttachmentsByFileIds.mockResolvedValue({ ...emptyResolvedAttachments });
+    mockAssertUserInputAllowed.mockResolvedValue(undefined);
+    heteroAgentConfig.agencyConfig = { heterogeneousProvider: { type: 'claude-code' } } as any;
+    heteroAgentConfig.model = 'claude-code';
+    heteroAgentConfig.provider = 'anthropic';
+  });
+
+  it('gives the sandbox a token for this run only, and remembers the command to stop', async () => {
+    mockSpawnHeteroSandbox.mockResolvedValue({ commandId: 'bg-run' });
+
+    const result = await new AiAgentService(mockDb, 'user-1').execAgent({
+      agentId: 'agent-1',
+      prompt: 'Add a README',
+    });
+    await vi.waitFor(() =>
+      expect(topicMock.updateMetadata).toHaveBeenCalledWith('topic-1', {
+        heteroSandboxRun: {
+          commandId: 'bg-run',
+          heteroType: 'claude-code',
+          operationId: result.operationId,
+        },
+      }),
+    );
+
+    expect(mockSignHeteroRunJwt).toHaveBeenCalledWith({
+      operationId: result.operationId,
+      topicId: 'topic-1',
+      userId: 'user-1',
+    });
+    const params = mockSpawnHeteroSandbox.mock.calls[0][0];
+    expect(params.jwt).toBe('run-jwt');
+    expect(params).not.toHaveProperty('githubToken');
+    expect(params.systemContext).toContain('holds no GitHub token');
+  });
+
+  it('does not start a run the mainland review refuses', async () => {
+    // What the content check throws: a runtime error payload, not an Error
+    mockAssertUserInputAllowed.mockRejectedValue({
+      error: { labels: [], message: 'The request was refused by content safety' },
+      errorType: 'ContentModeration',
+    });
+
+    const result = await new AiAgentService(mockDb, 'user-1').execAgent({
+      agentId: 'agent-1',
+      prompt: 'something flagged',
+    });
+
+    expect(mockAssertUserInputAllowed).toHaveBeenCalledWith([
+      { content: 'something flagged', role: 'user' },
+    ]);
+    expect(mockSpawnHeteroSandbox).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      autoStarted: false,
+      error: 'The request was refused by content safety',
+      success: false,
+    });
+    expect(mockPublishAgentRuntimeEnd).toHaveBeenCalled();
   });
 });

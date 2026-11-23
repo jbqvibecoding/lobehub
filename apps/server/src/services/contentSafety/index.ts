@@ -118,6 +118,14 @@ const refused = (message: string, labels: string[] = []) => ({
   errorType: AgentRuntimeErrorType.ContentModeration,
 });
 
+/** The refusal's message when `error` is one this module threw; undefined for any other error. */
+export const refusalMessageOf = (error: unknown): string | undefined => {
+  const refusal = error as Partial<ReturnType<typeof refused>> | null;
+  return refusal?.errorType === AgentRuntimeErrorType.ContentModeration
+    ? refusal.error?.message
+    : undefined;
+};
+
 const isInputFlagged = async (text: string) => {
   const key = createHash('sha256').update(text).digest('hex');
   const cached = inputVerdicts.get(key);

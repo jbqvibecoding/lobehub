@@ -517,6 +517,23 @@ const aiAgentProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) 
 // and carries no workspace claim). Handlers must resolve wsId from the row keyed
 // by `topicId` and construct `HeterogeneousAgentService` per request.
 const heteroAgentProcedure = heteroAuthedProcedure.use(serverDatabase);
+
+/**
+ * A `hetero-run` token reports only the run it was issued for: refuse it for any other run or
+ * conversation. Other callers carry no run scope and pass.
+ */
+const assertRunScope = (
+  scope: { operationId: string; topicId: string } | undefined,
+  call: { operationId: string; topicId?: string },
+) => {
+  if (!scope) return;
+  if (
+    scope.operationId !== call.operationId ||
+    (call.topicId !== undefined && scope.topicId !== call.topicId)
+  ) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'This run token is for another run' });
+  }
+};
 const aiAgentWriteProcedure = aiAgentProcedure.use(withScopedPermission('message:create'));
 
 export const aiAgentRouter = router({
@@ -1284,6 +1301,7 @@ export const aiAgentRouter = router({
       agentType,
       events.length,
     );
+    assertRunScope(ctx.heteroRunScope, { operationId, topicId });
 
     try {
       // Resolve workspaceId from the topic row so persistence writes land in
@@ -1302,7 +1320,7 @@ export const aiAgentRouter = router({
       // `userId`, so a missing row means the topic isn't theirs. The
       // operation-token path is exempt: its `sub` may be a workspaceId that
       // never matches `topics.userId`, and it's trusted as server-minted.
-      if (ctx.heteroAuthKind === 'user' && !topicRow) {
+      if ((ctx.heteroAuthKind === 'user' || ctx.heteroAuthKind === 'run') && !topicRow) {
         throw new TRPCError({
           code: 'FORBIDDEN',
           message: 'Topic not found or not owned by the caller',
@@ -1348,6 +1366,7 @@ export const aiAgentRouter = router({
     const { agentType, error, operationId, result, sessionId, topicId } = input;
 
     log('heteroFinish: topic=%s op=%s type=%s result=%s', topicId, operationId, agentType, result);
+    assertRunScope(ctx.heteroRunScope, { operationId, topicId });
 
     try {
       // Resolve workspaceId from the topic row (heteroAuthedProcedure has no
@@ -1358,8 +1377,8 @@ export const aiAgentRouter = router({
         .where(and(eq(topics.id, topicId), eq(topics.userId, ctx.userId)))
         .limit(1);
 
-      // See heteroIngest: owner tokens must own the topic; operation tokens are exempt.
-      if (ctx.heteroAuthKind === 'user' && !topicRow) {
+      // See heteroIngest: owner and run tokens must own the topic; operation tokens are exempt.
+      if ((ctx.heteroAuthKind === 'user' || ctx.heteroAuthKind === 'run') && !topicRow) {
         throw new TRPCError({
           code: 'FORBIDDEN',
           message: 'Topic not found or not owned by the caller',
@@ -1412,6 +1431,7 @@ export const aiAgentRouter = router({
     .input(WaitInterventionResponseSchema)
     .query(async ({ input, ctx }) => {
       const { operationId, lastEventId, blockMs } = input;
+      assertRunScope(ctx.heteroRunScope, { operationId });
 
       // Ownership guard, mirroring heteroIngest / heteroFinish. The op stream is
       // read by `operationId` alone, so an owner-token caller (a logged-in

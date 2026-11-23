@@ -107,6 +107,22 @@ describe('internalJwt', () => {
     });
   });
 
+  describe('signHeteroRunJwt', () => {
+    it('names the run and its conversation, for the user, for 4 hours', async () => {
+      const { signHeteroRunJwt } = await import('../internalJwt');
+
+      await signHeteroRunJwt({ operationId: 'op-1', topicId: 'tpc-1', userId: 'user-1' });
+
+      expect(SignJWTMock).toHaveBeenCalledWith({
+        op: 'op-1',
+        purpose: 'hetero-run',
+        topic: 'tpc-1',
+      });
+      expect(setSubjectMock).toHaveBeenCalledWith('user-1');
+      expect(setExpirationTimeMock).toHaveBeenCalledWith('4h');
+    });
+  });
+
   describe('signOperationJwt', () => {
     it('signs a JWT with 4-hour expiry and hetero-operation purpose', async () => {
       const { signOperationJwt } = await import('../internalJwt');

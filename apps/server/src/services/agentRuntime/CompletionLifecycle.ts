@@ -488,7 +488,7 @@ export class CompletionLifecycle {
    */
   async completeOperation(
     input: OperationCompletionInput,
-    reason: 'done' | 'error',
+    reason: 'done' | 'error' | 'interrupted',
     options?: CompleteOperationOptions,
   ): Promise<void> {
     await this.dispatchHooks(input.operationId, this.buildStateFromInput(input), reason, options);
@@ -547,11 +547,12 @@ export class CompletionLifecycle {
         if (recovered) event.lastAssistantContent = recovered;
       }
 
-      // Mainland content safety reviews the complete reply before anyone is told about it: a
-      // flagged one is replaced in the store (what the app and the phone show) and in the event
-      // (what chats are sent)
+      // Mainland content safety reviews the reply before anyone is told about it: a flagged one
+      // is replaced in the store (what the app and the phone show) and in the event (what chats
+      // are sent). That includes a reply cut short (stopped, failed, or paused for an approval),
+      // since its text is shown as well; an async-tool park is the same run carrying on.
       let replyHidden = false;
-      if (reason === 'done' && event.lastAssistantContent?.trim()) {
+      if (!isAsyncToolPark && event.lastAssistantContent?.trim()) {
         const verdict = await reviewModelReply(event.lastAssistantContent);
         if (verdict === 'hidden') {
           await this.hideReply(operationId, assistantMessageId, metadata?.userId || this.userId);

@@ -42,6 +42,14 @@ describe('oidcAuth middleware', () => {
     expect(result).toBeNull();
   });
 
+  it('rejects hetero-run tokens: a sandbox run cannot act as the user', async () => {
+    const caller = createCaller({
+      oidcAuth: { op: 'op-1', purpose: 'hetero-run', sub: 'user-abc', topic: 'tpc-1' },
+    } as any);
+
+    await expect(caller.ping()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+  });
+
   it('rejects hetero-operation tokens to block misuse on normal authed routes', async () => {
     const caller = createCaller({
       oidcAuth: { purpose: 'hetero-operation', sub: 'user-abc' },

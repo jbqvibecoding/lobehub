@@ -1,7 +1,14 @@
 // @vitest-environment node
 import { type LobeChatDatabase } from '@lobechat/database';
-import { agents, messagePlugins, messages, topics } from '@lobechat/database/schemas';
+import {
+  agentOperations,
+  agents,
+  messagePlugins,
+  messages,
+  topics,
+} from '@lobechat/database/schemas';
 import { getTestDB } from '@lobechat/database/test-utils';
+import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { cleanupTestUser, createTestUser } from '../../lambda/__tests__/integration/setup';
@@ -159,6 +166,37 @@ describe('mobile chatRouter.history', () => {
     expect((await callerFor(chat.userId).history({ topicId: chat.topicId })).run).toBe('running');
 
     mockGetOperationStatus.mockResolvedValue(null);
+    expect((await callerFor(chat.userId).history({ topicId: chat.topicId })).run).toBe('idle');
+    await cleanupTestUser(testDB, chat.userId);
+  });
+
+  it('says a Claude Code run is going until its operation ends', async () => {
+    const operationId = `op-cc-${Math.random().toString(36).slice(2)}`;
+    const chat = await createConversation(operationId);
+    await testDB
+      .insert(agentOperations)
+      .values({ id: operationId, provider: 'claude-code', status: 'running', userId: chat.userId });
+    // The runtime does not know a CLI run
+    mockGetOperationStatus.mockResolvedValue(null);
+
+    expect((await callerFor(chat.userId).history({ topicId: chat.topicId })).run).toBe('running');
+
+    await testDB
+      .update(agentOperations)
+      .set({ status: 'interrupted' })
+      .where(eq(agentOperations.id, operationId));
+    expect((await callerFor(chat.userId).history({ topicId: chat.topicId })).run).toBe('idle');
+    await cleanupTestUser(testDB, chat.userId);
+  });
+
+  it('does not take an in-app run the runtime lost for a running one', async () => {
+    const operationId = `op-lost-${Math.random().toString(36).slice(2)}`;
+    const chat = await createConversation(operationId);
+    await testDB
+      .insert(agentOperations)
+      .values({ id: operationId, provider: 'openai', status: 'running', userId: chat.userId });
+    mockGetOperationStatus.mockResolvedValue(null);
+
     expect((await callerFor(chat.userId).history({ topicId: chat.topicId })).run).toBe('idle');
     await cleanupTestUser(testDB, chat.userId);
   });

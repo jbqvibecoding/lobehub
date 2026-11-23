@@ -6,6 +6,16 @@ import { authEnv } from '@/envs/auth';
 const log = debug('oidc-jwt');
 
 /**
+ * Purposes of the tokens the server hands to a sandbox or device for one agent run. They only
+ * work on the endpoints that run streams back through (see `heteroOperationAuth`); everywhere
+ * else they are refused, so code running in the sandbox cannot act as the user.
+ */
+export const RUN_TOKEN_PURPOSES = ['hetero-operation', 'hetero-run'] as const;
+
+export const isRunTokenPurpose = (purpose: unknown) =>
+  (RUN_TOKEN_PURPOSES as readonly unknown[]).includes(purpose);
+
+/**
  * Get JWKS key string from environment
  * Uses JWKS_KEY which already has fallback to OIDC_JWKS_KEY in authEnv
  */
@@ -100,7 +110,11 @@ const getVerificationKey = async () => {
  * @param token - JWT access token
  * @returns Parsed token payload and user information
  */
-export const validateOIDCJWT = async (token: string) => {
+export const validateOIDCJWT = async (
+  token: string,
+  /** Accept a run token (see `RUN_TOKEN_PURPOSES`); only the lambda context does. */
+  { allowRunTokens = false }: { allowRunTokens?: boolean } = {},
+) => {
   log('Starting OIDC JWT token validation');
 
   // JWKS / signing key retrieval is an infrastructure concern (misconfigured
@@ -129,6 +143,13 @@ export const validateOIDCJWT = async (token: string) => {
       });
     }
 
+    if (!allowRunTokens && isRunTokenPurpose(payload.purpose)) {
+      throw new TRPCError({
+        code: 'UNAUTHORIZED',
+        message: 'This token only works for the agent run it was issued to',
+      });
+    }
+
     return {
       clientId,
       payload,
@@ -138,9 +159,12 @@ export const validateOIDCJWT = async (token: string) => {
         exp: payload.exp,
         iat: payload.iat,
         jti: payload.jti,
+        /** The run a `hetero-run` token is for */
+        op: payload.op as string | undefined,
         purpose: payload.purpose as string | undefined,
         scope: payload.scope,
         sub: userId,
+        topic: payload.topic as string | undefined,
       },
       userId,
     };

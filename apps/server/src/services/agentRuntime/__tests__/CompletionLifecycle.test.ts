@@ -627,6 +627,19 @@ describe('CompletionLifecycle.dispatchHooks — mainland content safety on the r
     );
   });
 
+  it('reviews a reply cut short as well: stopped, failed, or paused for an approval', async () => {
+    for (const reason of ['interrupted', 'error', 'waiting_for_human']) {
+      const { lifecycle, update } = setup('hidden');
+
+      await lifecycle.dispatchHooks('op-1', { ...doneState, status: reason }, reason);
+
+      expect(update).toHaveBeenCalledWith('msg-assistant', {
+        content: contentSafety.REPLY_HIDDEN_NOTICE,
+      });
+      vi.restoreAllMocks();
+    }
+  });
+
   it('leaves a reply that passes untouched', async () => {
     const { dispatch, lifecycle, update } = setup('allowed');
 

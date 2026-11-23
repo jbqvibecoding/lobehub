@@ -1,6 +1,14 @@
 // @vitest-environment node
 import { type LobeChatDatabase } from '@lobechat/database';
-import { agents, chatGroups, sessions, threads, topics } from '@lobechat/database/schemas';
+import {
+  agentOperations,
+  agents,
+  chatGroups,
+  messages,
+  sessions,
+  threads,
+  topics,
+} from '@lobechat/database/schemas';
 import { getTestDB } from '@lobechat/database/test-utils';
 import { ThreadStatus, ThreadType } from '@lobechat/types';
 import { eq } from 'drizzle-orm';
@@ -27,6 +35,17 @@ vi.mock('@/server/services/agentRuntime', () => ({
 // Mock AiChatService
 vi.mock('@/server/services/aiChat', () => ({
   AiChatService: vi.fn().mockImplementation(() => ({})),
+}));
+
+// The cloud sandbox and the hetero stream, for stopping a Claude Code run there
+const sandbox = vi.hoisted(() => ({ callTool: vi.fn(), heteroFinish: vi.fn() }));
+vi.mock('@/server/services/sandbox', () => ({
+  createSandboxService: vi.fn(() => ({ callTool: sandbox.callTool })),
+}));
+vi.mock('@/server/services/heterogeneousAgent', () => ({
+  HeterogeneousAgentService: vi
+    .fn()
+    .mockImplementation(() => ({ heteroFinish: sandbox.heteroFinish })),
 }));
 
 describe('aiAgentRouter.interruptTask', () => {
@@ -293,6 +312,87 @@ describe('aiAgentRouter.interruptTask', () => {
       });
 
       expect(result.success).toBe(true);
+    });
+  });
+
+  describe('a Claude Code run in the cloud sandbox', () => {
+    // Operation rows outlive the test user, so each test runs its own
+    let operationId: string;
+
+    const startRun = async () => {
+      await serverDB.insert(messages).values({
+        content: 'Working on it',
+        id: 'msg-sandbox-run',
+        role: 'assistant',
+        topicId: testTopicId,
+        userId,
+      });
+      await serverDB
+        .insert(agentOperations)
+        .values({ id: operationId, provider: 'claude-code', status: 'running', userId });
+      await serverDB
+        .update(topics)
+        .set({
+          metadata: {
+            heteroSandboxRun: { commandId: 'bg-run', heteroType: 'claude-code', operationId },
+            runningOperation: { assistantMessageId: 'msg-sandbox-run', operationId },
+          },
+        })
+        .where(eq(topics.id, testTopicId));
+    };
+
+    beforeEach(() => {
+      operationId = `op-sandbox-${Math.random().toString(36).slice(2)}`;
+      sandbox.callTool.mockReset().mockResolvedValue({ success: true });
+      sandbox.heteroFinish.mockReset().mockResolvedValue(undefined);
+    });
+
+    it('is stopped by killing its command, and the run is closed as interrupted', async () => {
+      await startRun();
+      const caller = aiAgentRouter.createCaller(createTestContext());
+
+      const result = await caller.interruptTask({ operationId, topicId: testTopicId });
+
+      expect(result).toMatchObject({ operationId, success: true });
+      expect(sandbox.callTool).toHaveBeenCalledWith('killCommand', { commandId: 'bg-run' });
+      expect(sandbox.heteroFinish).toHaveBeenCalledWith(
+        expect.objectContaining({ operationId, result: 'cancelled', topicId: testTopicId }),
+      );
+      expect(mockInterruptOperation).not.toHaveBeenCalled();
+
+      const [op] = await serverDB
+        .select({ status: agentOperations.status })
+        .from(agentOperations)
+        .where(eq(agentOperations.id, operationId));
+      expect(op.status).toBe('interrupted');
+      const [topic] = await serverDB.select().from(topics).where(eq(topics.id, testTopicId));
+      expect(topic.metadata?.runningOperation ?? null).toBeNull();
+      expect(topic.metadata?.heteroSandboxRun ?? null).toBeNull();
+    });
+
+    it('closes the run even when its command already ended', async () => {
+      await startRun();
+      sandbox.callTool.mockResolvedValue({
+        error: { message: 'Unknown commandId' },
+        success: false,
+      });
+
+      const result = await aiAgentRouter
+        .createCaller(createTestContext())
+        .interruptTask({ operationId, topicId: testTopicId });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('leaves another run alone', async () => {
+      await startRun();
+
+      await aiAgentRouter
+        .createCaller(createTestContext())
+        .interruptTask({ operationId: 'op-interrupt-test', topicId: testTopicId });
+
+      expect(sandbox.callTool).not.toHaveBeenCalled();
+      expect(mockInterruptOperation).toHaveBeenCalledWith('op-interrupt-test');
     });
   });
 });

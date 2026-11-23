@@ -10,7 +10,7 @@ import { ApiKeyModel } from '@/database/models/apiKey';
 import { authEnv, LOBE_CHAT_OIDC_AUTH_HEADER } from '@/envs/auth';
 import { extractTraceContext } from '@/libs/observability/traceparent';
 import { assertOIDCUserActive, isOIDCUserInactiveError } from '@/libs/oidc-provider/access-control';
-import { validateOIDCJWT } from '@/libs/oidc-provider/jwt';
+import { isRunTokenPurpose, validateOIDCJWT } from '@/libs/oidc-provider/jwt';
 import { isApiKeyExpired, validateApiKeyFormat } from '@/utils/apiKey';
 
 // Create context logger namespace
@@ -188,7 +188,9 @@ export const createLambdaContext = async (request: NextRequest): Promise<LambdaC
       if (oidcAuthToken) {
         // Validate the stateless JWT first, then check the current user state
         // so banned/deleted accounts cannot keep using an already-issued token.
-        const tokenInfo = await validateOIDCJWT(oidcAuthToken);
+        // Run tokens are let through to `oidcAuth` only, for the endpoints a sandbox run streams
+        // back through (`heteroOperationAuth`); `oidcAuth` refuses them everywhere else.
+        const tokenInfo = await validateOIDCJWT(oidcAuthToken, { allowRunTokens: true });
 
         oidcAuth = {
           payload: tokenInfo.tokenData,
@@ -206,7 +208,9 @@ export const createLambdaContext = async (request: NextRequest): Promise<LambdaC
           oidcAuth,
           ...commonContext,
           traceContext,
-          userId,
+          // A run token never stands in for the user: a procedure that reads `ctx.userId`
+          // without going through `oidcAuth` sees no one signed in
+          userId: isRunTokenPurpose(tokenInfo.tokenData.purpose) ? null : userId,
         });
       }
     } catch (error) {

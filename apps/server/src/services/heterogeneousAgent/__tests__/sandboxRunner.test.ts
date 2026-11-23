@@ -61,4 +61,28 @@ describe('spawnHeteroSandbox', () => {
     expect(command).toContain("'hi'\\''there'");
     expect(command).not.toContain('"$(touch /tmp/pwned)"');
   });
+
+  it('puts only the run token in the sandbox, and hands back the command to stop', async () => {
+    mockCallTool.mockResolvedValue({ result: { commandId: 'bg-abc' }, success: true });
+
+    const started = await spawnHeteroSandbox({
+      agentType: 'claude-code',
+      assistantMessageId: 'msg-1',
+      jwt: 'run-token',
+      marketService: {} as any,
+      operationId: 'op-1',
+      prompt: 'hi',
+      repos: ['owner/repo'],
+      topicId: 'topic-1',
+      userId: 'user-1',
+    });
+
+    const { background, command } = mockCallTool.mock.calls[0][1];
+    expect(background).toBe(true);
+    expect(command).toContain("LOBEHUB_JWT='run-token'");
+    // Public clone, no credential of any kind
+    expect(command).toContain("git clone -q 'https://github.com/owner/repo' 'repo'");
+    expect(command).not.toMatch(/GITHUB_TOKEN|oauth2|gh auth|\.creds/);
+    expect(started).toEqual({ commandId: 'bg-abc' });
+  });
 });
