@@ -10,6 +10,12 @@ import type { MarketService } from '@/server/services/market';
 export type SandboxProviderKind = 'market' | 'onlyboxes' | 'openbot';
 
 export interface SandboxSessionContext {
+  /**
+   * `coding`: the user's coding computer, where Claude Code runs, kept apart from the computer
+   * Biber browses and runs commands on (where saved logins are typed in). Only the `openbot`
+   * provider has computers of its own; the others ignore it.
+   */
+  purpose?: 'coding';
   topicId: string;
   userId: string;
 }

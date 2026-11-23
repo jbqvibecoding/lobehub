@@ -70,7 +70,11 @@ export class OpenBotSandboxProvider implements SandboxProvider {
   private readonly computer: OpenBotComputer;
 
   constructor(options: SandboxServiceOptions) {
-    this.computer = new OpenBotComputer({ topicId: options.topicId, userId: options.userId });
+    this.computer = new OpenBotComputer({
+      purpose: options.purpose,
+      topicId: options.topicId,
+      userId: options.userId,
+    });
   }
 
   async callTool(

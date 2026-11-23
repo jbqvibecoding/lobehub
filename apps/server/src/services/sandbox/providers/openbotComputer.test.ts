@@ -2,9 +2,10 @@ import { BlockList, isIP } from 'node:net';
 
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/envs/sandbox', () => ({ sandboxEnv: {} }));
+const sandbox = vi.hoisted(() => ({ env: {} as Record<string, string> }));
+vi.mock('@/envs/sandbox', () => ({ sandboxEnv: sandbox.env }));
 
-const { egressPolicyFor } = await import('./openbotComputer');
+const { egressPolicyFor, OpenBotComputer } = await import('./openbotComputer');
 
 /** Whether the pushed policy lets a computer connect to this address (as agent-computer judges it). */
 const allows = (address: string) => {
@@ -56,5 +57,25 @@ describe('egressPolicyFor', () => {
   it('opens or closes everything when the deployment says so', () => {
     expect(egressPolicyFor('all')).toEqual({ mode: 'allow_all', rules: [] });
     expect(egressPolicyFor('none')).toEqual({ mode: 'deny_all', rules: [] });
+  });
+});
+
+describe('OpenBotComputer ids', () => {
+  it('gives the coding computer an id of its own, in either scope', () => {
+    const owner = { topicId: 'tpc-1', userId: 'user-1' };
+
+    const biber = new OpenBotComputer(owner).id;
+    const coding = new OpenBotComputer({ ...owner, purpose: 'coding' }).id;
+    expect(biber).toMatch(/^u-[\da-f]{40}$/);
+    expect(coding).toMatch(/^c-[\da-f]{40}$/);
+    expect(coding.slice(2)).toBe(biber.slice(2));
+
+    sandbox.env.OPENBOT_COMPUTER_SCOPE = 'topic';
+    try {
+      expect(new OpenBotComputer(owner).id).toMatch(/^t-/);
+      expect(new OpenBotComputer({ ...owner, purpose: 'coding' }).id).toMatch(/^ct-/);
+    } finally {
+      delete sandbox.env.OPENBOT_COMPUTER_SCOPE;
+    }
   });
 });

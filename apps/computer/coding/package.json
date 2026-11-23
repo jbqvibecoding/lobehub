@@ -1,0 +1,11 @@
+{
+  "name": "biber-coding-tools",
+  "private": true,
+  "description": "Claude Code for the coding computer, pinned by bun.lock (its platform binaries come as optional dependencies, checked against the lockfile's integrity hashes).",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.319"
+  },
+  "trustedDependencies": [
+    "@anthropic-ai/claude-code"
+  ]
+}

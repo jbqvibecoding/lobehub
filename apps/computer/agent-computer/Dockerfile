@@ -1,5 +1,7 @@
 # The Bot's computer installs the Playwright browser it launches, CJK fonts, and the document
 # libraries scripts use (office/, on NODE_PATH): pptxgenjs, docx, exceljs and playwright-core.
+# The same image is the user's coding computer: it carries git, Claude Code (coding/) and `lh`,
+# which runs Claude Code and streams it back. Build `lh` first: `scripts/build-lh.sh`.
 #
 # The image tag and Playwright dependency must be pinned to the same exact version. Bump both or
 # neither.
@@ -34,7 +36,7 @@ RUN if [ "${USE_CN_MIRROR}" = "true" ]; then \
         PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright; \
     fi \
   && apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl fonts-noto-cjk python3 unzip xz-utils \
+      ca-certificates curl fonts-noto-cjk git python3 unzip xz-utils \
   && ln -s bun /usr/local/bin/bunx \
   && bunx --bun "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium \
   && rm -rf /root/.cache /tmp/* /var/lib/apt/lists/*
@@ -47,6 +49,22 @@ COPY office/package.json office/bun.lock ./
 RUN if [ "${USE_CN_MIRROR}" = "true" ]; then export BUN_CONFIG_REGISTRY=https://registry.npmmirror.com; fi \
   && bun install --frozen-lockfile --production
 ENV NODE_PATH=/opt/biber-office/node_modules
+
+# Claude Code, pinned by its own lockfile: each platform's binary is an optional dependency whose
+# integrity hash the lockfile holds, so a tampered download fails the install. Its postinstall
+# links the binary for this platform.
+WORKDIR /opt/biber-coding
+COPY coding/package.json coding/bun.lock ./
+RUN if [ "${USE_CN_MIRROR}" = "true" ]; then export BUN_CONFIG_REGISTRY=https://registry.npmmirror.com; fi \
+  && bun install --frozen-lockfile --production \
+  && ln -s /opt/biber-coding/node_modules/.bin/claude /usr/local/bin/claude \
+  && claude --version
+
+# `lh`, bundled by scripts/build-lh.sh into agent-computer/vendor/lh (one file and its assets)
+COPY agent-computer/vendor/lh /opt/lh
+RUN printf '#!/bin/sh\nexec node /opt/lh/index.js "$@"\n' > /usr/local/bin/lh \
+  && chmod +x /usr/local/bin/lh \
+  && lh --version
 
 WORKDIR /app
 # The lockfile as well as the manifest: `--frozen-lockfile` with no lockfile present resolves afresh

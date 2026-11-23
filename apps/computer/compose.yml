@@ -1,6 +1,7 @@
 # Agent computers for the `openbot` Cloud Sandbox provider.
 #
 # Run from this directory:
+#   scripts/build-lh.sh             # bundles the `lh` CLI the computer image copies in
 #   docker compose build            # builds the computer image and the supervisor
 #   docker compose up -d supervisor
 #

@@ -673,6 +673,7 @@ export class AiAgentService {
     const { createSandboxService } = await import('@/server/services/sandbox');
     const killed = await createSandboxService({
       marketService: this.marketService,
+      purpose: 'coding',
       topicId,
       userId: this.userId,
     })

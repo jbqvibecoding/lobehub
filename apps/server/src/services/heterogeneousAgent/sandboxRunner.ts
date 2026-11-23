@@ -195,7 +195,14 @@ export async function spawnHeteroSandbox(
     topicId,
   );
 
-  const sandboxService = createSandboxService({ marketService, topicId, userId });
+  // The coding computer, not the one Biber browses on: the run cannot reach Biber's browser
+  // profiles, and Biber's own tools cannot read this run's token
+  const sandboxService = createSandboxService({
+    marketService,
+    purpose: 'coding',
+    topicId,
+    userId,
+  });
   const result = await sandboxService.callTool('runCommand', {
     background: true,
     command: shellCommand,

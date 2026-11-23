@@ -14,6 +14,8 @@ import { ThreadStatus, ThreadType } from '@lobechat/types';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createSandboxService } from '@/server/services/sandbox';
+
 import { aiAgentRouter } from '../aiAgent';
 import { cleanupTestUser, createTestUser } from './integration/setup';
 
@@ -355,6 +357,9 @@ describe('aiAgentRouter.interruptTask', () => {
 
       expect(result).toMatchObject({ operationId, success: true });
       expect(sandbox.callTool).toHaveBeenCalledWith('killCommand', { commandId: 'bg-run' });
+      expect(createSandboxService).toHaveBeenCalledWith(
+        expect.objectContaining({ purpose: 'coding', topicId: testTopicId, userId }),
+      );
       expect(sandbox.heteroFinish).toHaveBeenCalledWith(
         expect.objectContaining({ operationId, result: 'cancelled', topicId: testTopicId }),
       );

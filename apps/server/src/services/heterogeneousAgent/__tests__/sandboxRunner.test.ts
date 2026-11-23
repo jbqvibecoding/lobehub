@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createSandboxService } from '@/server/services/sandbox';
+
 import { spawnHeteroSandbox } from '../sandboxRunner';
 
 const { mockCallTool } = vi.hoisted(() => ({
@@ -79,6 +81,10 @@ describe('spawnHeteroSandbox', () => {
 
     const { background, command } = mockCallTool.mock.calls[0][1];
     expect(background).toBe(true);
+    // On the coding computer, apart from Biber's own
+    expect(createSandboxService).toHaveBeenCalledWith(
+      expect.objectContaining({ purpose: 'coding', topicId: 'topic-1', userId: 'user-1' }),
+    );
     expect(command).toContain("LOBEHUB_JWT='run-token'");
     // Public clone, no credential of any kind
     expect(command).toContain("git clone -q 'https://github.com/owner/repo' 'repo'");

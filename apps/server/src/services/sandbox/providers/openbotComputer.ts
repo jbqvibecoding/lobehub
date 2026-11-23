@@ -131,7 +131,14 @@ export class OpenBotComputer {
   private readonly supervisorToken: string;
   private readonly supervisorUrl: string;
 
-  constructor(private readonly owner: { topicId?: string; userId: string }) {
+  constructor(
+    private readonly owner: {
+      /** `coding`: the user's coding computer, a different machine from Biber's own */
+      purpose?: 'coding';
+      topicId?: string;
+      userId: string;
+    },
+  ) {
     this.supervisorUrl = (sandboxEnv.OPENBOT_SUPERVISOR_URL || '').replace(/\/+$/, '');
     this.supervisorToken = sandboxEnv.OPENBOT_SUPERVISOR_TOKEN || '';
     this.computerToken = sandboxEnv.OPENBOT_COMPUTER_TOKEN || '';
@@ -148,13 +155,18 @@ export class OpenBotComputer {
     }
   }
 
-  /** The supervisor only accepts plain ids of at most 64 characters, so the scope is hashed. */
+  /**
+   * The supervisor only accepts plain ids of at most 64 characters, so the scope is hashed. A
+   * coding computer has its own prefix: its token derives from its id, so it can reach neither
+   * Biber's computer nor the browser profiles there, and Biber's computer cannot reach it.
+   */
   get id() {
+    const coding = this.owner.purpose === 'coding';
     if (this.scope === 'topic') {
-      return `t-${sha256(`${this.owner.userId}:${this.owner.topicId}`).slice(0, 40)}`;
+      return `${coding ? 'ct' : 't'}-${sha256(`${this.owner.userId}:${this.owner.topicId}`).slice(0, 40)}`;
     }
 
-    return `u-${sha256(this.owner.userId).slice(0, 40)}`;
+    return `${coding ? 'c' : 'u'}-${sha256(this.owner.userId).slice(0, 40)}`;
   }
 
   /** Asks the supervisor for this computer, starting it when it is not running. */
