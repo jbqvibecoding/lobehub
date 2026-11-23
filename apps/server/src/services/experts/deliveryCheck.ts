@@ -1,10 +1,11 @@
-import { RequestTrigger } from '@lobechat/types';
+import { isMainlandRegion } from '@lobechat/region';
+import { RequestTrigger, type UserGeneralConfig } from '@lobechat/types';
 import debug from 'debug';
 import { and, desc, eq } from 'drizzle-orm';
 
-import { agents, messagePlugins, messages, topics } from '@/database/schemas';
+import { agents, messagePlugins, messages, topics, userSettings } from '@/database/schemas';
 import type { LobeChatDatabase } from '@/database/type';
-import { SystemAgentService } from '@/server/services/systemAgent';
+import { regionEnv } from '@/envs/region';
 
 import { expertMarketIdentifier } from './catalog';
 
@@ -131,7 +132,7 @@ export const checkFileDelivery = async (
   const missing = undeliveredFiles({ delivered, reply, userText });
   if (missing.length === 0) return;
 
-  const locale = await new SystemAgentService(db, userId).getUserLocale();
+  const locale = await checkLocale(db, userId);
   log('topic %s: %s named but not delivered; asking once more', topicId, missing.join(', '));
   // Loaded here: the agent service sits above the run lifecycle that calls this
   const { AiAgentService } = await import('@/server/services/aiAgent');
@@ -141,4 +142,15 @@ export const checkFileDelivery = async (
     prompt: deliveryCheckPrompt(missing, locale),
     trigger: RequestTrigger.Chat,
   });
+};
+
+/** The user's response language; without one, the edition's: a new mainland account reads Chinese. */
+const checkLocale = async (db: LobeChatDatabase, userId: string) => {
+  const [settings] = await db
+    .select({ general: userSettings.general })
+    .from(userSettings)
+    .where(eq(userSettings.id, userId))
+    .limit(1);
+  const chosen = (settings?.general as UserGeneralConfig | null | undefined)?.responseLanguage;
+  return chosen || (isMainlandRegion(regionEnv.APP_REGION) ? 'zh-CN' : 'en-US');
 };

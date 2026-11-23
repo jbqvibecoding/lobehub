@@ -9,8 +9,10 @@
  *   and creates an event (see `mailStep` and `calendarStep`);
  *   on its cloud computer, it opens the page a message names and signs in, orders or presses Enter
  *   there (see `computerStep`); with its profile tool, it runs the "About you" interview and
- *   answers profile checks (see `profileStep`);
+ *   answers profile checks (see `profileStep`); as the document maker, it writes and exports files
+ *   on the cloud computer (see `documentStep`);
  * - Expo's push service, recording every notification it is asked to send;
+ * - object storage for exported files (`startFakeS3`);
  * - Feishu's open platform for a user's calendar (`startFakeFeishuApi`).
  *
  * Point the server at them with OPENAI_PROXY_URL=http://127.0.0.1:<model>/v1 and
@@ -31,6 +33,7 @@ export const FREE_TIME_TOOL = 'lobe-calendar____findFreeTime';
 export const CREATE_EVENT_TOOL = 'lobe-calendar____createEvent';
 export const computerTool = (api: string) => `lobe-computer____${api}`;
 export const profileTool = (api: string) => `lobe-profile____${api}`;
+export const sandboxTool = (api: string) => `lobe-cloud-sandbox____${api}`;
 const HOUR = 60 * 60 * 1000;
 
 /** Tomorrow at an hour in mainland China (UTC+8, no daylight saving), with its offset. */
@@ -224,6 +227,81 @@ const profileStep = (request: Pick<ModelRequest, 'messages' | 'tools'>): Reply |
   }
 };
 
+/** The script the fake model runs to make a three-slide deck with pptxgenjs. */
+const DECK_SCRIPT = `const pptxgen = require('pptxgenjs');
+const fs = require('fs');
+fs.mkdirSync('biber-deck', { recursive: true });
+const pptx = new pptxgen();
+pptx.layout = 'LAYOUT_16x9';
+for (const title of ['Biber', '它能做什么', '下一步']) {
+  pptx.addSlide().addText(title, { x: 0.7, y: 0.6, w: 8, h: 1, fontFace: 'Noto Sans CJK SC', fontSize: 32 });
+}
+pptx.writeFile({ fileName: 'biber-deck/deck.pptx' }).then(() => console.log('written'));`;
+
+/** The script it runs to make a workbook with exceljs. */
+const WORKBOOK_SCRIPT = `const ExcelJS = require('exceljs');
+const fs = require('fs');
+fs.mkdirSync('biber-report', { recursive: true });
+const wb = new ExcelJS.Workbook();
+const ws = wb.addWorksheet('Report');
+ws.addRow(['Month', 'Sales']);
+ws.addRow(['Oct', 120]);
+ws.addRow(['Nov', 150]);
+ws.addRow(['Total', { formula: 'SUM(B2:B3)' }]);
+ws.views = [{ state: 'frozen', ySplit: 1 }];
+wb.xlsx.writeFile('biber-report/report.xlsx').then(() => console.log('written'));`;
+
+/**
+ * The document maker on the cloud computer:
+ * - "make a three-slide deck" ("做一份三页的 PPT"): writes it with pptxgenjs, exports it, says so;
+ * - "export an empty file" ("导出一个空文件"): exports an empty .pptx, which is refused, and says
+ *   why without naming the file;
+ * - "just say the report is ready" ("只说报告做好了"): claims report.xlsx without making it;
+ * - a delivery check about report.xlsx: makes it with exceljs and exports it.
+ */
+const documentStep = (request: Pick<ModelRequest, 'messages' | 'tools'>): Reply | undefined => {
+  if (!request.tools.includes(sandboxTool('executeCode'))) return;
+  const lastUser = request.messages.findLastIndex((m) => m.role === 'user');
+  const said = textOf(request.messages[lastUser]?.content).trim();
+  const results = request.messages
+    .slice(lastUser + 1)
+    .filter((m) => m.role === 'tool')
+    .map((m) => textOf(m.content));
+
+  const make = (script: string, path: string, done: string): Reply => {
+    if (results.length === 0)
+      return callTool(sandboxTool('executeCode'), { code: script, language: 'javascript' });
+    if (results.length === 1) return callTool(sandboxTool('exportFile'), { path });
+    return {
+      text: /exported successfully/i.test(results[1]) ? done : `Export failed: ${results[1]}`,
+    };
+  };
+
+  if (/three-slide deck|三页的 PPT/i.test(said)) {
+    return make(DECK_SCRIPT, 'biber-deck/deck.pptx', '已交付 deck.pptx：三页，介绍 Biber。');
+  }
+  if (/export an empty file|导出一个空文件/i.test(said)) {
+    if (results.length === 0) {
+      return callTool(sandboxTool('runCommand'), {
+        command: 'mkdir -p biber-empty && : > biber-empty/empty.pptx',
+      });
+    }
+    if (results.length === 1)
+      return callTool(sandboxTool('exportFile'), { path: 'biber-empty/empty.pptx' });
+    return {
+      text: /is empty \(0 bytes\)/.test(results[1])
+        ? 'The export was refused: the file is empty.'
+        : `Unexpected: ${results[1]}`,
+    };
+  }
+  if (/just say the report is ready|只说报告做好了/i.test(said)) {
+    return { text: '已生成 report.xlsx，请查收。' };
+  }
+  if (/^(?:（交付核对）|\(Delivery check\))/.test(said) && said.includes('report.xlsx')) {
+    return make(WORKBOOK_SCRIPT, 'biber-report/report.xlsx', '补上了：已交付 report.xlsx。');
+  }
+};
+
 /** A ref from a snapshot the model was given, by the element's name. */
 const refNamed = (snapshot: string, name: RegExp) =>
   [...snapshot.matchAll(/^- (\S+) \w+ "([^"]*)"/gm)].find((match) => name.test(match[2]))?.[1];
@@ -401,7 +479,11 @@ export const decideReply = (request: Pick<ModelRequest, 'messages' | 'tools'>): 
   }
 
   const personal =
-    mailStep(request) ?? calendarStep(request) ?? computerStep(request) ?? profileStep(request);
+    mailStep(request) ??
+    calendarStep(request) ??
+    computerStep(request) ??
+    profileStep(request) ??
+    documentStep(request);
   if (personal) return personal;
 
   const reminder = reminderFor(textOf(request.messages[lastUser]?.content));
@@ -616,6 +698,44 @@ export const startFakeModel = async (port: number) => {
   });
   await listen(server, port);
   return { close: () => server.close(), requests };
+};
+
+/**
+ * Object storage for files the server stores (exports from the cloud computer): path-style
+ * `PUT`, `HEAD` and `GET` on `/<bucket>/<key>`, signatures not checked. Point the server at it
+ * with S3_ENDPOINT=http://127.0.0.1:<port> and S3_ENABLE_PATH_STYLE=1.
+ */
+export const startFakeS3 = async (port: number) => {
+  const objects = new Map<string, { body: Buffer; type: string }>();
+  const server = createServer(async (req, res) => {
+    const key = decodeURIComponent(new URL(req.url ?? '/', 'http://s3').pathname);
+    if (req.method === 'PUT') {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(chunk as Buffer);
+      objects.set(key, {
+        body: Buffer.concat(chunks),
+        type: String(req.headers['content-type'] ?? 'application/octet-stream'),
+      });
+      res.writeHead(200, { ETag: '"smoke"' });
+      res.end();
+      return;
+    }
+    const object = objects.get(key);
+    if (!object) {
+      res.writeHead(404, { 'Content-Type': 'application/xml' });
+      res.end('<Error><Code>NoSuchKey</Code></Error>');
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Length': String(object.body.length),
+      'Content-Type': object.type,
+      'ETag': '"smoke"',
+      'Last-Modified': new Date().toUTCString(),
+    });
+    res.end(req.method === 'HEAD' ? undefined : object.body);
+  });
+  await listen(server, port);
+  return { close: () => server.close(), objects };
 };
 
 export const startFakeExpoPush = async (port: number) => {

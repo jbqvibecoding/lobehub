@@ -2,7 +2,7 @@
 import { getTestDB } from '@lobechat/database/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { agents, messagePlugins, messages, topics } from '@/database/schemas';
+import { agents, messagePlugins, messages, topics, userSettings } from '@/database/schemas';
 import { users } from '@/database/schemas/user';
 
 import { expertMarketIdentifier } from '../catalog';
@@ -14,17 +14,13 @@ import {
   undeliveredFiles,
 } from '../deliveryCheck';
 
-const mocks = vi.hoisted(() => ({ execAgent: vi.fn() }));
+const mocks = vi.hoisted(() => ({ execAgent: vi.fn(), region: { APP_REGION: 'global' } }));
 
 vi.mock('@/database/server', () => ({ serverDB: {} }));
 vi.mock('@/server/services/aiAgent', () => ({
   AiAgentService: vi.fn().mockImplementation(() => ({ execAgent: mocks.execAgent })),
 }));
-vi.mock('@/server/services/systemAgent', () => ({
-  SystemAgentService: vi.fn().mockImplementation(() => ({
-    getUserLocale: vi.fn().mockResolvedValue('zh-CN'),
-  })),
-}));
+vi.mock('@/envs/region', () => ({ regionEnv: mocks.region }));
 
 const db = await getTestDB();
 const userId = 'delivery-user';
@@ -106,11 +102,13 @@ describe('checkFileDelivery', () => {
 
   beforeEach(async () => {
     mocks.execAgent.mockReset();
+    mocks.region.APP_REGION = 'global';
     await db.delete(users);
     await db.insert(users).values({ id: userId });
   });
 
   it('runs the documents expert once more when it named a file it never handed over', async () => {
+    await db.insert(userSettings).values({ general: { responseLanguage: 'zh-CN' }, id: userId });
     await setUp(expertMarketIdentifier('documents'));
     await exported('msg-deck', 'deck.pptx');
     await exported('msg-broken', 'report.xlsx', false);
@@ -125,6 +123,20 @@ describe('checkFileDelivery', () => {
         prompt: expect.stringMatching(/^（交付核对）你在回复里提到了 report\.xlsx，/),
       }),
     );
+  });
+
+  it('asks in the edition’s language when the user chose none', async () => {
+    await setUp(expertMarketIdentifier('documents'));
+    await run('Here is summary.docx.');
+    mocks.region.APP_REGION = 'cn';
+    await run('已生成 summary.docx。');
+
+    expect(mocks.execAgent.mock.calls.map(([call]) => isDeliveryCheck(call.prompt))).toEqual([
+      true,
+      true,
+    ]);
+    expect(mocks.execAgent.mock.calls[0][0].prompt).toMatch(/^\(Delivery check\)/);
+    expect(mocks.execAgent.mock.calls[1][0].prompt).toMatch(/^（交付核对）/);
   });
 
   it('does nothing when every named file was delivered, or no file is named', async () => {
