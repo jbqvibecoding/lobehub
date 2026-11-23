@@ -9,6 +9,7 @@ import { wsCompatProcedure } from '@/business/server/trpc-middlewares/workspaceA
 import { AgentModel } from '@/database/models/agent';
 import { MessageModel } from '@/database/models/message';
 import { TopicModel } from '@/database/models/topic';
+import { appEnv } from '@/envs/app';
 import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { AgentRuntimeService } from '@/server/services/agentRuntime';
@@ -51,6 +52,8 @@ export type ChatLine =
       apiName?: string;
       arguments?: string;
       createdAt: Date;
+      /** A file the call handed over (an export from the cloud computer), to open from the chat */
+      file?: ChatFile;
       id: string;
       identifier?: string;
       kind: 'tool';
@@ -59,6 +62,52 @@ export type ChatLine =
       title: string;
       type: string;
     };
+
+/** A file handed over in the chat: its name, and where to open it. */
+export interface ChatFile {
+  id: string;
+  mimeType?: string;
+  name: string;
+  size?: number;
+  /** Absolute, for the phone to open */
+  url: string;
+}
+
+/** A link the phone can open: file links are stored relative to this server. */
+const absoluteUrl = (url: string) => {
+  try {
+    return new URL(url, appEnv.APP_URL).toString();
+  } catch {
+    return url;
+  }
+};
+
+/** The file a call handed over, if it was an export that succeeded. */
+const deliveredFile = (row: {
+  plugin?: { apiName?: string; identifier?: string };
+  pluginState?: unknown;
+}): ChatFile | undefined => {
+  if (row.plugin?.identifier !== 'lobe-cloud-sandbox' || row.plugin.apiName !== 'exportFile')
+    return;
+  const state = row.pluginState as
+    | {
+        downloadUrl?: string;
+        fileId?: string;
+        filename?: string;
+        mimeType?: string;
+        size?: number;
+        success?: boolean;
+      }
+    | undefined;
+  if (!state?.success || !state.downloadUrl || !state.fileId || !state.filename) return;
+  return {
+    id: state.fileId,
+    mimeType: state.mimeType,
+    name: state.filename,
+    size: state.size,
+    url: absoluteUrl(state.downloadUrl),
+  };
+};
 
 const toolStatus = (row: {
   pluginError?: unknown;
@@ -158,10 +207,12 @@ export const chatRouter = router({
         if (groupId && row.plugin?.identifier === GROUP_TOOL) continue;
         if (row.role === 'tool' && row.plugin?.apiName) {
           const { apiName, arguments: args, identifier, type } = row.plugin;
+          const file = deliveredFile(row);
           lines.push({
             apiName,
             arguments: args ?? undefined,
             createdAt: row.createdAt,
+            ...(file && { file }),
             id: row.id,
             identifier: identifier ?? undefined,
             kind: 'tool',

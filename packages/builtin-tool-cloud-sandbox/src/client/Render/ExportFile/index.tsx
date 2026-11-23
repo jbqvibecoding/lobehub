@@ -1,17 +1,35 @@
 'use client';
 
-import { CheckCircleFilled, CloseCircleFilled, DownloadOutlined } from '@ant-design/icons';
+import { CloseCircleFilled, DownloadOutlined } from '@ant-design/icons';
 import type { BuiltinRenderProps } from '@lobechat/types';
-import { ActionIcon, Flexbox, Text } from '@lobehub/ui';
+import { Flexbox } from '@lobehub/ui';
+import { ActionIcon, Text } from '@lobehub/ui/base-ui';
 import { createStaticStyles, cssVar } from 'antd-style';
+import { FileIcon, FileSpreadsheet, FileText, Presentation } from 'lucide-react';
 import { memo, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import type { ExportFileState } from '../../../types';
 
 const styles = createStaticStyles(({ css }) => ({
-  container: css`
+  card: css`
+    overflow: hidden;
+
+    max-width: 420px;
+    padding-block: 10px;
+    padding-inline: 12px;
+    border: 1px solid ${cssVar.colorBorderSecondary};
+    border-radius: ${cssVar.borderRadiusLG};
+
+    background: ${cssVar.colorFillQuaternary};
+  `,
+  failed: css`
     overflow: hidden;
     padding-inline: 8px 0;
+  `,
+  icon: css`
+    flex: none;
+    color: ${cssVar.colorTextSecondary};
   `,
   statusIcon: css`
     font-size: 12px;
@@ -22,9 +40,26 @@ interface ExportFileParams {
   path: string;
 }
 
+const iconFor = (filename: string) => {
+  const extension = filename.split('.').pop()?.toLowerCase();
+  if (extension === 'pptx') return Presentation;
+  if (extension === 'xlsx' || extension === 'csv') return FileSpreadsheet;
+  if (extension === 'docx' || extension === 'pdf' || extension === 'md') return FileText;
+  return FileIcon;
+};
+
+const formatSize = (bytes?: number) => {
+  if (!bytes) return undefined;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+};
+
+/** A file handed over from the sandbox, shown as a card to download; a failed export as one line. */
 const ExportFile = memo<BuiltinRenderProps<ExportFileParams, ExportFileState>>(
   ({ args, pluginState }) => {
-    const isSuccess = pluginState?.success;
+    const { t } = useTranslation('plugin');
+    const filename = pluginState?.filename || args.path.split('/').pop() || args.path;
 
     const handleDownload = useCallback(async () => {
       if (!pluginState?.downloadUrl || !pluginState?.filename) return;
@@ -51,31 +86,41 @@ const ExportFile = memo<BuiltinRenderProps<ExportFileParams, ExportFileState>>(
       }
     }, [pluginState?.downloadUrl, pluginState?.filename]);
 
-    return (
-      <Flexbox className={styles.container} gap={8}>
-        <Flexbox horizontal align={'center'} gap={8}>
-          {pluginState === undefined ? null : isSuccess ? (
-            <CheckCircleFilled
-              className={styles.statusIcon}
-              style={{ color: cssVar.colorSuccess }}
-            />
-          ) : (
-            <CloseCircleFilled className={styles.statusIcon} style={{ color: cssVar.colorError }} />
-          )}
-          <Text code as={'span'} fontSize={12}>
-            {isSuccess
-              ? `Exported: ${pluginState?.filename || args.path}`
-              : `Failed to export ${args.path}`}
+    if (pluginState === undefined) return null;
+
+    if (!pluginState.success || !pluginState.downloadUrl) {
+      return (
+        <Flexbox horizontal align={'center'} className={styles.failed} gap={8}>
+          <CloseCircleFilled className={styles.statusIcon} style={{ color: cssVar.colorError }} />
+          <Text code fontSize={12}>
+            {t('builtins.lobe-cloud-sandbox.exportFile.failed', { path: args.path })}
           </Text>
-          {isSuccess && pluginState?.downloadUrl && (
-            <ActionIcon
-              icon={DownloadOutlined}
-              size={'small'}
-              title="Download"
-              onClick={handleDownload}
-            />
+        </Flexbox>
+      );
+    }
+
+    const Icon = iconFor(filename);
+    const extension = filename.split('.').pop()?.toUpperCase();
+    const details = [extension, formatSize(pluginState.size)].filter(Boolean).join(' · ');
+
+    return (
+      <Flexbox horizontal align={'center'} className={styles.card} gap={12}>
+        <Icon className={styles.icon} size={28} />
+        <Flexbox flex={1} gap={2} style={{ minWidth: 0 }}>
+          <Text ellipsis weight={500}>
+            {filename}
+          </Text>
+          {details && (
+            <Text fontSize={12} type={'secondary'}>
+              {details}
+            </Text>
           )}
         </Flexbox>
+        <ActionIcon
+          icon={DownloadOutlined}
+          title={t('builtins.lobe-cloud-sandbox.exportFile.download')}
+          onClick={handleDownload}
+        />
       </Flexbox>
     );
   },

@@ -55,6 +55,20 @@ describe('ExpertService', () => {
     expect(await experts.add('no-such-expert', 'en-US')).toBeUndefined();
   });
 
+  it('gives the document maker the cloud sandbox to make files with', async () => {
+    const { agentId } = (await new ExpertService(db, userId).add('documents', 'zh-CN'))!;
+
+    const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+    expect(agent).toMatchObject({
+      chatConfig: { searchMode: 'auto', toolMode: 'custom' },
+      marketIdentifier: expertMarketIdentifier('documents'),
+      plugins: ['lobe-web-browsing', 'lobe-cloud-sandbox'],
+      title: '文档助手',
+    });
+    expect(agent.systemRole).toContain('hand over with exportFile');
+    expect(agent.systemRole).not.toContain('You can search the web and read pages. You cannot');
+  });
+
   it('gives an expert without tools of its own web search and reading only, and says so', () => {
     for (const expert of EXPERTS.filter((item) => !item.plugins)) {
       expect(expert.systemRole).toContain('You can search the web and read pages.');

@@ -107,6 +107,50 @@ describe('mobile chatRouter.history', () => {
     await cleanupTestUser(testDB, chat.userId);
   });
 
+  it('hands over a file a call exported, with a link the phone can open', async () => {
+    const chat = await createConversation();
+    await say(chat, 'm-user', 'user', 'Make a deck', '2026-11-17T09:00:00Z');
+    for (const [id, state] of [
+      [
+        'm-export',
+        {
+          downloadUrl: '/f/file-1',
+          fileId: 'file-1',
+          filename: 'deck.pptx',
+          mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          size: 51_200,
+          success: true,
+        },
+      ],
+      ['m-refused', { filename: 'empty.pptx', success: false }],
+    ] as const) {
+      await say(chat, id, 'tool', '', '2026-11-17T09:00:01Z');
+      await testDB.insert(messagePlugins).values({
+        apiName: 'exportFile',
+        id,
+        identifier: 'lobe-cloud-sandbox',
+        state,
+        type: 'builtin',
+        userId: chat.userId,
+      });
+    }
+
+    const { lines } = await callerFor(chat.userId).history({ topicId: chat.topicId });
+
+    const exported = lines.find((line) => line.id === 'm-export');
+    expect(exported).toMatchObject({
+      file: {
+        id: 'file-1',
+        name: 'deck.pptx',
+        size: 51_200,
+        url: expect.stringMatching(/\/f\/file-1$/),
+      },
+      kind: 'tool',
+    });
+    expect(lines.find((line) => line.id === 'm-refused')).not.toHaveProperty('file');
+    await cleanupTestUser(testDB, chat.userId);
+  });
+
   it('says a run is still writing while the runtime reports it active', async () => {
     const chat = await createConversation('op-2');
     await say(chat, 'm-user', 'user', 'Hi', '2026-11-17T09:00:00Z');

@@ -26,6 +26,8 @@ export type ChatLine =
       apiName?: string;
       arguments?: string;
       createdAt: Date;
+      /** A file the call handed over, to open from the chat */
+      file?: ChatFile;
       id: string;
       identifier?: string;
       kind: 'tool';
@@ -34,6 +36,15 @@ export type ChatLine =
       title: string;
       type: string;
     };
+
+/** A file handed over in a conversation (`chat.history`): its name, and where to open it. */
+export interface ChatFile {
+  id: string;
+  mimeType?: string;
+  name: string;
+  size?: number;
+  url: string;
+}
 
 /** Where the latest run stands: writing, waiting for the user, or done. */
 export type ChatRunState = 'idle' | 'running' | 'waiting';

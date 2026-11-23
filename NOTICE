@@ -5,7 +5,8 @@ Orkas — https://github.com/Orkas-AI/Orkas
 Used in: apps/server/src/services/experts/catalog.ts (the roles, methods and delivery
 standards of the Researcher, Writer, SEO Consultant, Product Scout and Product Copywriter
 experts, adapted from the DeepResearcher, ContentWriter, SeoGeoAgent, ECommerceResearcher
-and ECommerceWriter agents)
+and ECommerceWriter agents; and of the Document Maker, adapted from the OfficeWorker and
+PptMaker agents and their office-word, office-excel, office-ppt and ppt-craft skills)
 
 MIT License
 

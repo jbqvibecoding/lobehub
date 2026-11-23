@@ -192,6 +192,8 @@
   "builtins.lobe-cloud-sandbox.apiName.searchLocalFiles": "Search files",
   "builtins.lobe-cloud-sandbox.apiName.writeFile": "Write file",
   "builtins.lobe-cloud-sandbox.apiName.writeLocalFile": "Write file",
+  "builtins.lobe-cloud-sandbox.exportFile.download": "Download",
+  "builtins.lobe-cloud-sandbox.exportFile.failed": "Could not hand over {{path}}",
   "builtins.lobe-cloud-sandbox.inspector.noResults": "No results",
   "builtins.lobe-cloud-sandbox.title": "Cloud Sandbox",
   "builtins.lobe-computer.apiName.click": "Click",

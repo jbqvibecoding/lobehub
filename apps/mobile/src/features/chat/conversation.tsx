@@ -19,6 +19,7 @@ import type { ApiClient } from '@/lib/api-client';
 import { type Palette, useColors } from '@/theme/colors';
 
 import { AgentAvatar } from './agent-avatar';
+import { FileCard } from './file-card';
 import type { ChatLine, GroupMember, Speaker } from './types';
 import { chatHistoryKey, useChatHistory, useGroup, useSendMessage, useStopRun } from './use-chat';
 
@@ -188,6 +189,7 @@ export const Conversation = ({
         />
       );
     }
+    if (item.file && item.status === 'done') return <FileCard file={item.file} />;
     return <Text style={styles.tool}>{`${item.title} · ${t(TOOL_STATUS[item.status])}`}</Text>;
   };
 
