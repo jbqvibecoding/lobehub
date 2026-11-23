@@ -1,5 +1,6 @@
 import { channelDocUrl } from '@lobechat/const';
 
+import { PLATFORM_UNSUPPORTED_MESSAGE_APIS } from '../messageCapabilities';
 import type { PlatformDefinition } from '../types';
 import { WechatClientFactory } from './client';
 import { schema } from './schema';
@@ -16,5 +17,6 @@ export const wechat: PlatformDefinition = {
   // WeChat shows markdown markers as typed, so the agent is told to write plain text
   supportsMarkdown: false,
   supportsMessageEdit: false,
+  unsupportedMessageApis: PLATFORM_UNSUPPORTED_MESSAGE_APIS.wechat,
   clientFactory: new WechatClientFactory(),
 };

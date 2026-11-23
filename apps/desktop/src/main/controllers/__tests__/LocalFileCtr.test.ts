@@ -393,6 +393,70 @@ describe('LocalFileCtr', () => {
       });
     });
 
+    it('should return binary document previews as base64', async () => {
+      mockLocalFileProtocolManager.readPreviewFile.mockResolvedValue({
+        buffer: Buffer.from('docx-bytes'),
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        realPath: '/workspace/report.docx',
+      });
+
+      const result = await localFileCtr.getLocalFilePreview({
+        path: '/workspace/report.docx',
+        workingDirectory: '/workspace',
+      });
+
+      expect(result).toEqual({
+        preview: {
+          base64: Buffer.from('docx-bytes').toString('base64'),
+          contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          type: 'document',
+        },
+        success: true,
+      });
+    });
+
+    it('should fall back to the content-less pdf variant for oversized documents', async () => {
+      mockLocalFileProtocolManager.readPreviewFile.mockResolvedValue({
+        buffer: Buffer.alloc(20 * 1024 * 1024 + 1),
+        contentType: 'application/pdf',
+        realPath: '/workspace/huge.pdf',
+      });
+
+      const result = await localFileCtr.getLocalFilePreview({
+        path: '/workspace/huge.pdf',
+        workingDirectory: '/workspace',
+      });
+
+      expect(result).toEqual({
+        preview: { contentType: 'application/pdf', type: 'pdf' },
+        success: true,
+      });
+    });
+
+    it('should serialize short-circuited oversized reads as content-less fallbacks', async () => {
+      // The protocol manager returns an empty buffer with `oversized` when it
+      // skipped the read; the serializer must NOT treat it as a real document.
+      mockLocalFileProtocolManager.readPreviewFile.mockResolvedValue({
+        buffer: Buffer.alloc(0),
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        oversized: true,
+        realPath: '/workspace/huge.docx',
+      });
+
+      const result = await localFileCtr.getLocalFilePreview({
+        path: '/workspace/huge.docx',
+        workingDirectory: '/workspace',
+      });
+
+      expect(result).toEqual({
+        preview: {
+          contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          type: 'binary',
+        },
+        success: true,
+      });
+    });
+
     it('should forward user-approved external preview reads', async () => {
       mockLocalFileProtocolManager.readPreviewFile.mockResolvedValue({
         buffer: Buffer.from('<h1>Demo</h1>'),
@@ -879,8 +943,8 @@ describe('LocalFileCtr', () => {
   });
 
   describe('handleEditFile', () => {
-    it('should replace first occurrence successfully', async () => {
-      const originalContent = 'Hello world\nHello again\nGoodbye world';
+    it('should replace a unique occurrence successfully', async () => {
+      const originalContent = 'Hello world\nGreetings again\nGoodbye world';
       vi.mocked(mockFsPromises.readFile).mockResolvedValue(originalContent);
       vi.mocked(mockFsPromises.writeFile).mockResolvedValue(undefined);
 
@@ -898,9 +962,30 @@ describe('LocalFileCtr', () => {
       expect(result.diffText).toContain('diff --git a/test/file.txt b/test/file.txt');
       expect(mockFsPromises.writeFile).toHaveBeenCalledWith(
         '/test/file.txt',
-        'Hi world\nHello again\nGoodbye world',
+        'Hi world\nGreetings again\nGoodbye world',
         'utf8',
       );
+    });
+
+    // Editing an arbitrary one of several matches is worse than not editing:
+    // the caller was told "replaced 1 occurrence(s)" either way, so a wrong
+    // target went unnoticed.
+    it('should refuse an ambiguous old_string instead of editing the first match', async () => {
+      const originalContent = 'Hello world\nHello again\nGoodbye world';
+      vi.mocked(mockFsPromises.readFile).mockResolvedValue(originalContent);
+
+      const result = await localFileCtr.handleEditFile({
+        file_path: '/test/file.txt',
+        old_string: 'Hello',
+        new_string: 'Hi',
+        replace_all: false,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.replacements).toBe(0);
+      expect(result.error).toContain('not unique');
+      expect(result.error).toContain('L1, L2');
+      expect(mockFsPromises.writeFile).not.toHaveBeenCalled();
     });
 
     it('should replace all occurrences when replace_all is true', async () => {
@@ -956,7 +1041,9 @@ describe('LocalFileCtr', () => {
       });
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('The specified old_string was not found in the file');
+      // The message now names the file and why the match failed.
+      expect(result.error).toContain('The specified old_string was not found in /test/file.txt');
+      expect(result.error).toContain('None of it appears in the file');
       expect(result.replacements).toBe(0);
       expect(mockFsPromises.writeFile).not.toHaveBeenCalled();
     });

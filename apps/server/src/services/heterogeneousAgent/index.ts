@@ -1,6 +1,12 @@
 import type { AgentStreamEvent } from '@lobechat/agent-gateway-client';
 import { type ISnapshotStore, parseOperationId } from '@lobechat/agent-tracing';
 import type { LobeChatDatabase } from '@lobechat/database';
+import {
+  classifyHeteroProcessFailure,
+  isHeteroStatusGuideErrorData,
+  type LocalHeterogeneousAgentType,
+} from '@lobechat/heterogeneous-agents';
+import { ThreadStatus } from '@lobechat/types';
 import debug from 'debug';
 
 import { AgentOperationModel } from '@/database/models/agentOperation';
@@ -25,7 +31,7 @@ const log = debug('lobe-server:hetero-agent-service');
 /** Statuses an operation ends in; a parked or running one is still going. */
 const TERMINAL_OPERATION_STATUSES = new Set<string>(['done', 'error', 'interrupted']);
 
-export type HeterogeneousAgentType = 'amp' | 'claude-code' | 'codex' | 'opencode';
+export type HeterogeneousAgentType = LocalHeterogeneousAgentType;
 
 export type HeterogeneousFinishResult = 'success' | 'error' | 'cancelled';
 
@@ -42,6 +48,10 @@ export interface HeterogeneousIngestParams {
 
 export interface HeterogeneousFinishParams {
   agentType: HeterogeneousAgentType;
+  /** Initial assistant placeholder supplied by the producer. This remains
+   * usable when gateway completion wins the race and clears runningOperation
+   * before the CLI's terminal callback reaches the server. */
+  assistantMessageId?: string;
   /**
    * CLI-reported failure. `body`, when present, is the structured status-guide
    * error (`agentType` + `code` + details) persisted verbatim as the
@@ -59,7 +69,42 @@ export interface HeterogeneousFinishParams {
   topicId: string;
 }
 
+type HeterogeneousFinishError = NonNullable<HeterogeneousFinishParams['error']>;
+
+/**
+ * Older or partially upgraded `lh hetero exec` producers can flatten an
+ * adapter-classified terminal error before calling `heteroFinish`. Reclassify
+ * the final payload at the server boundary so a recognizable authentication
+ * failure always reaches the message row as the structured status-guide shape
+ * (`body.agentType + body.code`) the web client renders.
+ */
+export const normalizeHeterogeneousFinishError = (
+  agentType: HeterogeneousAgentType,
+  error: HeterogeneousFinishError | undefined,
+): HeterogeneousFinishError | undefined => {
+  if (!error || isHeteroStatusGuideErrorData(error.body)) return error;
+
+  const body = error.body;
+  const bodyDetails = body
+    ? [body.message, body.error, body.stderr]
+        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        .join('\n')
+    : '';
+  const detail = [error.message, bodyDetails].filter(Boolean).join('\n');
+  const classified = classifyHeteroProcessFailure({ agentType, detail });
+
+  if (!classified) return error;
+
+  return {
+    body: { ...classified },
+    message: classified.message,
+    type: 'AgentRuntimeError',
+  };
+};
+
 export interface HeterogeneousAgentServiceOptions {
+  /** Inject a pre-built operation model (used by tests). */
+  agentOperationModel?: AgentOperationModel;
   /** Inject a pre-built persistence handler (used by tests). */
   persistenceHandler?: HeterogeneousPersistenceHandler;
   /** Inject a snapshot store (used by tests); defaults to the env-resolved store. */
@@ -77,7 +122,8 @@ export interface HeterogeneousAgentServiceOptions {
 
 /**
  * Server-side ingest handler for heterogeneous agent CLIs (`lh hetero exec`
- * for Amp / Claude Code / Codex / OpenCode). Receives `AgentStreamEvent` batches from the
+ * for Amp / Claude Code / CodeBuddy / Codex / OpenCode / Pi / Qoder / TRAE). Receives
+ * `AgentStreamEvent` batches from the
  * producer and republishes them through the existing `StreamEventManager`
  * fanout, so renderer-side gateway WS subscribers see the same wire shape
  * regardless of whether the run came from the agent gateway or a CLI process.
@@ -87,6 +133,7 @@ export interface HeterogeneousAgentServiceOptions {
  * `topic.metadata.heterogeneousSessions`.
  */
 export class HeterogeneousAgentService {
+  private readonly agentOperationModel: AgentOperationModel;
   private readonly db: LobeChatDatabase;
   private readonly messageModel: MessageModel;
   private readonly persistenceHandler: HeterogeneousPersistenceHandler;
@@ -105,6 +152,8 @@ export class HeterogeneousAgentService {
     this.userId = userId;
     const workspaceId = options.workspaceId;
     this.workspaceId = workspaceId;
+    this.agentOperationModel =
+      options.agentOperationModel ?? new AgentOperationModel(db, userId, workspaceId);
     this.messageModel = new MessageModel(db, userId, workspaceId);
     this.streamEventManager = options.streamEventManager ?? createStreamEventManager();
     this.topicModel = options.topicModel ?? new TopicModel(db, userId, workspaceId);
@@ -117,6 +166,8 @@ export class HeterogeneousAgentService {
         messageModel: this.messageModel,
         threadModel: new ThreadModel(db, userId, workspaceId),
         topicModel: this.topicModel,
+        userId,
+        workspaceId,
       });
   }
 
@@ -131,6 +182,12 @@ export class HeterogeneousAgentService {
       agentType,
       events.length,
     );
+
+    const leaseRefreshed = await this.agentOperationModel.touchRunning(operationId);
+    if (!leaseRefreshed) {
+      log('heteroIngest: ignore terminal or missing operation op=%s', operationId);
+      return;
+    }
 
     // Persist FIRST, then publish — the renderer's gateway handler triggers
     // `fetchAndReplaceMessages` on stream_start / tool_end / step_complete,
@@ -193,7 +250,15 @@ export class HeterogeneousAgentService {
   }
 
   async heteroFinish(params: HeterogeneousFinishParams): Promise<void> {
-    const { agentType, error, operationId, result, sessionId, topicId } = params;
+    const {
+      agentType,
+      assistantMessageId: seedAssistantMessageId,
+      operationId,
+      result,
+      sessionId,
+      topicId,
+    } = params;
+    const error = normalizeHeterogeneousFinishError(agentType, params.error);
 
     log(
       'heteroFinish: user=%s topic=%s op=%s type=%s result=%s sessionId=%s',
@@ -205,6 +270,17 @@ export class HeterogeneousAgentService {
       sessionId ?? '<none>',
     );
 
+    if (error?.body?.code === 'auth_required') {
+      log(
+        'heteroFinish: authentication required user=%s topic=%s op=%s type=%s detail=%s',
+        this.userId,
+        topicId,
+        operationId,
+        agentType,
+        error.body.stderr ?? error.message,
+      );
+    }
+
     // Drain any pending state in the persistence handler — flushes trailing
     // accumulated content / reasoning that the in-stream `agent_runtime_end`
     // already wrote (no-op when state is clean), persists the CLI's native
@@ -213,12 +289,89 @@ export class HeterogeneousAgentService {
     // producing any stream event (spawn ENOENT / auth-on-stderr): the terminal
     // error must be written HERE, before the `agent_runtime_end` publish below
     // triggers the client's message refetch.
-    await this.persistenceHandler.finish({ error, operationId, result, sessionId, topicId });
+    await this.persistenceHandler.finish({
+      assistantMessageId: seedAssistantMessageId,
+      error,
+      operationId,
+      result,
+      sessionId,
+      topicId,
+    });
 
-    // Always emit a terminal `agent_runtime_end` so renderer subscribers shut
-    // down even if the CLI stream missed it (process killed mid-flight,
-    // network drop on last batch). Idempotent on the renderer side: the
-    // gateway event handler latches `terminalState` on first end-event.
+    let serializedHooks: SerializedHook[] | undefined;
+    let assistantMessageId = seedAssistantMessageId;
+    let isolationThreadId: string | undefined;
+    let orchestrationRole: 'member' | 'supervisor' | undefined;
+
+    // `cancelled` is only an intermediate process signal. Keep the marker for
+    // the following success/error terminal callback, which owns completion.
+    if (result !== 'cancelled') {
+      // An operation that already ended is not ended again: a run the user stopped (the stop
+      // records it as interrupted before killing the CLI, which then still reports on its way
+      // out), or a report sent twice. Finishing it again would overwrite its outcome and fire its
+      // hooks twice.
+      try {
+        const op = await new AgentOperationModel(this.db, this.userId, this.workspaceId).findById(
+          operationId,
+        );
+        if (op && TERMINAL_OPERATION_STATUSES.has(op.status)) {
+          log(
+            'heteroFinish: op=%s already ended as %s; not finishing it again',
+            operationId,
+            op.status,
+          );
+          return;
+        }
+      } catch (err) {
+        log('heteroFinish: reading the operation failed (non-fatal): %O', err);
+      }
+
+      // A Biber group member's run ends on its own record; the host's run keeps the conversation
+      try {
+        const topic = await this.topicModel.findById(topicId);
+        const member = topic?.metadata?.heteroMemberRuns?.[operationId];
+        if (member) {
+          serializedHooks = member.hooks as SerializedHook[] | undefined;
+          const currentMsgRef = topic?.metadata?.heteroCurrentMsgId;
+          assistantMessageId =
+            currentMsgRef?.operationId === operationId
+              ? currentMsgRef.msgId
+              : (member.assistantMessageId ?? assistantMessageId);
+          orchestrationRole = 'member';
+          await this.topicModel.updateMetadataEntry(topicId, 'heteroMemberRuns', operationId, null);
+        }
+      } catch (err) {
+        log('heteroFinish: failed to clear the member run (non-fatal): %O', err);
+      }
+    }
+
+    if (result !== 'cancelled' && orchestrationRole !== 'member') {
+      try {
+        const settled = await this.topicModel.settleRunningOperation(topicId, operationId);
+        if (settled.status === 'conflict') {
+          log(
+            'heteroFinish: ignore stale finish topic=%s op=%s; current operation is %s',
+            topicId,
+            operationId,
+            settled.activeOperationId,
+          );
+          return;
+        }
+
+        assistantMessageId = settled.assistantMessageId ?? assistantMessageId;
+        if (settled.status === 'settled') {
+          serializedHooks = settled.hooks as SerializedHook[] | undefined;
+          isolationThreadId = settled.threadId;
+          orchestrationRole = settled.orchestrationRole;
+        }
+      } catch (err) {
+        log('heteroFinish: failed to settle runningOperation (non-fatal): %O', err);
+      }
+    }
+
+    // Emit a terminal `agent_runtime_end` so renderer subscribers shut down even
+    // if the CLI stream missed it. A stale callback that belongs to neither the
+    // root operation nor one of its children returns above.
     await this.streamEventManager.publishStreamEvent(operationId, {
       data: {
         agentType,
@@ -247,59 +400,6 @@ export class HeterogeneousAgentService {
     // result lands.)
     if (result === 'cancelled') return;
 
-    // An operation that already ended is not ended again: a run the user stopped (the stop
-    // records it as interrupted before killing the CLI, which then still reports on its way out),
-    // or a report sent twice. Finishing it again would overwrite its outcome and fire its hooks
-    // twice.
-    try {
-      const op = await new AgentOperationModel(this.db, this.userId, this.workspaceId).findById(
-        operationId,
-      );
-      if (op && TERMINAL_OPERATION_STATUSES.has(op.status)) {
-        log(
-          'heteroFinish: op=%s already ended as %s; not finishing it again',
-          operationId,
-          op.status,
-        );
-        return;
-      }
-    } catch (err) {
-      log('heteroFinish: reading the operation failed (non-fatal): %O', err);
-    }
-
-    let serializedHooks: SerializedHook[] | undefined;
-    let assistantMessageId: string | undefined;
-    try {
-      const topic = await this.topicModel.findById(topicId);
-      // A group member's run ends on its own record; the host's run keeps the conversation
-      const member = topic?.metadata?.heteroMemberRuns?.[operationId];
-      const running = member ?? topic?.metadata?.runningOperation;
-      serializedHooks = running?.hooks as SerializedHook[] | undefined;
-      // Prefer heteroCurrentMsgId — the persistence handler updates this pointer
-      // on every step boundary, so it refers to the LAST assistant message with
-      // the complete final content.  Fall back to the initial placeholder id
-      // recorded for the run if the pointer is absent or belongs to a
-      // different operation (shouldn't happen, but defensive).
-      const currentMsgRef = topic?.metadata?.heteroCurrentMsgId;
-      assistantMessageId =
-        currentMsgRef?.operationId === operationId
-          ? currentMsgRef.msgId
-          : running?.assistantMessageId;
-      if (member) {
-        await this.topicModel.updateMetadataEntry(topicId, 'heteroMemberRuns', operationId, null);
-      } else {
-        await this.topicModel.updateMetadata(topicId, { runningOperation: null });
-        // Settle `status: 'running'` for runs with no renderer attached (e.g. a
-        // cron-dispatched scheduled resume) — otherwise nothing ever moves the
-        // topic off `running`. Guarded in the model: an attached client's own
-        // terminal write ('active'/'unread') is never clobbered. A group member's run leaves the
-        // host's run, and with it the topic's status, alone.
-        await this.topicModel.settleRunningStatus(topicId);
-      }
-    } catch (err) {
-      log('heteroFinish: failed to clear runningOperation (non-fatal): %O', err);
-    }
-
     // The owning agentId is authoritatively encoded in the operationId
     // (op_<ts>_agt_<id>_tpc_<id>_<suffix>, built at dispatch from the resolved
     // agent), so derive it from there. Reading it back off the final assistant
@@ -318,6 +418,40 @@ export class HeterogeneousAgentService {
         lastAssistantContent = msg?.content as string | undefined;
       } catch (err) {
         log('heteroFinish: failed to read final assistant message (non-fatal): %O', err);
+      }
+    }
+
+    // Heterogeneous device callbacks can finish on a different server instance
+    // from the one that registered the in-memory thread hooks. Finalize the
+    // isolation thread durably here as well, and project its terminal answer
+    // back onto the source assistant in the main conversation.
+    if (isolationThreadId) {
+      try {
+        const threadModel = new ThreadModel(this.db, this.userId, this.workspaceId);
+        const thread = await threadModel.findById(isolationThreadId);
+        if (thread) {
+          if (lastAssistantContent && thread.sourceMessageId) {
+            await this.messageModel.update(thread.sourceMessageId, {
+              content: lastAssistantContent,
+            });
+          }
+
+          const completedAt = new Date().toISOString();
+          const startedAt =
+            typeof thread.metadata?.startedAt === 'string' ? thread.metadata.startedAt : undefined;
+          await threadModel.update(isolationThreadId, {
+            metadata: {
+              ...thread.metadata,
+              completedAt,
+              ...(error ? { error } : {}),
+              ...(startedAt ? { duration: Date.now() - new Date(startedAt).getTime() } : undefined),
+              operationId,
+            },
+            status: result === 'success' ? ThreadStatus.Completed : ThreadStatus.Failed,
+          });
+        }
+      } catch (err) {
+        log('heteroFinish: failed to finalize isolation thread (non-fatal): %O', err);
       }
     }
 
@@ -401,6 +535,7 @@ export class HeterogeneousAgentService {
         // Backfilled executed model/provider — the verify gate bails when absent.
         model: totals?.model,
         operationId,
+        orchestrationRole,
         provider: totals?.provider,
         serializedHooks,
         stepCount: totals?.stepCount ?? null,

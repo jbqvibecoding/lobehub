@@ -3,7 +3,7 @@
 import { useTranslation } from 'react-i18next';
 
 import BillingPlans from '@/features/BillingPlans';
-import SettingHeader from '@/routes/(main)/settings/features/SettingHeader';
+import SettingHeader from '@/features/Settings/features/SettingHeader';
 
 const Plans = () => {
   const { t } = useTranslation('subscription');

@@ -47,6 +47,7 @@ export const taskCompletionHook = ({
     // onTopicComplete params server-side) knows whether this was a manual run or an automation tick.
     body: { runTrigger, taskId, taskIdentifier, userId },
     delivery: 'qstash' as const,
+    fallback: 'none' as const,
     url: '/api/workflows/task/on-topic-complete',
   },
 });

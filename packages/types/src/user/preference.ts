@@ -19,7 +19,9 @@ import type { NotificationSettings } from './settings/notification';
  * another. See `resolveAgencyConfig` in
  * `packages/types/src/agent/agencyConfig.ts` for the merge implementation.
  *
- * Two fields only, deliberately: `executionTarget` + `boundDeviceId`.
+ * Routing fields only, deliberately: `executionTarget`, `boundDeviceId`, and
+ * the two `localSandbox*` fields (which qualify *this member's* local execution
+ * — how hard their own machine is fenced is theirs to decide).
  * `heterogeneousProvider`, `verifyRubricId`, and `workingDirByDevice` remain
  * agent-shared because they describe *what the agent is*, not *how this user
  * routes it*.
@@ -27,6 +29,8 @@ import type { NotificationSettings } from './settings/notification';
 export interface AgentDeviceOverride {
   boundDeviceId?: string;
   executionTarget?: DeviceExecutionTarget;
+  localSandbox?: boolean;
+  localSandboxNetwork?: boolean;
 }
 
 /**
@@ -79,29 +83,41 @@ export interface WorkspaceUserPreference {
    */
   sidebar?: SidebarLayoutPreference;
   /**
-   * Per-member folder assignment for sidebar items (agentId/chatGroupId →
-   * sessionGroupId). Folders are per-member in workspace mode, so moving a
-   * shared item into "my" folder must not rewrite the shared
-   * `agents.sessionGroupId` column (which would regroup every member's
-   * sidebar). This map is the sole source in workspace mode — items absent
-   * here sit in the default (ungrouped) list; the shared column is ignored.
+   * Explicit per-member sidebar membership for workspace Agents / chat groups
+   * (itemId -> visible). The workspace sidebar is a shared structure, so every
+   * item a member can see is listed by default; an entry here is that member's
+   * personal opt-out (`false`) or an explicit re-show of something the legacy
+   * hidden-id list removed. An explicit entry always wins over that list.
+   */
+  sidebarAgentVisibilityOverrides?: Record<string /* itemId */, boolean>;
+  /**
+   * Per-member folder assignment for sidebar items.
+   *
+   * @deprecated Folder membership is workspace-shared again — it lives on the
+   *   `agents.sessionGroupId` / `chat_groups.groupId` columns. Existing keys
+   *   are ignored; nothing reads or writes this map.
    */
   sidebarGroupAssignments?: Record<string /* itemId */, string | null>;
   /**
    * Sidebar agents/chat-groups the caller removed from their own sidebar
-   * ("加入/移出左侧边栏" on the View All page). Every item is listed by
-   * default (no entry here); removal hides it from this member's sidebar
-   * only — the shared 置顶 `agents.pinned` column and other members are
-   * untouched. Distinct from pinning: this is membership, not ordering.
+   * before ownership-based workspace defaults were introduced. Retained for
+   * backward compatibility; new workspace writes use
+   * `sidebarAgentVisibilityOverrides`. Personal mode still uses this list.
    */
   sidebarHiddenAgentIds?: string[];
   /**
-   * Per-member pins for sidebar items (agentId/chatGroupId → pinned).
-   * Pinning is fully per-member in workspace mode: this map is the sole
-   * source — the shared `agents.pinned` / `chat_groups.pinned` columns are
-   * ignored (a transferred-in agent's personal pin, or a pin made before
-   * this preference existed, must not surface for anyone). Items absent
-   * here are unpinned.
+   * Sidebar folders (Categories) the caller removed from their own sidebar in
+   * this workspace. Folders themselves are shared, so this is the personal
+   * mask over them: absent id = shown. Hiding a folder hides the whole
+   * section, its items included — they stay reachable from the agents list.
+   */
+  sidebarHiddenGroupIds?: string[];
+  /**
+   * Per-member pins for sidebar items.
+   *
+   * @deprecated Pinning is workspace-shared again — it lives on the
+   *   `agents.pinned` / `chat_groups.pinned` columns. Existing keys are
+   *   ignored; nothing reads or writes this map.
    */
   sidebarPinnedOverrides?: Record<string /* itemId */, boolean>;
 }
@@ -142,17 +158,32 @@ export const UserLabSchema = z.object({
    */
   enableAgentGraphConfig: z.boolean().optional(),
   /**
-   * enable agent self-iteration feedback capture and policy execution
-   */
-  enableAgentSelfIteration: z.boolean().optional(),
-  /**
    * enable artifact deployment features (publish artifacts to a hosted URL)
    */
   enableArtifactDeployment: z.boolean().optional(),
   /**
+   * let supported local agents (Claude Code / Codex) use a configured API
+   * provider on Desktop instead of their subscription
+   */
+  enableAgentProviderBinding: z.boolean().optional(),
+  /**
+   * @deprecated superseded by `enableAgentProviderBinding` when the feature
+   * generalized beyond Claude Code. Kept so users who enabled it under the old
+   * key keep the feature on; the selector falls back to it.
+   */
+  enableClaudeCodeApiMode: z.boolean().optional(),
+  /**
    * run Claude Code hetero sessions through the Claude Agent SDK instead of CLI spawn
    */
   enableClaudeCodeSdk: z.boolean().optional(),
+  /**
+   * run Codex hetero sessions through codex app-server instead of one-shot CLI spawn
+   */
+  enableCodexAppServer: z.boolean().optional(),
+  /**
+   * enable displaying two desktop tabs side by side
+   */
+  enableDesktopSplitView: z.boolean().optional(),
   /**
    * one-click import of local Claude Code / Codex CLI sessions as topics (desktop only)
    */
@@ -182,9 +213,13 @@ export const UserLabSchema = z.object({
    */
   enableOAuthApps: z.boolean().optional(),
   /**
-   * show the "Add Platform Agent" entry in the create menu
+   * enable the project workspace experiment
    */
-  enablePlatformAgent: z.boolean().optional(),
+  enableProjects: z.boolean().optional(),
+  /**
+   * show the per-agent self-learning (expertise) page and its sidebar entry
+   */
+  enableSelfLearning: z.boolean().optional(),
   /**
    * enable the task delivery-acceptance (verify) config UI on the task detail
    */
@@ -206,6 +241,11 @@ export interface UserPreference {
    * @deprecated Use lab.enableInputMarkdown instead
    */
   disableInputMarkdownRender?: boolean;
+  /**
+   * CSS font-family value used as the global default UI font.
+   * Empty or whitespace-only values fall back to the application font stack.
+   */
+  fontFamily?: string;
   guide?: UserGuide;
   hideSyncAlert?: boolean;
   /**
@@ -224,6 +264,12 @@ export interface UserPreference {
    * removed from the personal sidebar via the View All page.
    */
   sidebarHiddenAgentIds?: string[];
+  /**
+   * Personal-mode counterpart of
+   * {@link WorkspaceUserPreference.sidebarHiddenGroupIds}: folders
+   * (Categories) hidden from the personal sidebar via Category Management.
+   */
+  sidebarHiddenGroupIds?: string[];
   /**
    * @deprecated Use settings.general.telemetry instead
    */
@@ -293,11 +339,13 @@ export interface SSOProvider {
 export const UserPreferenceSchema = z
   .object({
     defaultOpenInApp: z.string().optional(),
+    fontFamily: z.string().optional(),
     guide: UserGuideSchema.optional(),
     hideSyncAlert: z.boolean().optional(),
     lab: UserLabSchema.optional(),
     lastWorkspaceId: z.string().nullish(),
     sidebarHiddenAgentIds: z.array(z.string()).optional(),
+    sidebarHiddenGroupIds: z.array(z.string()).optional(),
     terminalFontFamily: z.string().optional(),
     telemetry: z.boolean().nullable(),
     topicGroupMode: z.enum(['byTime', 'byProject', 'flat', 'byStatus']).optional(),

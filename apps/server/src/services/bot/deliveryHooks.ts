@@ -69,7 +69,9 @@ export const buildBotDeliveryHooks = ({
       handler: deliverLocally(db, completion),
       id: 'bot-completion',
       type: 'onComplete',
-      webhook: { body: completion, delivery: 'qstash', url: BOT_CALLBACK_URL },
+      // Upstream's strict delivery: a failed QStash publish surfaces instead of a second, unsigned
+      // delivery by fetch that could post the reply twice
+      webhook: { body: completion, delivery: 'qstash', fallback: 'none', url: BOT_CALLBACK_URL },
     },
   ];
 };

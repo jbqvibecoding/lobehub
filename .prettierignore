@@ -21,6 +21,9 @@ apps/computer
 
 # dependencies
 node_modules
+
+# generated files (regenerate with `bun generate:openapi` in packages/openapi)
+packages/openapi/openapi.yml
 *.log
 *.lock
 package-lock.json
@@ -63,3 +66,9 @@ Dockerfile*
 # misc
 # add other ignore file below
 .next
+
+# generated files (regenerate with `bun generate` in packages/sdk)
+packages/sdk/src/generated/
+
+# generated files (regenerate with `codex app-server generate-ts`)
+packages/heterogeneous-agents/src/codex/protocol/generated.ts

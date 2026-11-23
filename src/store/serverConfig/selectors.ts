@@ -16,8 +16,8 @@ export const serverConfigSelectors = {
   enableMarketTrustedClient: (s: ServerConfigStore) =>
     s.serverConfig.enableMarketTrustedClient || false,
   enableUploadFileToServer: (s: ServerConfigStore) => s.serverConfig.enableUploadFileToServer,
-  enableVisualUnderstanding: (s: ServerConfigStore) =>
-    s.serverConfig.enableVisualUnderstanding || false,
+  enableMultimodalUnderstanding: (s: ServerConfigStore) =>
+    s.serverConfig.enableMultimodalUnderstanding || false,
   enabledTelemetryChat: (s: ServerConfigStore) => s.serverConfig.telemetry.langfuse || false,
   /**
    * Whether this is the Global edition, the only one that may hand user content to services
@@ -26,5 +26,5 @@ export const serverConfigSelectors = {
   isGlobalEdition: (s: ServerConfigStore) => s.serverConfig.region === 'global',
   isMobile: (s: ServerConfigStore) => s.isMobile || false,
   oAuthSSOProviders: (s: ServerConfigStore) => s.serverConfig.oAuthSSOProviders,
-  visualUnderstanding: (s: ServerConfigStore) => s.serverConfig.visualUnderstanding,
+  multimodalUnderstanding: (s: ServerConfigStore) => s.serverConfig.multimodalUnderstanding,
 };

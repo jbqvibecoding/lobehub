@@ -44,6 +44,8 @@ export interface SandboxRunParams {
    * credentials: no GitHub token ever enters the sandbox, so only public repos clone.
    */
   repos?: string[];
+  /** Full system context used only by the automatic retry without native resume. */
+  resumeFallbackSystemContext?: string;
   resumeSessionId?: string;
   /**
    * Optional context injected as a text block BEFORE the user's prompt.
@@ -53,6 +55,8 @@ export interface SandboxRunParams {
   systemContext?: string;
   topicId: string;
   userId: string;
+  /** Topic/run workspace — injected as `LOBEHUB_WORKSPACE_ID` for ingest. */
+  workspaceId?: string;
 }
 
 /**
@@ -118,6 +122,7 @@ export async function spawnHeteroSandbox(
     resumeSessionId,
     topicId,
     userId,
+    workspaceId,
   } = params;
 
   // For cloud sandbox, default cwd is /workspace — must be explicit so CC stores and
@@ -160,6 +165,7 @@ export async function spawnHeteroSandbox(
   const stdinPayload = buildHeteroExecStdinPayload({
     imageList: params.imageList,
     prompt,
+    resumeFallbackSystemContext: params.resumeFallbackSystemContext,
     systemContext: params.systemContext,
   });
   const base64Payload = Buffer.from(stdinPayload).toString('base64');
@@ -172,6 +178,7 @@ export async function spawnHeteroSandbox(
     `LOBEHUB_JWT=${shellQuote(jwt)}`,
     `LOBEHUB_SERVER=${shellQuote(serverUrl)}`,
     `LOBEHUB_ASSISTANT_MESSAGE_ID=${shellQuote(assistantMessageId)}`,
+    ...(workspaceId ? [`LOBEHUB_WORKSPACE_ID=${shellQuote(workspaceId)}`] : []),
     // Claude Code's model calls go to this server's coding gateway with the run token, which
     // charges them to the user and sends them on with the platform's key; no model key is here
     ...(agentType === 'claude-code'

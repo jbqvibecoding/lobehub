@@ -12,6 +12,7 @@ import {
   getExternalRuntimeModulesFilesConfig,
 } from './external-runtime-deps.config.mjs';
 import {
+  buildFirstPartyNativeAddons,
   copyNativeModulesToSource,
   getAsarUnpackPatterns,
   getNativeModulesFilesConfig,
@@ -38,6 +39,47 @@ const region = channel
   : resolveAppRegion(process.env.APP_REGION);
 const arch = os.arch();
 const hasAppleCertificate = Boolean(process.env.CSC_LINK);
+
+// Biber's app id for the region, shared by the bundle and its notification entitlements
+const macAppId = desktopAppId(region);
+// Communication notifications need the restricted
+// `com.apple.developer.usernotifications.communication` entitlement, and
+// macOS refuses to launch an app carrying it without a provisioning profile
+// that authorizes it — so both must be applied together, and only when a
+// profile is provided.
+const macProvisioningProfile = process.env.MAC_PROVISIONING_PROFILE;
+const macTeamId = process.env.APPLE_TEAM_ID;
+const macCommunicationEntitlements =
+  macProvisioningProfile && macTeamId
+    ? path.join(__dirname, 'build', 'entitlements.mac.comm.generated.plist')
+    : undefined;
+
+if (macProvisioningProfile && !macTeamId) {
+  console.warn(
+    '⚠️ MAC_PROVISIONING_PROFILE is set but APPLE_TEAM_ID is missing — building without communication notification entitlements',
+  );
+}
+
+if (macCommunicationEntitlements) {
+  const baseEntitlements = await fs.readFile(
+    path.join(__dirname, 'build', 'entitlements.mac.plist'),
+    'utf8',
+  );
+  const communicationKeys = [
+    '    <key>com.apple.application-identifier</key>',
+    `    <string>${macTeamId}.${macAppId}</string>`,
+    '    <key>com.apple.developer.team-identifier</key>',
+    `    <string>${macTeamId}</string>`,
+    '    <key>com.apple.developer.usernotifications.communication</key>',
+    '    <true/>',
+    '  </dict>',
+  ].join('\n');
+  await fs.writeFile(
+    macCommunicationEntitlements,
+    baseEntitlements.replace('</dict>', communicationKeys),
+  );
+  console.info('🔔 Communication notification entitlements + provisioning profile enabled');
+}
 
 // Where the app looks for its updates. A release build must name it: without one, electron-builder
 // would point the app at the upstream project's GitHub releases, a different product.
@@ -113,6 +155,8 @@ const config = {
    * This ensures native modules are properly included in the asar archive.
    */
   beforePack: async () => {
+    buildFirstPartyNativeAddons();
+
     await copyNativeModulesToSource();
     await copyExternalRuntimeModulesToSource();
 
@@ -175,7 +219,7 @@ const config = {
     }
   },
   afterSign: verifyFontListSignature,
-  appId: desktopAppId(region),
+  appId: macAppId,
   appImage: {
     artifactName: '${productName}-${version}.${ext}',
   },
@@ -240,6 +284,12 @@ const config = {
     binaries: ['Contents/Resources/app.asar.unpacked/node_modules/font-list/libs/darwin/fontlist'],
     compression: 'maximum',
     entitlementsInherit: 'build/entitlements.mac.plist',
+    ...(macCommunicationEntitlements
+      ? {
+          entitlements: macCommunicationEntitlements,
+          provisioningProfile: macProvisioningProfile,
+        }
+      : {}),
     extendInfo: {
       CFBundleIconName: 'AppIcon',
       CFBundleURLTypes: [
@@ -258,6 +308,7 @@ const config = {
       NSMicrophoneUsageDescription: "Application requests access to the device's microphone.",
       NSScreenCaptureUsageDescription:
         'Application requests access to record and analyze screen content for AI assistance.',
+      NSUserActivityTypes: ['INSendMessageIntent'],
     },
     gatekeeperAssess: false,
     hardenedRuntime: hasAppleCertificate,
@@ -298,6 +349,29 @@ const config = {
   extraResources: [
     { from: 'resources/bin', to: 'bin' },
     { from: 'resources/cli-package.json', to: 'package.json' },
+    // Local Sandbox helper binaries. The sandbox spawns these by path, so they
+    // must be real files — not entries inside app.asar, and not something the
+    // user is expected to install separately.
+    //
+    // Shipped as a resource rather than by externalizing
+    // `@anthropic-ai/sandbox-runtime`: its JavaScript bundles into the main
+    // process perfectly well, and making it a production dependency instead
+    // drags four transitive packages into electron-builder's node_modules
+    // traversal, which pnpm's layout does not satisfy (`@pondwader/socks5-server
+    // not found`). Only the binaries need to exist on disk.
+    {
+      from: 'node_modules/@anthropic-ai/sandbox-runtime/vendor',
+      to: 'sandbox-runtime/vendor',
+    },
+    // Carried alongside the binaries so the staging directory stays keyed on the
+    // backend's real version. Without it the version lookup falls back to the
+    // binary's size — which still works, but would defeat the per-version
+    // isolation in exactly the case it exists for: an installed app being
+    // updated.
+    {
+      from: 'node_modules/@anthropic-ai/sandbox-runtime/package.json',
+      to: 'sandbox-runtime/package.json',
+    },
   ],
 
   win: {

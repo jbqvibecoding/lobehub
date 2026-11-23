@@ -18,6 +18,11 @@ vi.mock('react-router', () => ({
   useParams: () => routeParamsMock,
 }));
 
+vi.mock('@lobehub/ui/base-ui', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  ...(await import('~base-ui-stubs')).baseUiStubs,
+}));
+
 vi.mock('@lobehub/ui', () => ({
   AccordionItem: ({
     action,
@@ -56,7 +61,8 @@ vi.mock('@lobehub/ui', () => ({
   Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
 }));
 
-vi.mock('antd-style', () => ({
+vi.mock('antd-style', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   createStaticStyles: () => ({
     addTopicAction: 'addTopicAction',
     statusBadge: 'statusBadge',
@@ -111,8 +117,8 @@ vi.mock('@/hooks/useQueryRoute', () => ({
   }),
 }));
 
-vi.mock('@/libs/router/navigation', () => ({
-  usePathname: () => '/lobehub/agent/agent-1/profile',
+vi.mock('@/hooks/useActiveLocation', () => ({
+  useActiveLocation: () => ({ hash: '', pathname: '/lobehub/agent/agent-1/profile', search: '' }),
 }));
 
 vi.mock('@/store/agent', () => ({
@@ -133,8 +139,7 @@ vi.mock('@/store/agent/selectors', () => ({
 }));
 
 vi.mock('@/store/chat', () => {
-  const useChatStore = (selector: (state: { topicLoadingIds: string[] }) => unknown) =>
-    selector({ topicLoadingIds: [] });
+  const useChatStore = (selector: (state: object) => unknown) => selector({});
   useChatStore.getState = () => ({ switchTopic: switchTopicMock });
   return { useChatStore };
 });
@@ -142,6 +147,7 @@ vi.mock('@/store/chat', () => {
 vi.mock('@/store/chat/selectors', () => ({
   operationSelectors: {
     unreadCompletedCountForTopics: () => () => 0,
+    visiblyRunningTopicIds: () => new Set<string>(),
   },
 }));
 
@@ -165,7 +171,6 @@ describe('Project topic group item', () => {
     render(
       <GroupItem
         expanded
-        activeTopicId={undefined}
         group={{
           children: [],
           id: 'project:/Users/me/project',

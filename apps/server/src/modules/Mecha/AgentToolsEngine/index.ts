@@ -34,6 +34,7 @@ import { createEnableChecker, type LobeToolManifest } from '@lobechat/context-en
 import { ToolsEngine } from '@lobechat/context-engine';
 import {
   type BuiltinToolManifest,
+  getActivePluginIds,
   type RuntimeEnvMode,
   type RuntimePlatform,
 } from '@lobechat/types';
@@ -68,6 +69,46 @@ export type {
 const log = debug('lobe-server:agent-tools-engine');
 
 /**
+ * A manifest is usable by ToolsEngine only if it has an `api` array.
+ * ToolsEngine.convertManifestsToTools calls `manifest.api.map(...)`
+ * unconditionally, so any entry with `api` missing / non-array crashes the
+ * whole tools build — and with it every execAgent call of the affected user.
+ * Installed-plugin manifests come straight from a DB jsonb column with no
+ * schema validation, so guard defensively at the merge point. Mirrors the
+ * frontend `dropInvalidManifests` in `src/helpers/toolEngineering`.
+ */
+const isValidToolManifest = (m: LobeToolManifest | undefined): m is LobeToolManifest =>
+  !!m && typeof m === 'object' && Array.isArray((m as LobeToolManifest).api);
+
+const dropInvalidManifests = (
+  manifests: (LobeToolManifest | undefined)[],
+  source: string,
+): LobeToolManifest[] => {
+  const valid: LobeToolManifest[] = [];
+  const dropped: Array<{ identifier?: string; reason: string }> = [];
+
+  for (const m of manifests) {
+    if (isValidToolManifest(m)) {
+      valid.push(m);
+    } else if (m) {
+      dropped.push({
+        identifier: (m as { identifier?: string }).identifier,
+        reason: 'missing `api` field (expected array)',
+      });
+    }
+  }
+
+  if (dropped.length > 0) {
+    console.warn(
+      `[AgentToolsEngine] Dropped ${dropped.length} invalid manifest(s) from ${source}:`,
+      dropped,
+    );
+  }
+
+  return valid;
+};
+
+/**
  * Initialize ToolsEngine with server-side context
  *
  * This is the server-side equivalent of frontend's `createToolsEngine`
@@ -90,9 +131,10 @@ export const createServerToolsEngine = (
   } = config;
 
   // Get plugin manifests from installed plugins (from database)
-  const pluginManifests = context.installedPlugins
-    .map((plugin) => plugin.manifest as LobeToolManifest)
-    .filter(Boolean);
+  const pluginManifests = dropInvalidManifests(
+    context.installedPlugins.map((plugin) => plugin.manifest as LobeToolManifest | undefined),
+    'installedPlugins',
+  );
 
   // Get builtin tool manifests from the (possibly pre-filtered) list. The
   // filter is one half of the hard wall keeping device tools out of an
@@ -122,7 +164,11 @@ export const createServerToolsEngine = (
   // Skill/Composio manifest claiming `lobe-remote-device` would otherwise
   // slip through `buildAllowedBuiltinTools` (which only touches the
   // builtin source).
-  const combinedManifests = [...pluginManifests, ...builtinManifests, ...additionalManifests];
+  const combinedManifests = [
+    ...pluginManifests,
+    ...builtinManifests,
+    ...dropInvalidManifests(additionalManifests, 'additionalManifests'),
+  ];
   const allManifests = excludeIdentifiers
     ? combinedManifests.filter((m) => !excludeIdentifiers.has(m.identifier))
     : combinedManifests;
@@ -215,8 +261,13 @@ export const createServerAgentToolsEngine = (
 
   const searchMode = agentConfig.chatConfig?.searchMode ?? 'auto';
   const isSearchEnabled = useApplicationBuiltinSearchTool ?? searchMode !== 'off';
-  const imageGenerationEnabled =
+  // Chat mode no longer auto-injects image generation. Opt in by pinning the
+  // tool; native imageOutput models never receive the fallback.
+  const pinnedPluginIds = getActivePluginIds(agentConfig.plugins);
+  const imageGenerationCapable =
     context.isModelSupportToolUse(model, provider) && !modelAbilities?.imageOutput;
+  const imageGenerationEnabled =
+    imageGenerationCapable && pinnedPluginIds.includes(ImageGenerationManifest.identifier);
   // Tool mode: explicit `toolMode` wins; otherwise derive from `enableAgentMode`
   // (undefined = agent). `custom` = toolset is exactly the agent's plugins.
   const toolMode = resolveToolMode(agentConfig.chatConfig ?? undefined);
@@ -236,19 +287,17 @@ export const createServerAgentToolsEngine = (
     isChatMode,
   );
 
-  // Chat mode: strict outer whitelist. Drop user plugins, alwaysOn tools, and
-  // every other runtime-managed rule. Each entry below still passes through
-  // its own runtime gate (KB needs enabled bases, memory needs global toggle,
-  // web-browsing needs search on). `allowExplicitActivation` is off so the
-  // activator can't smuggle anything else in.
+  // Chat mode: strict outer whitelist. Drop alwaysOn tools and every other
+  // runtime-managed rule. Each entry still passes through its own gate (KB /
+  // memory / search). Image generation is opt-in via a pinned plugin — no
+  // automatic injection. `allowExplicitActivation` is off so the activator
+  // can't smuggle anything else in.
   // Biber's browser on its cloud computer: only where this deployment runs one
   const computerEnabled =
     (agentConfig.plugins ?? []).includes(ComputerManifest.identifier) && isCloudComputerAvailable();
 
   const chatModeRules = {
     [ComputerManifest.identifier]: computerEnabled,
-    // Example: Claude can call tools but lacks native imageOutput, so expose the
-    // image-generation fallback; image-output models should use their native path.
     [ImageGenerationManifest.identifier]: imageGenerationEnabled,
     [KnowledgeBaseManifest.identifier]: hasEnabledKnowledgeBases,
     [MemoryManifest.identifier]: globalMemoryEnabled,
@@ -359,7 +408,7 @@ export const createServerAgentToolsEngine = (
     // isSubAgent), e.g. hiding lobe-agent's callSubAgent in sub-agent / group runs.
     manifestContext,
     enableChecker: createEnableChecker({
-      // Allow lobe-activator to dynamically enable tools at runtime (e.g., lobe-creds, lobe-cron).
+      // Allow lobe-activator to dynamically enable tools at runtime (e.g., lobe-creds, lobe-task).
       // Only in agent mode; chat/custom modes can't let the activator bypass their fixed set.
       allowExplicitActivation: toolMode === 'agent',
       rules: isCustomMode ? customModeRules : isChatMode ? chatModeRules : agentModeRules,

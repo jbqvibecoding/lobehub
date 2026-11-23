@@ -4,7 +4,7 @@
 
 export const LOBE_CHAT_CLOUD = 'LobeHub Cloud';
 
-export const BRANDING_NAME = 'Biber';
+export const BRANDING_NAME: string = 'Biber';
 /** Generated with the rest of the icons by `scripts/brand/generate-icons.mjs`. */
 export const BRANDING_LOGO_URL = '/icons/icon-512x512.png';
 
@@ -37,6 +37,8 @@ export const BRANDING_EMAIL = {
 };
 
 export const BRANDING_PROVIDER = 'lobehub';
+
+export const APPLE_APP_STORE_ID = '';
 
 export const COPYRIGHT = `© ${new Date().getFullYear()} ${ORG_NAME}`;
 export const COPYRIGHT_FULL = `${COPYRIGHT}. All rights reserved.`;

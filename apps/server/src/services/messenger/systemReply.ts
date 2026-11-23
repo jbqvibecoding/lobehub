@@ -19,6 +19,11 @@ interface MessengerSystemStrings {
   currentMarker: string;
   genericError: string;
   help: string;
+  modeAgentLabel: string;
+  modeChangedToast: (label: string) => string;
+  modeChatLabel: string;
+  modeDirectMessageOnly: string;
+  modePicker: string;
   needLink: string;
   newDirectMessageOnly: string;
   newStarted: string;
@@ -34,6 +39,7 @@ interface MessengerSystemStrings {
   scopesHint: string;
   scopesUsage: (count: number) => string;
   scopeSwitched: (name: string, agentTitle?: string) => string;
+  staleAgent: string;
   staleScope: string;
   startDirectMessageOnly: string;
   stopDirectMessageOnly: string;
@@ -70,9 +76,15 @@ const EN_US: MessengerSystemStrings = {
     '• /switch — switch the active scope (personal or a workspace)',
     '• /agents — list your agents and switch the active one',
     '• /new — start a new conversation',
+    '• /mode — show or switch the conversation mode (agent | chat)',
     '• /stop — stop the current execution',
     '• /feedback <message> — send feedback to the Biber team (no AI reply)',
   ].join('\n'),
+  modeAgentLabel: 'Agent Mode',
+  modeChangedToast: (label) => `Switched to ${label}.`,
+  modeChatLabel: 'Chat Mode',
+  modeDirectMessageOnly: 'Open your direct message with the Biber bot and send `/mode` there.',
+  modePicker: 'Pick the conversation mode:',
   needLink: 'You need to /start to bind your account first.',
   newDirectMessageOnly: 'Open your direct message with the Biber bot and send `/new` there.',
   newStarted: 'Started a new conversation. Your next message begins a fresh topic.',
@@ -93,6 +105,8 @@ const EN_US: MessengerSystemStrings = {
   scopesUsage: (count) => `Usage: /switch <n>, where n is between 1 and ${count}.`,
   startDirectMessageOnly:
     'Open your direct message with the Biber bot and send `/start` there to link your account.',
+  staleAgent:
+    'Your active agent is no longer available — it may have been deleted or moved to another workspace. Send /agents to pick another one.',
   staleScope: 'Your active workspace is no longer available. Send /switch to choose another scope.',
   stopDirectMessageOnly: 'Open your direct message with the Biber bot and send `/stop` there.',
   stopNotActive: 'No active execution to stop.',
@@ -128,9 +142,15 @@ const ZH_CN: MessengerSystemStrings = {
     '• /switch：切换当前空间（个人或某个工作空间）',
     '• /agents：查看你的助理并切换当前助理',
     '• /new：开始新对话',
+    '• /mode：查看或切换对话模式（agent 或 chat）',
     '• /stop：停止正在执行的任务',
     '• /feedback <内容>：直接给 Biber 团队反馈（不会触发 AI 回复）',
   ].join('\n'),
+  modeAgentLabel: 'Agent 模式',
+  modeChangedToast: (label) => `已切换到${label}。`,
+  modeChatLabel: 'Chat 模式',
+  modeDirectMessageOnly: '请打开和 Biber 机器人的私聊，在那里发送 /mode。',
+  modePicker: '请选择对话模式：',
   needLink: '请先发送 /start 绑定账号。',
   newDirectMessageOnly: '请打开和 Biber 机器人的私聊，在那里发送 /new。',
   newStarted: '已开始新对话，下一条消息会开启新话题。',
@@ -150,6 +170,7 @@ const ZH_CN: MessengerSystemStrings = {
   scopesHint: '回复 /switch <序号> 切换空间。',
   scopesUsage: (count) => `用法：/switch <序号>，序号在 1 到 ${count} 之间。`,
   startDirectMessageOnly: '请打开和 Biber 机器人的私聊，在那里发送 /start 绑定账号。',
+  staleAgent: '当前助理已不可用，可能已被删除或移到了其他工作空间。发送 /agents 重新选择。',
   staleScope: '你当前的工作空间已不可用。发送 /switch 选择其他空间。',
   stopDirectMessageOnly: '请打开和 Biber 机器人的私聊，在那里发送 /stop。',
   stopNotActive: '当前没有正在执行的任务可以停止。',
@@ -167,6 +188,7 @@ const WECHAT_ZH_CN: MessengerSystemStrings = {
     '• /switch：切换当前空间（个人或某个工作空间）',
     '• /agents：查看你的助理并切换当前助理',
     '• /new：开始新对话',
+    '• /mode：查看或切换对话模式（agent 或 chat）',
     '• /stop：停止正在执行的任务',
     '• /feedback <内容>：直接给 Biber 团队反馈（不会触发 AI 回复）',
   ].join('\n'),

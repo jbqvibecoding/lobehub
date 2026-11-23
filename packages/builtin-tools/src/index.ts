@@ -1,3 +1,4 @@
+import { AcceptanceEvidenceManifest } from '@lobechat/builtin-tool-acceptance-evidence';
 import { LobeActivatorManifest } from '@lobechat/builtin-tool-activator';
 import { AgentBuilderManifest } from '@lobechat/builtin-tool-agent-builder';
 import { AgentDocumentsManifest } from '@lobechat/builtin-tool-agent-documents';
@@ -10,21 +11,21 @@ import {
 } from '@lobechat/builtin-tool-agent-signal';
 import { BriefManifest } from '@lobechat/builtin-tool-brief';
 import { BrowserManifest } from '@lobechat/builtin-tool-browser';
-import { CalculatorManifest } from '@lobechat/builtin-tool-calculator';
+import { CalculatorManifest } from '@lobechat/builtin-tool-calculator/manifest';
 import { CalendarManifest } from '@lobechat/builtin-tool-calendar';
 import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { ComputerManifest } from '@lobechat/builtin-tool-computer';
 import { CredsManifest } from '@lobechat/builtin-tool-creds';
+import { GoalManifest } from '@lobechat/builtin-tool-goal';
 import { GroupAgentBuilderManifest } from '@lobechat/builtin-tool-group-agent-builder';
 import { GroupManagementManifest } from '@lobechat/builtin-tool-group-management';
 import { ImageGenerationManifest } from '@lobechat/builtin-tool-image-generation';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
 import { LobeAgentManifest, resolveLobeAgentManifest } from '@lobechat/builtin-tool-lobe-agent';
-import { LobeDeliveryCheckerManifest } from '@lobechat/builtin-tool-lobe-delivery-checker';
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
 import { MailManifest } from '@lobechat/builtin-tool-mail';
 import { MemoryManifest } from '@lobechat/builtin-tool-memory';
-import { MessageManifest } from '@lobechat/builtin-tool-message';
+import { MessageManifest, resolveMessageManifest } from '@lobechat/builtin-tool-message';
 import { PageAgentManifest } from '@lobechat/builtin-tool-page-agent';
 import { ProfileManifest } from '@lobechat/builtin-tool-profile';
 import { RemindersManifest } from '@lobechat/builtin-tool-reminders';
@@ -67,7 +68,7 @@ export const defaultToolIds = [
  * These are core system tools that the agent needs to function properly.
  *
  * `lobe-agent` is listed first: its built-in capabilities (plan + todo management,
- * sub-agent dispatch, visual-media fallback) should be available on every agent-mode turn,
+ * sub-agent dispatch, multimodal fallback) should be available on every agent-mode turn,
  * not gated behind explicit injection. NOTE: these rules only apply in agent mode — chat
  * mode (`enableAgentMode === false`) drops `alwaysOnToolIds` entirely. In manual
  * skill-activate mode the discovery tools in `manualModeExcludeToolIds` are still removed
@@ -105,11 +106,13 @@ export const manualModeExcludeToolIds = [
  * (`chatConfig.enableAgentMode === false`). Each one still passes through
  * its own runtime gate (e.g. knowledge base requires `hasEnabledKnowledgeBases`,
  * memory requires the global memory setting, web-browsing requires search
- * enabled) — this list is the strict outer whitelist.
+ * enabled, image-generation requires an explicit pin). This list is the
+ * strict outer whitelist.
  *
  * In chat mode, both the server `createServerAgentToolsEngine` and the
  * frontend `createAgentToolsEngine` build their rules from ONLY these
- * identifiers, drop user plugins / `alwaysOnToolIds` entirely, and disable
+ * identifiers, drop user plugins / `alwaysOnToolIds` entirely (except
+ * image-generation, which is re-enabled only when pinned), and disable
  * `allowExplicitActivation` so the activator can't smuggle other tools in.
  */
 export const chatModeAllowedToolIds = [
@@ -172,6 +175,13 @@ export const runtimeManagedToolIds = [
 ];
 
 const builtinToolRegistry: LobeBuiltinTool[] = [
+  {
+    discoverable: false,
+    hidden: true,
+    identifier: AcceptanceEvidenceManifest.identifier,
+    manifest: AcceptanceEvidenceManifest,
+    type: 'builtin',
+  },
   {
     discoverable: false,
     hidden: true,
@@ -334,7 +344,8 @@ const builtinToolRegistry: LobeBuiltinTool[] = [
     type: 'builtin',
   },
   {
-    hidden: true,
+    // Opt-in image generation: chat mode no longer auto-injects it, so the
+    // Tools popover must expose a pin/disable control.
     identifier: ImageGenerationManifest.identifier,
     manifest: ImageGenerationManifest,
     type: 'builtin',
@@ -381,6 +392,9 @@ const builtinToolRegistry: LobeBuiltinTool[] = [
   {
     identifier: MessageManifest.identifier,
     manifest: MessageManifest,
+    // Context-aware: drops APIs the current IM platform can't fulfil (e.g.
+    // WeChat has no `readMessages`), trimming both the tool list and systemRole.
+    resolveManifest: resolveMessageManifest,
     type: 'builtin',
   },
   {
@@ -411,6 +425,13 @@ const builtinToolRegistry: LobeBuiltinTool[] = [
     type: 'builtin',
   },
   {
+    discoverable: false,
+    hidden: true,
+    identifier: GoalManifest.identifier,
+    manifest: GoalManifest,
+    type: 'builtin',
+  },
+  {
     identifier: TaskManifest.identifier,
     manifest: TaskManifest,
     type: 'builtin',
@@ -428,11 +449,6 @@ const builtinToolRegistry: LobeBuiltinTool[] = [
     manifest: LobeAgentManifest,
     // Context-aware: hides the `callSubAgent` API inside group / sub-agent runs.
     resolveManifest: resolveLobeAgentManifest,
-    type: 'builtin',
-  },
-  {
-    identifier: LobeDeliveryCheckerManifest.identifier,
-    manifest: LobeDeliveryCheckerManifest,
     type: 'builtin',
   },
 ];

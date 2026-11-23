@@ -282,6 +282,7 @@ describe('contextEngineering', () => {
           backgroundColor: null,
           description: null,
           id: 'agent-1',
+          name: null,
           title: 'Current Agent',
         },
         {
@@ -289,6 +290,7 @@ describe('contextEngineering', () => {
           backgroundColor: null,
           description: 'Helps with setup',
           id: 'agent-2',
+          name: null,
           title: 'Setup Agent',
         },
       ],

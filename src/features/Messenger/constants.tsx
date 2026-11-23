@@ -4,6 +4,19 @@ import type { ReactNode } from 'react';
 export type MessengerPlatform =
   'telegram' | 'slack' | 'discord' | 'wechat' | 'imessage' | 'lark' | 'feishu' | 'wechatmp';
 
+/** The platforms upstream's push-to-my-DM supports; Biber's shared bots have no push */
+export type MessengerPushPlatform = Extract<
+  MessengerPlatform,
+  'discord' | 'slack' | 'telegram' | 'wechat'
+>;
+
+export const MESSENGER_PUSH_PLATFORMS: readonly MessengerPushPlatform[] = [
+  'discord',
+  'slack',
+  'telegram',
+  'wechat',
+];
+
 export const SUPPORTED_MESSENGER_PLATFORMS = [
   { id: 'telegram', name: 'Telegram' },
   { id: 'slack', name: 'Slack' },

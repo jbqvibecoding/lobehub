@@ -1,8 +1,15 @@
-import type { AgentStreamEvent } from '@lobechat/agent-gateway-client';
+import {
+  type AgentInterventionInteractionKind,
+  type AgentInterventionProvider,
+  type AgentInterventionRequestData,
+  type AgentStreamEvent,
+  sanitizeAgentInterventionRequestForReview,
+} from '@lobechat/agent-gateway-client';
 import { parseOperationId } from '@lobechat/agent-tracing';
 import { LOADING_FLAT } from '@lobechat/const';
 import type {
   MainAgentIntent,
+  MainAgentInterventionTransition,
   MainAgentReduceCtx,
   MainAgentRunState,
   MainAgentTurnToolState,
@@ -25,6 +32,17 @@ import {
 import { createNanoId } from '@lobechat/utils';
 import debug from 'debug';
 
+import {
+  deriveAgentInterventionActivityKey,
+  hashAgentInterventionRequestRevision,
+} from '@/business/server/agent-run/agentInterventionIdentity';
+import {
+  acknowledgeAgentInterventionProducerResolution,
+  type AgentInterventionAllowedAction,
+  type AgentInterventionReviewDetail,
+  notifyAgentInterventionRequired,
+  type NotifyAgentInterventionRequiredParams,
+} from '@/business/server/agent-run/agentInterventionReview';
 import type { MessageModel } from '@/database/models/message';
 import type { ThreadModel } from '@/database/models/thread';
 import type { TopicModel } from '@/database/models/topic';
@@ -132,6 +150,8 @@ interface OperationState {
   lastAppliedToolStateSeqByCallId: Map<string, number>;
   lastStepIndex: number;
   main: MainAgentRunState;
+  /** `(operationId, toolCallId, transition)` notification dedupe ledger. */
+  notifiedInterventionTransitions: Set<string>;
   operationId: string;
   processedKeys: Set<string>;
   /**
@@ -143,6 +163,8 @@ interface OperationState {
    * after the event's XADD succeeds.
    */
   publishedKeys: Set<string>;
+  /** Isolation thread that owns this heterogeneous run, when applicable. */
+  threadId: string | undefined;
   /**
    * Run-global DB index for every tool message in the topic, keyed by
    * `tool_call_id`. Main and subagent reducers keep only their per-turn maps;
@@ -174,7 +196,11 @@ export const runFor = (
   metadata: Pick<ChatTopicMetadata, 'heteroMemberRuns' | 'runningOperation'> | null | undefined,
   operationId: string,
 ) => {
-  if (metadata?.runningOperation?.operationId === operationId) return metadata.runningOperation;
+  const root = metadata?.runningOperation;
+  if (root?.operationId === operationId) return root;
+  // Upstream's child operations (isolation threads, members under a group supervisor)
+  const child = root?.childOperations?.find((entry) => entry.operationId === operationId);
+  if (child) return child;
   return metadata?.heteroMemberRuns?.[operationId];
 };
 
@@ -189,7 +215,105 @@ export interface HeterogeneousPersistenceHandlerDeps {
   messageModel: MessageModel;
   threadModel: ThreadModel;
   topicModel: TopicModel;
+  userId?: string;
+  workspaceId?: string;
 }
+
+interface StoredHeterogeneousIntervention {
+  deadline?: number;
+  interactionKind?: AgentInterventionInteractionKind;
+  notificationTransition?: MainAgentInterventionTransition;
+  provider?: AgentInterventionProvider;
+  resolutionRequestId?: string;
+  summary?: string;
+  transition?: MainAgentInterventionTransition;
+}
+
+const HETEROGENEOUS_INTERVENTION_STATE_KEY = 'heterogeneousIntervention';
+
+const interventionSummary = (request?: AgentInterventionRequestData): string => {
+  const provider = request?.provider ?? 'heterogeneous-agent';
+  const kind = request?.interactionKind ?? 'question';
+  const apiName = request?.apiName || 'interaction';
+  return `${provider} ${kind}: ${apiName}`.slice(0, 160);
+};
+
+const buildHeterogeneousReviewDetail = (
+  request: AgentInterventionRequestData,
+): Extract<AgentInterventionReviewDetail, { type: 'permission' | 'plan' | 'question' }> => {
+  const parsed = JSON.parse(request.arguments) as {
+    questions: Array<{
+      header: string;
+      multiSelect: boolean;
+      options: Array<{ description?: string; id?: string; label: string }>;
+      question: string;
+    }>;
+  };
+  const questions = parsed.questions.map((question, questionIndex) => ({
+    header: question.header || undefined,
+    id: `question_${questionIndex + 1}`,
+    multiple: question.multiSelect,
+    options: question.options.map((option) => ({
+      description: option.description,
+      id: option.id ?? option.label,
+      label: option.label,
+    })),
+    question: question.question,
+  }));
+  const first = questions[0];
+
+  switch (request.interactionKind) {
+    case 'permission': {
+      return {
+        description: first.header,
+        options: first.options,
+        title: first.question,
+        type: 'permission',
+      };
+    }
+    case 'plan': {
+      return {
+        content: first.question,
+        options: first.options,
+        title: first.header ?? 'Review plan',
+        type: 'plan',
+      };
+    }
+    case 'question': {
+      return { questions, title: first.header, type: 'question' };
+    }
+    default: {
+      throw new Error('Unsupported heterogeneous intervention kind');
+    }
+  }
+};
+
+const heterogeneousActionsFor = (
+  interactionKind: AgentInterventionInteractionKind,
+): AgentInterventionAllowedAction[] =>
+  interactionKind === 'question'
+    ? ['submit_answers', 'skip_interaction']
+    : ['select_provider_option', 'skip_interaction'];
+
+const INTERVENTION_TRANSITIONS = new Set<MainAgentInterventionTransition>([
+  'cancelled',
+  'pending',
+  'resolved',
+  'session_ended',
+  'timed_out',
+]);
+
+const INTERVENTION_KINDS = new Set<AgentInterventionInteractionKind>([
+  'permission',
+  'plan',
+  'question',
+]);
+
+const INTERVENTION_PROVIDERS = new Set<AgentInterventionProvider>([
+  'claude-code',
+  'cursor',
+  'qoder',
+]);
 
 /**
  * Server-side persistence for `lh hetero exec` event streams. Mirrors the
@@ -323,6 +447,7 @@ export class HeterogeneousPersistenceHandler {
    * this topic can include `--resume <id>`.
    */
   async finish(params: {
+    assistantMessageId?: string;
     error?: { body?: Record<string, unknown>; message: string; type: string };
     operationId: string;
     result: 'success' | 'error' | 'cancelled';
@@ -346,8 +471,19 @@ export class HeterogeneousPersistenceHandler {
     // a stale/mismatched operation stays a no-op.
     if (!state && params.result === 'error' && params.error && params.topicId) {
       try {
-        state = await this.loadOrCreateState(params.operationId, params.topicId);
-      } catch {
+        state = await this.loadOrCreateState(
+          params.operationId,
+          params.topicId,
+          params.assistantMessageId,
+          true,
+        );
+      } catch (error) {
+        log(
+          'finish bootstrap failed op=%s topic=%s err=%O',
+          params.operationId,
+          params.topicId,
+          error,
+        );
         return;
       }
     }
@@ -427,6 +563,7 @@ export class HeterogeneousPersistenceHandler {
     operationId: string,
     topicId: string,
     seedAssistantMessageId?: string,
+    allowMissingRunningOperation = false,
   ): Promise<OperationState> {
     let state = operationStates.get(operationId);
     if (state) {
@@ -443,7 +580,7 @@ export class HeterogeneousPersistenceHandler {
     const topic = await this.deps.topicModel.findById(topicId);
     const running = runFor(topic?.metadata, operationId);
 
-    if (!running) {
+    if (!running && !(allowMissingRunningOperation && seedAssistantMessageId)) {
       const current = topic?.metadata?.runningOperation?.operationId;
       throw new StaleHeteroOperationError(
         current
@@ -459,20 +596,21 @@ export class HeterogeneousPersistenceHandler {
     // runningOperation binding to match `operationId`, otherwise late/retried
     // batches after finish could keep mutating a completed turn.
     // Fall back to topic.metadata for desktop / old-CLI callers that lack the field.
-    const baseAssistantMessageId = seedAssistantMessageId ?? running.assistantMessageId;
+    const baseAssistantMessageId = seedAssistantMessageId ?? running?.assistantMessageId;
 
     if (!baseAssistantMessageId) {
       throw new Error(`runningOperation on topic ${topicId} is missing assistantMessageId`);
     }
 
+    const baseAssistantMessage = await this.deps.messageModel.findById(baseAssistantMessageId);
+
     if (seedAssistantMessageId) {
-      const seededMsg = await this.deps.messageModel.findById(seedAssistantMessageId);
-      if (!seededMsg) {
+      if (!baseAssistantMessage) {
         throw new Error(
           `Seeded assistantMessageId ${seedAssistantMessageId} was not found for topic ${topicId}`,
         );
       }
-      if (seededMsg.topicId !== topicId) {
+      if (baseAssistantMessage.topicId !== topicId) {
         throw new Error(
           `Seeded assistantMessageId ${seedAssistantMessageId} does not belong to topic ${topicId}`,
         );
@@ -493,13 +631,18 @@ export class HeterogeneousPersistenceHandler {
 
     state = {
       // Whose turns these are: the agent the run was started for, which in a group is not the
-      // topic's own agent (the host)
+      // topic's own agent (the host). A member's record names it; otherwise the operation id
+      // encodes it (`op_<ts>_agt_<id>_tpc_<id>_…`). A direct @Agent run's seeded assistant message
+      // names it too; legacy callers fall back to the topic owner.
       agentId:
-        ('agentId' in running ? running.agentId : parseOperationId(operationId)?.agentId) ??
+        (running && 'agentId' in running
+          ? running.agentId
+          : parseOperationId(operationId)?.agentId) ??
+        baseAssistantMessage?.agentId ??
         topic?.agentId ??
         null,
       groupId: topic?.groupId ?? null,
-      isMemberRun: 'agentId' in running,
+      isMemberRun: !!running && 'agentId' in running,
       // Left undefined until the run's own stream_start reports it (or a cold
       // replica recovers it from a stamped message). NOT seeded from
       // topic.metadata.heteroSessionId: that holds the id we ASKED CC to resume,
@@ -509,9 +652,12 @@ export class HeterogeneousPersistenceHandler {
       lastAppliedToolStateSeqByCallId: new Map(),
       main: createMainAgentRunState(currentAssistantMessageId),
       operationId,
+      notifiedInterventionTransitions: new Set(),
       processedKeys: new Set(),
       publishedKeys: new Set(),
       toolMsgIdByCallId: new Map(),
+      // Biber's member records carry no thread; upstream's root and child runs may
+      threadId: (running && 'threadId' in running ? running.threadId : undefined) ?? undefined,
       topicId,
     };
     await this.refreshToolMessageIndex(state);
@@ -591,6 +737,68 @@ export class HeterogeneousPersistenceHandler {
     const toolPlugins = await this.deps.messageModel.listMessagePluginsByTopic(state.topicId);
     for (const plugin of toolPlugins) {
       if (plugin.toolCallId) state.toolMsgIdByCallId.set(plugin.toolCallId, plugin.id);
+      if (plugin.toolCallId && plugin.state && typeof plugin.state === 'object') {
+        const stored = (plugin.state as Record<string, unknown>)[
+          HETEROGENEOUS_INTERVENTION_STATE_KEY
+        ];
+        if (stored && typeof stored === 'object') {
+          const metadata = stored as Record<string, unknown>;
+          const transition = INTERVENTION_TRANSITIONS.has(
+            metadata.transition as MainAgentInterventionTransition,
+          )
+            ? (metadata.transition as MainAgentInterventionTransition)
+            : undefined;
+          const interactionKind = INTERVENTION_KINDS.has(
+            metadata.interactionKind as AgentInterventionInteractionKind,
+          )
+            ? (metadata.interactionKind as AgentInterventionInteractionKind)
+            : undefined;
+          const provider = INTERVENTION_PROVIDERS.has(
+            metadata.provider as AgentInterventionProvider,
+          )
+            ? (metadata.provider as AgentInterventionProvider)
+            : undefined;
+
+          if (transition) {
+            const request =
+              typeof plugin.apiName === 'string' &&
+              typeof plugin.arguments === 'string' &&
+              typeof plugin.identifier === 'string' &&
+              typeof metadata.deadline === 'number'
+                ? {
+                    apiName: plugin.apiName,
+                    arguments: plugin.arguments,
+                    deadline: metadata.deadline,
+                    identifier: plugin.identifier,
+                    interactionKind,
+                    provider,
+                    toolCallId: plugin.toolCallId,
+                  }
+                : undefined;
+            state.main.interventionsByCallId.set(plugin.toolCallId, {
+              intervention:
+                plugin.intervention ??
+                (transition === 'pending'
+                  ? { status: 'pending' }
+                  : transition === 'resolved'
+                    ? { status: 'approved' }
+                    : { rejectedReason: transition, status: 'rejected' }),
+              request,
+              resolutionRequestId:
+                typeof metadata.resolutionRequestId === 'string'
+                  ? metadata.resolutionRequestId
+                  : undefined,
+              transition,
+            });
+
+            if (metadata.notificationTransition === transition) {
+              state.notifiedInterventionTransitions.add(
+                `${state.operationId}:${plugin.toolCallId}:${transition}`,
+              );
+            }
+          }
+        }
+      }
       if (
         plugin.toolCallId &&
         plugin.metadata?.heterogeneousToolStateOperationId === state.operationId &&
@@ -674,14 +882,17 @@ export class HeterogeneousPersistenceHandler {
     // Recover the chain spine from the DB. The next normal
     // turn parents off the run's latest main-thread message that is neither a
     // tool nor a TOOLLESS signal callback (a tools-bearing signal turn is
-    // main-chain — see `getLastMainThreadSpineMessageId`); reading it straight
+    // main-chain — see `getLatestSpineMessageId`); reading it straight
     // from the DB (independent of
     // `currentAssistantId`, which can regress to the seed placeholder on a cold
     // / non-sticky replica — see the multi-replica caveat on the class) keeps
     // consecutive cold-replica steps chained linearly instead of forking onto a
     // stale node. Signal turns still anchor off `lastToolMsgIdEver`, which is
     // maintained in-memory across the run's tool batches.
-    const spineId = await this.deps.messageModel.getLastMainThreadSpineMessageId?.(state.topicId);
+    const spineId = await this.deps.messageModel.getLatestSpineMessageId({
+      threadId: state.threadId ?? null,
+      topicId: state.topicId,
+    });
     if (spineId) state.main.lastSpineMessageId = spineId;
   }
 
@@ -820,9 +1031,9 @@ export class HeterogeneousPersistenceHandler {
     const running = runFor(topic?.metadata, state.operationId);
     const current = topic?.metadata?.runningOperation;
 
-    if (!running && current) {
+    if (!running) {
       throw new StaleHeteroOperationError(
-        `Stale hetero operation ${state.operationId} on topic ${state.topicId}; current operation is ${current.operationId}`,
+        `Stale hetero operation ${state.operationId} on topic ${state.topicId}; current operation is ${current?.operationId ?? 'unknown'}`,
       );
     }
 
@@ -908,7 +1119,7 @@ export class HeterogeneousPersistenceHandler {
       if ('threadId' in intent) {
         await this.applySubagentIntent(state, intent as SubagentIntent);
       } else {
-        await this.applyMainIntent(state, intent as MainAgentIntent);
+        await this.applyMainIntent(state, intent as MainAgentIntent, event.stepIndex);
       }
     }
 
@@ -934,7 +1145,7 @@ export class HeterogeneousPersistenceHandler {
     return out;
   }
 
-  private async applyMainIntent(state: OperationState, intent: MainAgentIntent) {
+  private async applyMainIntent(state: OperationState, intent: MainAgentIntent, stepIndex: number) {
     switch (intent.kind) {
       case 'createAssistant': {
         const createMetadata: Record<string, any> = {
@@ -955,14 +1166,23 @@ export class HeterogeneousPersistenceHandler {
             parentId: intent.parentId,
             provider: intent.provider,
             role: 'assistant',
+            threadId: state.threadId,
             topicId: intent.topicId ?? state.topicId,
           } as any,
           intent.messageId,
         );
 
-        await this.deps.topicModel.updateMetadata(state.topicId, {
-          heteroCurrentMsgId: { msgId: intent.messageId, operationId: state.operationId },
-        });
+        if (this.deps.topicModel.updateRunningOperationAssistantMessage) {
+          await this.deps.topicModel.updateRunningOperationAssistantMessage(
+            state.topicId,
+            state.operationId,
+            intent.messageId,
+          );
+        } else {
+          await this.deps.topicModel.updateMetadata(state.topicId, {
+            heteroCurrentMsgId: { msgId: intent.messageId, operationId: state.operationId },
+          });
+        }
         // Members running at once overwrite that single pointer, so a member's run also keeps its
         // latest message in its own record, which is what a replica falls back to
         if (state.isMemberRun) {
@@ -1025,7 +1245,7 @@ export class HeterogeneousPersistenceHandler {
                 type: tool.payload.type,
               },
               role: 'tool',
-              threadId: null,
+              threadId: state.threadId,
               tool_call_id: tool.payload.id,
               topicId: state.topicId,
             } as any,
@@ -1046,6 +1266,11 @@ export class HeterogeneousPersistenceHandler {
 
       case 'updateToolState': {
         await this.applyToolState(state, intent);
+        return;
+      }
+
+      case 'setToolIntervention': {
+        await this.applyToolIntervention(state, intent, stepIndex);
         return;
       }
 
@@ -1141,6 +1366,146 @@ export class HeterogeneousPersistenceHandler {
     );
   }
 
+  private async applyToolIntervention(
+    state: OperationState,
+    intent: Extract<MainAgentIntent, { kind: 'setToolIntervention' }>,
+    stepIndex: number,
+  ): Promise<void> {
+    const toolMsgId = state.toolMsgIdByCallId.get(intent.toolCallId);
+    if (!toolMsgId) {
+      throw new Error(
+        `intervention for unknown toolCallId=${intent.toolCallId} op=${state.operationId}`,
+      );
+    }
+
+    const summary = interventionSummary(intent.request);
+    const reviewRequest = sanitizeAgentInterventionRequestForReview(intent.request);
+    const durableState: StoredHeterogeneousIntervention = {
+      deadline: intent.request?.deadline,
+      interactionKind: intent.request?.interactionKind,
+      provider: intent.request?.provider,
+      resolutionRequestId: intent.resolutionRequestId,
+      summary,
+      transition: intent.transition,
+    };
+
+    // Persist before any business side effect. The existing JSON plugin-state
+    // column carries only correlation metadata; no schema/migration is needed.
+    await this.deps.messageModel.updateMessagePlugin(toolMsgId, {
+      intervention: intent.intervention,
+    });
+    await this.deps.messageModel.updatePluginState(toolMsgId, {
+      [HETEROGENEOUS_INTERVENTION_STATE_KEY]: durableState,
+    });
+
+    const transitionKey = `${state.operationId}:${intent.toolCallId}:${intent.transition}`;
+    if (!this.deps.userId || state.notifiedInterventionTransitions.has(transitionKey)) return;
+
+    const pendingTransitionKey = `${state.operationId}:${intent.toolCallId}:pending`;
+    if (!state.notifiedInterventionTransitions.has(pendingTransitionKey)) {
+      if (!reviewRequest?.interactionKind || !reviewRequest.provider) {
+        throw new Error(
+          `Unsafe heterogeneous intervention review payload toolCallId=${intent.toolCallId}`,
+        );
+      }
+      const assistantMessageId = state.main.currentAssistantId;
+      if (!assistantMessageId) {
+        throw new Error(
+          `Missing assistant owner for heterogeneous intervention toolCallId=${intent.toolCallId}`,
+        );
+      }
+      // Heterogeneous callbacks are individually sealed. Include the tool call
+      // so two concurrent interventions emitted by one assistant step never
+      // claim the same batch identity with conflicting item-0 contents.
+      const batchId = `${state.operationId}:${stepIndex}:${assistantMessageId}:${intent.toolCallId}`;
+      // The generic Web source bridge reads the same authoritative correlation
+      // from the tool row. Stamp it before notify so a card can never appear
+      // actionable while its operation/batch locator is still absent.
+      await this.deps.messageModel.updateMessagePlugin(toolMsgId, {
+        intervention: {
+          ...intent.intervention,
+          batchId,
+          itemIndex: 0,
+          operationId: state.operationId,
+          stepIndex,
+        },
+      });
+      const allowedActions = heterogeneousActionsFor(reviewRequest.interactionKind);
+      const notification: NotifyAgentInterventionRequiredParams = {
+        agentId: state.agentId ?? undefined,
+        approvalMode: 'manual',
+        batch: {
+          activityKey: deriveAgentInterventionActivityKey({
+            batchId,
+            operationId: state.operationId,
+            userId: this.deps.userId,
+            workspaceId: this.deps.workspaceId,
+          }),
+          allowedActions: [],
+          id: batchId,
+          kind: 'single',
+          sealed: true,
+          stepIndex,
+        },
+        context: {
+          agentId: state.agentId ?? undefined,
+          assistantMessageId,
+          operationId: state.operationId,
+          topicId: state.topicId,
+          workspaceId: this.deps.workspaceId,
+        },
+        deadline: reviewRequest.deadline,
+        items: [
+          {
+            allowedActions,
+            detail: buildHeterogeneousReviewDetail(reviewRequest),
+            interactionKind: reviewRequest.interactionKind,
+            provider: reviewRequest.provider,
+            requestRevision: {
+              hash: hashAgentInterventionRequestRevision(intent.request?.arguments ?? ''),
+              version: 1,
+            },
+            sourceRef: {
+              operationId: state.operationId,
+              toolCallId: intent.toolCallId,
+              type: 'heterogeneous',
+            },
+            summary,
+            surface: 'form',
+          },
+        ],
+        summary,
+        systemActionEligibility: 'review_only',
+        userId: this.deps.userId,
+        workspaceId: this.deps.workspaceId,
+      };
+      await notifyAgentInterventionRequired(notification);
+      state.notifiedInterventionTransitions.add(pendingTransitionKey);
+    }
+
+    if (intent.transition !== 'pending') {
+      await acknowledgeAgentInterventionProducerResolution({
+        operationId: state.operationId,
+        ownerUserId: this.deps.userId,
+        resolutionRequestId: intent.resolutionRequestId,
+        status: intent.transition,
+        toolCallId: intent.toolCallId,
+        workspaceId: this.deps.workspaceId,
+      });
+    }
+    state.notifiedInterventionTransitions.add(transitionKey);
+
+    // Cold-replica dedupe marker. Cloud's override must still use the same
+    // `(operationId, toolCallId, transition)` idempotency key because a process
+    // can die after the external side effect but before this best-effort stamp.
+    await this.deps.messageModel.updatePluginState(toolMsgId, {
+      [HETEROGENEOUS_INTERVENTION_STATE_KEY]: {
+        ...durableState,
+        notificationTransition: intent.transition,
+      },
+    });
+  }
+
   private buildToolBatchUpdate(
     tools: Array<{ payload: ToolCallPayload; toolMessageId: string }>,
     options: { content?: string; reasoning?: string; withResult: boolean },
@@ -1170,6 +1535,7 @@ export class HeterogeneousPersistenceHandler {
     if (state.main.accContent) updateValue.content = state.main.accContent;
     if (state.main.accReasoning) updateValue.reasoning = { content: state.main.accReasoning };
     if (error) {
+      if (error.body?.clearEchoedContent === true) updateValue.content = '';
       // Same canonical normalization as the in-stream `setError` path — the CLI's
       // free-form `{ message, type }` runs through formatErrorForState so the
       // terminal flush and the in-stream write produce one classified error shape.

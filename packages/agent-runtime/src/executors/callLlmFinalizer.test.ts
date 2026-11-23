@@ -18,9 +18,11 @@ const createMessageTransport = (): MessageTransport => ({
   createToolMessage: vi.fn(),
   deleteMessage: vi.fn(),
   findById: vi.fn(),
+  findToolMessageIdByToolCallId: vi.fn(),
   query: vi.fn(),
   update: vi.fn().mockResolvedValue(undefined),
   updatePluginState: vi.fn(),
+  updateToolIntervention: vi.fn(),
   updateToolMessage: vi.fn(),
 });
 
@@ -191,6 +193,33 @@ describe('callLlmFinalizer', () => {
       model: 'gpt-5',
       provider: 'chatgpt',
       reasoning: { signature: 'encrypted-reasoning' },
+    });
+  });
+
+  it('persists complete reasoning response items without visible thinking content', async () => {
+    const responseItem = {
+      encrypted_content: 'scoped-encrypted',
+      id: 'rs_hidden',
+      summary: [],
+      type: 'reasoning' as const,
+    };
+
+    const result = await finalizeCallLlmTurn({
+      assistantMessageId: 'assistant-1',
+      events: [],
+      host: createHost(),
+      model: 'gpt-5',
+      output: createOutput({
+        reasoning: { responseItems: [responseItem] },
+        thinkingContent: '',
+      }),
+      provider: 'chatgpt',
+      shouldReplayAssistantReasoning: true,
+      state: AgentRuntime.createInitialState({ operationId: 'operation-1' }),
+    });
+
+    expect(result.newState.messages.at(-1)).toMatchObject({
+      reasoning: { responseItems: [responseItem] },
     });
   });
 

@@ -1,28 +1,28 @@
 import { TRPCError } from '@trpc/server';
 
+import { validateHeteroOperationClaims } from '../../utils/internalJwt';
 import { trpc } from '../init';
+
+const STRICT_OPERATION_CLAIMS = ['aud', 'capabilities', 'iss', 'jti', 'operation_id'] as const;
 
 /**
  * Auth middleware for hetero-agent ingest/finish endpoints. Accepts two callers:
  *
  * - A `hetero-operation` token (4h expiry) — the narrow, server-minted JWT
- *   issued by execAgent for the cloud sandbox / workspace device. Its `sub` may
- *   be a userId or, for workspace runs, a workspaceId. Behaves exactly as before.
+ *   issued by execAgent for the cloud sandbox / workspace device. Its `sub` is
+ *   the user principal and workspace runs carry a separate `workspace_id` claim.
+ * - A legacy `hetero-operation` token minted before operation-bound claims were
+ *   deployed — accepted temporarily so an already-running job can finish.
+ * - A `hetero-run` token (Biber's cloud sandbox runs): it names its run and conversation
+ *   (`heteroRunScope`), and handlers refuse it for any other run.
  * - A normal user OIDC token — a logged-in desktop reusing its own session for a
  *   remote run dispatched to it, so the spawned `lh hetero exec` can stream
  *   results back without a server round-trip to mint a dedicated token.
  *
- * The owner-token path is safe because heteroIngest / heteroFinish additionally
- * gate every write on `topics.userId === ctx.userId` (see the `heteroAuthKind`
- * ownership check in the handlers), so an owner token can only touch its own
- * running operation — it cannot reach another user's topic.
- *
- * - A `hetero-run` token (Biber's cloud sandbox runs): like an operation token, but it names its
- *   run and conversation (`heteroRunScope`), and handlers refuse it for any other run.
- *
- * `heteroAuthKind` is forwarded so handlers can apply the strict ownership guard
- * to owner tokens only, while leaving the operation-token path (whose `sub` may
- * be a workspaceId that never matches `topics.userId`) untouched.
+ * The handlers resolve the target topic and require this subject to own its
+ * personal scope or be an active member of its workspace before writing.
+ * `heteroAuthKind` remains available to endpoints that need to distinguish the
+ * narrow operation token from a full user session.
  */
 export const heteroOperationAuth = trpc.middleware(async (opts) => {
   const { ctx, next } = opts;
@@ -36,19 +36,39 @@ export const heteroOperationAuth = trpc.middleware(async (opts) => {
   }
 
   const purpose = ctx.oidcAuth.purpose;
-  const heteroAuthKind: 'operation' | 'run' | 'user' =
-    purpose === 'hetero-run' ? 'run' : purpose === 'hetero-operation' ? 'operation' : 'user';
 
   // A `hetero-run` token names the one run it is for; handlers hold every call to it
-  const runScope =
-    heteroAuthKind === 'run'
-      ? { operationId: ctx.oidcAuth.op as string, topicId: ctx.oidcAuth.topic as string }
-      : undefined;
-  if (runScope && (!runScope.operationId || !runScope.topicId)) {
-    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'The run token names no run' });
+  let heteroRunScope: { operationId: string; topicId: string } | undefined;
+  if (purpose === 'hetero-run') {
+    heteroRunScope = {
+      operationId: ctx.oidcAuth.op as string,
+      topicId: ctx.oidcAuth.topic as string,
+    };
+    if (!heteroRunScope.operationId || !heteroRunScope.topicId) {
+      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'The run token names no run' });
+    }
   }
 
+  const isOperation = purpose === 'hetero-operation';
+  const heteroOperation = isOperation
+    ? validateHeteroOperationClaims(ctx.oidcAuth as Record<string, unknown>)
+    : undefined;
+  // A partially populated strict contract must not fall back to the broader
+  // ownership path. Only the purpose/sub-only shape issued by old pods qualifies.
+  const isLegacyOperation =
+    isOperation && STRICT_OPERATION_CLAIMS.every((claim) => ctx.oidcAuth?.[claim] === undefined);
+  if (isOperation && !heteroOperation && !isLegacyOperation) {
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid heterogeneous operation token' });
+  }
+  const heteroAuthKind: 'legacy-operation' | 'operation' | 'run' | 'user' = heteroRunScope
+    ? 'run'
+    : heteroOperation
+      ? 'operation'
+      : isLegacyOperation
+        ? 'legacy-operation'
+        : 'user';
+
   return next({
-    ctx: { heteroAuthKind, heteroRunScope: runScope, oidcAuth: ctx.oidcAuth, userId: sub },
+    ctx: { heteroAuthKind, heteroOperation, heteroRunScope, oidcAuth: ctx.oidcAuth, userId: sub },
   });
 });

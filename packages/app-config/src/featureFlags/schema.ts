@@ -20,6 +20,7 @@ export const FeatureFlagsSchema = z.object({
 
   ai_image: FeatureFlagValue.optional(),
   speech_to_text: FeatureFlagValue.optional(),
+  voice_dictation: FeatureFlagValue.optional(),
   token_counter: FeatureFlagValue.optional(),
 
   welcome_suggest: FeatureFlagValue.optional(),
@@ -33,6 +34,8 @@ export const FeatureFlagsSchema = z.object({
   // internal flag
   agent_self_iteration: FeatureFlagValue.optional(),
   agent_onboarding: FeatureFlagValue.optional(),
+  dev_dock: FeatureFlagValue.optional(),
+  dev_dock_workspaces: z.array(z.string()).optional(),
   // Cloud feature flag. Keep here until cloud owns a separate runtime flag domain.
   auth_captcha: FeatureFlagValue.optional(),
   cloud_promotion: FeatureFlagValue.optional(),
@@ -87,6 +90,7 @@ export const DEFAULT_FEATURE_FLAGS: IFeatureFlags = {
 
   agent_self_iteration: isDev,
   agent_onboarding: isDev,
+  dev_dock: isDev,
   auth_captcha: true,
   cloud_promotion: false,
   onboarding_v2: isDev,
@@ -95,6 +99,7 @@ export const DEFAULT_FEATURE_FLAGS: IFeatureFlags = {
 
   market: true,
   speech_to_text: true,
+  voice_dictation: false,
   // Biber: the changelog is LobeHub's, fetched from GitHub and LobeHub's CDN
   changelog: false,
 
@@ -131,6 +136,7 @@ export const mapFeatureFlagsEnvToState = (
     enableRAGEval: evaluateFeatureFlag(config.rag_eval, userId),
     enableAgentSelfIteration: evaluateFeatureFlag(config.agent_self_iteration, userId),
     enableAgentOnboarding: evaluateFeatureFlag(config.agent_onboarding, userId),
+    enableDevDock: evaluateFeatureFlag(config.dev_dock, userId),
     enableAuthCaptcha: evaluateFeatureFlag(config.auth_captcha, userId),
     enableOnboardingV2: evaluateFeatureFlag(config.onboarding_v2, userId),
     enableStorageOverage: evaluateFeatureFlag(config.storage_overage, userId),
@@ -140,6 +146,7 @@ export const mapFeatureFlagsEnvToState = (
 
     showMarket: evaluateFeatureFlag(config.market, userId),
     enableSTT: evaluateFeatureFlag(config.speech_to_text, userId),
+    enableVoiceDictation: evaluateFeatureFlag(config.voice_dictation, userId),
 
     hideGitHub: evaluateFeatureFlag(config.commercial_hide_github, userId),
     hideDocs: evaluateFeatureFlag(config.commercial_hide_docs, userId),

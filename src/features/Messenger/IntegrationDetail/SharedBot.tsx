@@ -11,6 +11,7 @@ import { usePermission } from '@/hooks/usePermission';
 
 import type { SharedBotPlatform } from '../constants';
 import { createMessengerLinkModal } from '../LinkModal';
+import { MessengerPushSection } from './MessengerPush';
 import {
   DetailLayout,
   IntegrationDetailSkeleton,
@@ -87,6 +88,12 @@ const SharedBotDetail = memo<SharedBotDetailProps>(
         headerAction={headerAction}
         name={name}
         platform={platform}
+        // Upstream's push-to-my-DM section; of the shared bots only Telegram supports it
+        extraSections={
+          platform === 'telegram' && hasLinks ? (
+            <MessengerPushSection name={name} platform="telegram" />
+          ) : undefined
+        }
         onBack={onBack}
       >
         {link ? (

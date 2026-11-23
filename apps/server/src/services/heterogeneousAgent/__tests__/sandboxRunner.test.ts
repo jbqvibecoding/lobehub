@@ -137,4 +137,21 @@ describe('spawnHeteroSandbox', () => {
     expect(claude).toContain('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1');
     expect(mockCallTool.mock.calls[1][1].command).not.toContain('ANTHROPIC_');
   });
+
+  it('injects LOBEHUB_WORKSPACE_ID when the topic belongs to a workspace', async () => {
+    await spawnHeteroSandbox({
+      agentType: 'claude-code',
+      assistantMessageId: 'msg-1',
+      jwt: 'jwt',
+      marketService: {} as any,
+      operationId: 'op-1',
+      prompt: 'hi',
+      topicId: 'topic-1',
+      userId: 'user-1',
+      workspaceId: 'ws-lobehub',
+    });
+
+    const command = mockCallTool.mock.calls[0][1].command;
+    expect(command).toContain("LOBEHUB_WORKSPACE_ID='ws-lobehub'");
+  });
 });

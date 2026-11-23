@@ -274,12 +274,17 @@ export const createAgentToolsEngine = (
     agentChatConfigSelectors.currentChatConfig(agentState).memory?.enabled ??
     settingsSelectors.memoryEnabled(useUserStore.getState());
   const webBrowsingEnabled = searchConfig.useApplicationBuiltinSearchTool;
-  const imageGenerationEnabled =
+  // Chat mode no longer auto-injects image generation (token cost + unwanted
+  // tool calls). Users opt in by pinning `lobe-image-generation`. Models with
+  // native imageOutput still skip the fallback tool entirely.
+  const imageGenerationCapable =
     isCanUseFC(workingModel.model, workingModel.provider) &&
     !aiModelSelectors.isModelSupportImageOutput(
       workingModel.model,
       workingModel.provider,
     )(getAiInfraStoreState());
+  const imageGenerationEnabled =
+    imageGenerationCapable && userPlugins.includes(ImageGenerationManifest.identifier);
 
   // Biber's browser on its cloud computer: only where this deployment runs one
   const computerEnabled =
@@ -289,8 +294,6 @@ export const createAgentToolsEngine = (
 
   const chatModeRules = {
     [ComputerManifest.identifier]: computerEnabled,
-    // Example: Claude can call tools but lacks native imageOutput, so expose the
-    // image-generation fallback; image-output models should use their native path.
     [ImageGenerationManifest.identifier]: imageGenerationEnabled,
     [KnowledgeBaseManifest.identifier]: kbEnabled,
     [MemoryManifest.identifier]: memoryEnabled,

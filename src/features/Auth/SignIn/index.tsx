@@ -30,6 +30,7 @@ const SignIn = () => {
     loading,
     oAuthSSOProviders,
     sending,
+    sessionExpired,
     sentInfo,
     serverConfigInit,
     socialLoading,
@@ -77,6 +78,7 @@ const SignIn = () => {
       loading={loading}
       oAuthSSOProviders={oAuthSSOProviders}
       serverConfigInit={serverConfigInit}
+      sessionExpired={sessionExpired}
       socialLoading={socialLoading}
       onCheckUser={handleCheckUser}
       onGoToSignup={handleGoToSignup}
