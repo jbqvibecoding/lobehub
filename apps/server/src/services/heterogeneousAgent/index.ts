@@ -222,18 +222,25 @@ export class HeterogeneousAgentService {
     let assistantMessageId: string | undefined;
     try {
       const topic = await this.topicModel.findById(topicId);
-      serializedHooks = topic?.metadata?.runningOperation?.hooks as SerializedHook[] | undefined;
+      // A group member's run ends on its own record; the host's run keeps the conversation
+      const member = topic?.metadata?.heteroMemberRuns?.[operationId];
+      const running = member ?? topic?.metadata?.runningOperation;
+      serializedHooks = running?.hooks as SerializedHook[] | undefined;
       // Prefer heteroCurrentMsgId — the persistence handler updates this pointer
       // on every step boundary, so it refers to the LAST assistant message with
       // the complete final content.  Fall back to the initial placeholder id
-      // recorded in runningOperation if the pointer is absent or belongs to a
+      // recorded for the run if the pointer is absent or belongs to a
       // different operation (shouldn't happen, but defensive).
       const currentMsgRef = topic?.metadata?.heteroCurrentMsgId;
       assistantMessageId =
         currentMsgRef?.operationId === operationId
           ? currentMsgRef.msgId
-          : topic?.metadata?.runningOperation?.assistantMessageId;
-      await this.topicModel.updateMetadata(topicId, { runningOperation: null });
+          : running?.assistantMessageId;
+      if (member) {
+        await this.topicModel.updateMetadataEntry(topicId, 'heteroMemberRuns', operationId, null);
+      } else {
+        await this.topicModel.updateMetadata(topicId, { runningOperation: null });
+      }
     } catch (err) {
       log('heteroFinish: failed to clear runningOperation (non-fatal): %O', err);
     }
@@ -370,8 +377,19 @@ export class HeterogeneousAgentService {
    * Reads the same `topic.metadata.heteroSessionId` the desktop renderer
    * writes, so resume state is shared between desktop and cloud paths.
    */
-  async getHeterogeneousResumeSessionId(topicId: string): Promise<string | undefined> {
+  async getHeterogeneousResumeSessionId(
+    topicId: string,
+    /** The agent resuming, in a conversation with more than one CLI agent */
+    agentId?: string,
+    /**
+     * Only the agent's own session: a group member must never resume the session another agent
+     * left in the topic-wide `heteroSessionId`
+     */
+    { ownOnly = false }: { ownOnly?: boolean } = {},
+  ): Promise<string | undefined> {
     const topic = await this.topicModel.findById(topicId);
+    const own = agentId ? topic?.metadata?.heteroSessions?.[agentId] : undefined;
+    if (own || ownOnly) return own;
     return topic?.metadata?.heteroSessionId;
   }
 }

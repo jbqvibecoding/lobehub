@@ -14,7 +14,12 @@ import {
   reduceMainAgent,
   rehydrateSubagentRunsState,
 } from '@lobechat/heterogeneous-agents';
-import { type ChatToolPayload, ThreadStatus, ThreadType } from '@lobechat/types';
+import {
+  type ChatToolPayload,
+  type ChatTopicMetadata,
+  ThreadStatus,
+  ThreadType,
+} from '@lobechat/types';
 import { createNanoId } from '@lobechat/utils';
 import debug from 'debug';
 
@@ -105,7 +110,10 @@ interface AssistantMessageDbLike {
  * in-memory part of the operation.
  */
 interface OperationState {
+  /** Who speaks: the topic's agent, or for a group member's run that member */
   agentId: string | null;
+  /** The group conversation the topic belongs to; group reads only show messages stamped with it */
+  groupId: string | null;
   /**
    * CC-native session id this run is producing, captured off the stream_start
    * event stream and stamped on every persisted message's
@@ -115,6 +123,8 @@ interface OperationState {
    * Recovered on a cold replica from the current assistant's stamped metadata.
    */
   heteroSessionId: string | undefined;
+  /** A group member's run, recorded in `heteroMemberRuns` beside the host's */
+  isMemberRun: boolean;
   lastStepIndex: number;
   main: MainAgentRunState;
   operationId: string;
@@ -140,6 +150,19 @@ const operationStates = new Map<string, OperationState>();
 
 /** Test-only reset hook to clear the singleton between specs. */
 export const __resetOperationStatesForTesting = () => operationStates.clear();
+
+/**
+ * What a topic records about one of its hetero runs: the run that owns the conversation
+ * (`runningOperation`), or a group member's run (`heteroMemberRuns`), which runs alongside the
+ * host's without taking its place. Undefined for a run the topic no longer knows.
+ */
+export const runFor = (
+  metadata: Pick<ChatTopicMetadata, 'heteroMemberRuns' | 'runningOperation'> | null | undefined,
+  operationId: string,
+) => {
+  if (metadata?.runningOperation?.operationId === operationId) return metadata.runningOperation;
+  return metadata?.heteroMemberRuns?.[operationId];
+};
 
 export class StaleHeteroOperationError extends Error {
   constructor(message: string) {
@@ -274,7 +297,7 @@ export class HeterogeneousPersistenceHandler {
     try {
       await this.flushFinalState(state, params.error, params.result);
       if (params.sessionId) {
-        await this.persistSessionId(state.topicId, params.sessionId);
+        await this.persistSessionId(state, params.sessionId);
       } else if (params.result === 'error') {
         // No new session id was produced and the run failed. The most common
         // cause in cloud sandboxes is `--resume <staleId>` failing because the
@@ -285,7 +308,7 @@ export class HeterogeneousPersistenceHandler {
         // When CC ran (system.init was emitted) but produced an error result,
         // `params.sessionId` is set — so this branch is NOT reached and the
         // valid session id is kept for resume on the next turn.
-        await this.clearSessionId(state.topicId);
+        await this.clearSessionId(state);
       }
     } finally {
       operationStates.delete(params.operationId);
@@ -296,11 +319,22 @@ export class HeterogeneousPersistenceHandler {
    * Persist the CLI's native session id onto `topic.metadata.heteroSessionId`.
    * `TopicModel.updateMetadata` merges into existing JSONB so this does NOT
    * clobber `runningOperation` / `workingDirectory` / other peer fields.
+   * The speaking agent's entry in `heteroSessions` gets it too: in a group chat
+   * each CLI member resumes its own session.
    */
-  private async persistSessionId(topicId: string, sessionId: string): Promise<void> {
+  private async persistSessionId(state: OperationState, sessionId: string): Promise<void> {
+    const { agentId, topicId } = state;
     try {
       await this.deps.topicModel.updateMetadata(topicId, { heteroSessionId: sessionId });
-      log('persisted sessionId topic=%s sessionId=%s', topicId, sessionId);
+      if (agentId) {
+        await this.deps.topicModel.updateMetadataEntry(
+          topicId,
+          'heteroSessions',
+          agentId,
+          sessionId,
+        );
+      }
+      log('persisted sessionId topic=%s agent=%s sessionId=%s', topicId, agentId, sessionId);
     } catch (err) {
       log('persistSessionId failed topic=%s err=%O', topicId, err);
     }
@@ -310,12 +344,19 @@ export class HeterogeneousPersistenceHandler {
    * Remove a stale `heteroSessionId` from topic metadata. Called when a run
    * fails without producing a new session id (e.g. `--resume` rejected because
    * the sandbox was recycled). Prevents the next turn from inheriting a session
-   * id that will never succeed.
+   * id that will never succeed. A group member's run clears only its own entry:
+   * the topic-wide id may be another agent's working session.
    */
-  private async clearSessionId(topicId: string): Promise<void> {
+  private async clearSessionId(state: OperationState): Promise<void> {
+    const { agentId, topicId } = state;
     try {
-      await this.deps.topicModel.updateMetadata(topicId, { heteroSessionId: undefined });
-      log('cleared stale sessionId topic=%s', topicId);
+      if (!state.isMemberRun) {
+        await this.deps.topicModel.updateMetadata(topicId, { heteroSessionId: undefined });
+      }
+      if (agentId) {
+        await this.deps.topicModel.updateMetadataEntry(topicId, 'heteroSessions', agentId, null);
+      }
+      log('cleared stale sessionId topic=%s agent=%s', topicId, agentId);
     } catch (err) {
       log('clearSessionId failed topic=%s err=%O', topicId, err);
     }
@@ -341,17 +382,14 @@ export class HeterogeneousPersistenceHandler {
     }
 
     const topic = await this.deps.topicModel.findById(topicId);
-    const running = topic?.metadata?.runningOperation;
+    const running = runFor(topic?.metadata, operationId);
 
     if (!running) {
+      const current = topic?.metadata?.runningOperation?.operationId;
       throw new StaleHeteroOperationError(
-        `Stale hetero operation ${operationId} on topic ${topicId}; no active runningOperation`,
-      );
-    }
-
-    if (running.operationId !== operationId) {
-      throw new StaleHeteroOperationError(
-        `Stale hetero operation ${operationId} on topic ${topicId}; current operation is ${running.operationId}`,
+        current
+          ? `Stale hetero operation ${operationId} on topic ${topicId}; current operation is ${current}`
+          : `Stale hetero operation ${operationId} on topic ${topicId}; no active runningOperation`,
       );
     }
 
@@ -395,7 +433,9 @@ export class HeterogeneousPersistenceHandler {
         : baseAssistantMessageId;
 
     state = {
-      agentId: topic?.agentId ?? null,
+      agentId: ('agentId' in running ? running.agentId : topic?.agentId) ?? null,
+      groupId: topic?.groupId ?? null,
+      isMemberRun: 'agentId' in running,
       // Left undefined until the run's own stream_start reports it (or a cold
       // replica recovers it from a stamped message). NOT seeded from
       // topic.metadata.heteroSessionId: that holds the id we ASKED CC to resume,
@@ -691,11 +731,12 @@ export class HeterogeneousPersistenceHandler {
 
   private async syncAssistantPointerForAdvancedStep(state: OperationState): Promise<void> {
     const topic = await this.deps.topicModel.findById(state.topicId);
-    const running = topic?.metadata?.runningOperation;
+    const running = runFor(topic?.metadata, state.operationId);
+    const current = topic?.metadata?.runningOperation;
 
-    if (running && running.operationId !== state.operationId) {
+    if (!running && current) {
       throw new StaleHeteroOperationError(
-        `Stale hetero operation ${state.operationId} on topic ${state.topicId}; current operation is ${running.operationId}`,
+        `Stale hetero operation ${state.operationId} on topic ${state.topicId}; current operation is ${current.operationId}`,
       );
     }
 
@@ -770,7 +811,7 @@ export class HeterogeneousPersistenceHandler {
         // next turn to spawn a fresh CC session and drop all `--resume` history.
         // Writing it here makes resume survive abandon. finish() still overwrites
         // with its own sessionId (or clears a stale one on a resume failure).
-        await this.persistSessionId(state.topicId, sid);
+        await this.persistSessionId(state, sid);
       }
     }
 
@@ -821,6 +862,7 @@ export class HeterogeneousPersistenceHandler {
           {
             agentId: intent.agentId ?? undefined,
             content: '',
+            ...(state.groupId && { groupId: state.groupId }),
             ...(Object.keys(createMetadata).length > 0 ? { metadata: createMetadata } : {}),
             model: intent.model,
             parentId: intent.parentId,
@@ -834,6 +876,17 @@ export class HeterogeneousPersistenceHandler {
         await this.deps.topicModel.updateMetadata(state.topicId, {
           heteroCurrentMsgId: { msgId: intent.messageId, operationId: state.operationId },
         });
+        // Members running at once overwrite that single pointer, so a member's run also keeps its
+        // latest message in its own record, which is what a replica falls back to
+        if (state.isMemberRun) {
+          await this.deps.topicModel.updateMetadataEntry(
+            state.topicId,
+            'heteroMemberRuns',
+            state.operationId,
+            (member) => member && { ...member, assistantMessageId: intent.messageId },
+            { onlyIfPresent: true },
+          );
+        }
         return;
       }
 
@@ -875,6 +928,7 @@ export class HeterogeneousPersistenceHandler {
             {
               agentId: state.agentId ?? undefined,
               content: '',
+              ...(state.groupId && { groupId: state.groupId }),
               ...(Object.keys(toolMetadata).length > 0 ? { metadata: toolMetadata } : {}),
               parentId: intent.assistantMessageId,
               plugin: {

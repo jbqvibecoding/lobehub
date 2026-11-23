@@ -647,12 +647,87 @@ export class AiAgentService {
     }
 
     // 3. The operation never started — drop the running marker so reconnect /
-    //    heteroIngest validation and the next turn don't see a stale operation.
+    //    heteroIngest validation and the next turn don't see a stale operation. A group
+    //    member's marker is its own record; the host's run stays.
     try {
+      const topic = await this.topicModel.findById(topicId);
+      if (topic?.metadata?.heteroMemberRuns?.[operationId]) {
+        await this.topicModel.updateMetadataEntry(topicId, 'heteroMemberRuns', operationId, null);
+        return;
+      }
       await this.topicModel.updateMetadata(topicId, { runningOperation: null });
     } catch (err) {
       log('finalizeHeteroDispatchError: clear runningOperation failed (non-fatal): %O', err);
     }
+  }
+
+  /**
+   * Stops Claude Code / Codex members of a group conversation: the one asked for, or all of them
+   * when the run stopped is the conversation's own (the host's). Each member's command is killed
+   * and its run closed as interrupted. Returns whether the run asked for was a member's.
+   */
+  private async stopSandboxMemberRuns(topicId: string, operationId: string) {
+    const topic = await this.topicModel.findById(topicId);
+    const all = topic?.metadata?.heteroMemberRuns ?? {};
+    const isMember = operationId in all;
+    if (!isMember && topic?.metadata?.runningOperation?.operationId !== operationId) return false;
+    const members = Object.entries(all).filter(([id]) => !isMember || id === operationId);
+    if (members.length === 0) return false;
+
+    const { createSandboxService } = await import('@/server/services/sandbox');
+    for (const [memberOperationId, member] of members) {
+      log('stopSandboxMemberRuns: op=%s command=%s', memberOperationId, member.commandId);
+      if (member.commandId) {
+        await createSandboxService({
+          marketService: this.marketService,
+          purpose: 'coding',
+          topicId,
+          userId: this.userId,
+        })
+          .callTool('killCommand', { commandId: member.commandId })
+          .catch((error: unknown) => log('stopSandboxMemberRuns: kill failed: %O', error));
+      }
+      await new HeterogeneousAgentService(this.db, this.userId, { workspaceId: this.workspaceId })
+        .heteroFinish({
+          agentType: member.heteroType,
+          operationId: memberOperationId,
+          result: 'cancelled',
+          topicId,
+        })
+        .catch((error) => log('stopSandboxMemberRuns: closing the stream failed: %O', error));
+      await new CompletionLifecycle(this.db, this.userId, this.workspaceId)
+        .completeOperation(
+          {
+            agentId: member.agentId,
+            assistantMessageId: member.assistantMessageId,
+            operationId: memberOperationId,
+            serializedHooks: member.hooks as SerializedHook[] | undefined,
+            topicId,
+            userId: this.userId,
+          },
+          'interrupted',
+        )
+        .catch((error) => log('stopSandboxMemberRuns: completing failed: %O', error));
+      await this.topicModel.updateMetadataEntry(
+        topicId,
+        'heteroMemberRuns',
+        memberOperationId,
+        null,
+      );
+      await abortHeteroInterventions(this.db, this.userId, memberOperationId).catch(() => {});
+    }
+    return isMember;
+  }
+
+  /** Adds the sandbox command to a group member's run record, while the run is still going. */
+  private async recordMemberCommand(topicId: string, operationId: string, commandId: string) {
+    await this.topicModel.updateMetadataEntry(
+      topicId,
+      'heteroMemberRuns',
+      operationId,
+      (member) => member && { ...member, commandId },
+      { onlyIfPresent: true },
+    );
   }
 
   /**
@@ -1824,7 +1899,13 @@ export class AiAgentService {
       const heteroService = new HeterogeneousAgentService(this.db, this.userId, {
         workspaceId: this.workspaceId,
       });
-      const resumeSessionId = await heteroService.getHeterogeneousResumeSessionId(topicId);
+      // A group member runs beside the host (see the seeding below)
+      const isGroupMemberRun = appContext?.orchestrationRole === 'member';
+      const resumeSessionId = await heteroService.getHeterogeneousResumeSessionId(
+        topicId,
+        resolvedAgentId,
+        { ownOnly: isGroupMemberRun },
+      );
       // Sign an operation-scoped JWT so the CLI can authenticate against
       // heteroIngest / heteroFinish without full user credentials.
       let operationJwt: string;
@@ -1926,19 +2007,32 @@ export class AiAgentService {
       // operation, and so every terminal site (heteroFinish, agentNotify done,
       // dispatch failure) can re-fire the serialized hooks across a process
       // boundary in queue mode.
-      await this.topicModel.updateMetadata(topicId, {
-        runningOperation: {
+      //
+      // A group member is recorded beside the host instead: the host's run keeps
+      // `runningOperation` (and with it the phone's status and its stop button), and the
+      // member's output is accepted as long as its own record lasts.
+      if (isGroupMemberRun) {
+        await this.topicModel.updateMetadataEntry(topicId, 'heteroMemberRuns', operationId, {
+          agentId: resolvedAgentId,
           assistantMessageId: assistantMessageRecord.id,
+          heteroType: heteroType as 'claude-code' | 'codex',
           hooks: serializedHooks,
-          // Store deviceId + heteroType so interruptTask can cancel remote processes
-          ...(isRemoteHetero && remoteDeviceId
-            ? { deviceId: remoteDeviceId, heteroType }
-            : undefined),
-          operationId,
-          scope: appContext?.scope ?? undefined,
-          threadId: appContext?.threadId ?? undefined,
-        },
-      });
+        });
+      } else {
+        await this.topicModel.updateMetadata(topicId, {
+          runningOperation: {
+            assistantMessageId: assistantMessageRecord.id,
+            hooks: serializedHooks,
+            // Store deviceId + heteroType so interruptTask can cancel remote processes
+            ...(isRemoteHetero && remoteDeviceId
+              ? { deviceId: remoteDeviceId, heteroType }
+              : undefined),
+            operationId,
+            scope: appContext?.scope ?? undefined,
+            threadId: appContext?.threadId ?? undefined,
+          },
+        });
+      }
 
       // The mainland edition reviews what the user asks before a model sees it. A CLI agent's
       // model calls do not go through this server's model runtime, so the prompt is checked
@@ -2298,11 +2392,14 @@ export class AiAgentService {
               // Remembered so stopping the run can kill it (see `stopSandboxHeteroRun`)
               const commandId = started?.commandId;
               if (!commandId) return;
-              await this.topicModel
-                .updateMetadata(topicId, {
-                  heteroSandboxRun: { commandId, heteroType: sandboxType, operationId },
-                })
-                .catch((err) => log('execAgent: recording the sandbox command failed: %O', err));
+              const recorded = isGroupMemberRun
+                ? this.recordMemberCommand(topicId, operationId, commandId)
+                : this.topicModel.updateMetadata(topicId, {
+                    heteroSandboxRun: { commandId, heteroType: sandboxType, operationId },
+                  });
+              await Promise.resolve(recorded).catch((err) =>
+                log('execAgent: recording the sandbox command failed: %O', err),
+              );
             })
             .catch(async (err) => {
               // Fire-and-forget: execAgent has already returned `autoStarted`, and
@@ -4956,6 +5053,10 @@ export class AiAgentService {
     // 2b. A Claude Code / Codex run in the cloud sandbox is not in the runtime registry: kill its
     // command and close the run here.
     if (topicId && (await this.stopSandboxHeteroRun(topicId, resolvedOperationId))) {
+      return { operationId: resolvedOperationId, success: true, threadId: thread?.id };
+    }
+    // A group member's CLI run stops on its own; stopping the host stops its members as well
+    if (topicId && (await this.stopSandboxMemberRuns(topicId, resolvedOperationId))) {
       return { operationId: resolvedOperationId, success: true, threadId: thread?.id };
     }
 

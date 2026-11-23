@@ -328,6 +328,16 @@ export class AbandonOperationService {
       try {
         topicModel = new TopicModel(this.db, op.userId, op.workspaceId ?? undefined);
         const topic = await topicModel.findById(op.topicId);
+
+        // A group member's CLI run is recorded beside the host's, which it never replaces
+        const member = topic?.metadata?.heteroMemberRuns?.[operationId];
+        if (member) {
+          await topicModel
+            .updateMetadataEntry(op.topicId, 'heteroMemberRuns', operationId, null)
+            .catch(() => {});
+          return member.assistantMessageId;
+        }
+
         const running = topic?.metadata?.runningOperation as
           { assistantMessageId?: string; operationId?: string } | undefined;
 

@@ -165,6 +165,9 @@ const createHarness = (params: {
       };
     }),
     updateMetadata: vi.fn(async (_topicId: string, _patch: any) => {}),
+    updateMetadataEntry: vi.fn(
+      async (_topicId: string, _key: string, _entry: string, _value: unknown, _options?: any) => [],
+    ),
   };
 
   const handler = new HeterogeneousPersistenceHandler({
@@ -245,6 +248,148 @@ describe('HeterogeneousPersistenceHandler', () => {
           topicId: 'topic-1',
         }),
       ).rejects.toThrow(/Stale hetero operation/);
+    });
+
+    it('accepts a group member’s run beside the host’s, while its own record lasts', async () => {
+      const h = createHarness({
+        assistantMessageId: 'asst-member',
+        operationId: 'op-member',
+        topicId: 'topic-1',
+      });
+      const groupTopic = (memberRuns: Record<string, unknown>) => ({
+        agentId: null,
+        id: 'topic-1',
+        metadata: {
+          heteroMemberRuns: memberRuns,
+          // The host (Biber) keeps the conversation's run while the member works
+          runningOperation: { assistantMessageId: 'asst-host', operationId: 'op-host' },
+        } as any,
+      });
+      h.topicModel.findById.mockResolvedValue(
+        groupTopic({
+          'op-member': {
+            agentId: 'coder',
+            assistantMessageId: 'asst-member',
+            heteroType: 'claude-code',
+          },
+        }),
+      );
+
+      await h.handler.ingest({
+        events: [buildEvent('stream_chunk', 0, { chunkType: 'text', content: 'Working on it' })],
+        operationId: 'op-member',
+        topicId: 'topic-1',
+      });
+      await h.handler.finish({ operationId: 'op-member', result: 'success' });
+      expect(h.messages.get('asst-member')?.content).toBe('Working on it');
+
+      // Once the member's record is gone, its late batches are refused like any stale run
+      h.topicModel.findById.mockResolvedValue(groupTopic({}));
+      await expect(
+        h.handler.ingest({
+          events: [buildEvent('stream_chunk', 0, { chunkType: 'text', content: 'late' })],
+          operationId: 'op-member',
+          topicId: 'topic-1',
+        }),
+      ).rejects.toThrow(/current operation is op-host/);
+    });
+
+    it('writes a group member’s turns as that member, in the group, and keeps its step and session apart', async () => {
+      const h = createHarness({
+        assistantMessageId: 'asst-member',
+        operationId: 'op-member',
+        topicId: 'topic-1',
+      });
+      const member = {
+        agentId: 'coder',
+        assistantMessageId: 'asst-member',
+        heteroType: 'claude-code',
+      };
+      h.topicModel.findById.mockResolvedValue({
+        agentId: 'biber',
+        groupId: 'group-1',
+        id: 'topic-1',
+        metadata: {
+          heteroMemberRuns: { 'op-member': member },
+          runningOperation: { assistantMessageId: 'asst-host', operationId: 'op-host' },
+        } as any,
+      } as any);
+
+      await h.handler.ingest({
+        events: [
+          buildEvent('stream_start', 0, { sessionId: 'sess-coder' }),
+          buildEvent('stream_chunk', 1, { chunkType: 'text', content: 'step1' }),
+          buildEvent('stream_start', 2, { newStep: true, sessionId: 'sess-coder' }),
+          buildEvent('stream_chunk', 3, { chunkType: 'text', content: 'step2' }),
+        ],
+        operationId: 'op-member',
+        topicId: 'topic-1',
+      });
+
+      // The new step is the member's message, visible in the group
+      const [[created, createdId]] = h.messageModel.create.mock.calls as [any, string][];
+      expect(created).toMatchObject({ agentId: 'coder', groupId: 'group-1', role: 'assistant' });
+      // Its pointer goes into the member's own record, where the host's runs cannot overwrite it
+      const pointer = h.topicModel.updateMetadataEntry.mock.calls.find(
+        ([, key]) => key === 'heteroMemberRuns',
+      )!;
+      expect(pointer.slice(0, 3)).toEqual(['topic-1', 'heteroMemberRuns', 'op-member']);
+      expect(pointer[4]).toEqual({ onlyIfPresent: true });
+      const update = pointer[3] as (current: typeof member | undefined) => unknown;
+      expect(update(member)).toEqual({ ...member, assistantMessageId: createdId });
+      expect(update(undefined)).toBeUndefined();
+
+      await h.handler.finish({
+        operationId: 'op-member',
+        result: 'success',
+        sessionId: 'sess-coder',
+      });
+      // The member resumes its own session next time
+      expect(h.topicModel.updateMetadataEntry).toHaveBeenCalledWith(
+        'topic-1',
+        'heteroSessions',
+        'coder',
+        'sess-coder',
+      );
+    });
+
+    it('drops only a failed member’s own session, never the one the topic resumes', async () => {
+      const h = createHarness({
+        assistantMessageId: 'asst-member',
+        operationId: 'op-member',
+        topicId: 'topic-1',
+      });
+      h.topicModel.findById.mockResolvedValue({
+        agentId: 'biber',
+        id: 'topic-1',
+        metadata: {
+          heteroMemberRuns: {
+            'op-member': { agentId: 'coder', assistantMessageId: 'asst-member' },
+          },
+          heteroSessionId: 'sess-other-agent',
+        } as any,
+      } as any);
+
+      await h.handler.ingest({
+        events: [buildEvent('stream_chunk', 0, { chunkType: 'text', content: 'x' })],
+        operationId: 'op-member',
+        topicId: 'topic-1',
+      });
+      await h.handler.finish({
+        error: { message: 'resume failed', type: 'error' },
+        operationId: 'op-member',
+        result: 'error',
+      });
+
+      expect(h.topicModel.updateMetadataEntry).toHaveBeenCalledWith(
+        'topic-1',
+        'heteroSessions',
+        'coder',
+        null,
+      );
+      expect(h.topicModel.updateMetadata).not.toHaveBeenCalledWith('topic-1', {
+        heteroSessionId: undefined,
+      });
     });
 
     it('rejects seeded assistant ids once runningOperation has been cleared', async () => {
@@ -1612,7 +1757,13 @@ describe('HeterogeneousPersistenceHandler', () => {
             chunkType: 'tools_calling',
             subagent: subagentCtx,
             toolsCalling: [
-              { apiName: 'Read', arguments: '{}', id: 'inner-tc', identifier: 'read', type: 'default' },
+              {
+                apiName: 'Read',
+                arguments: '{}',
+                id: 'inner-tc',
+                identifier: 'read',
+                type: 'default',
+              },
             ],
           }),
           buildEvent('step_complete', 2, {

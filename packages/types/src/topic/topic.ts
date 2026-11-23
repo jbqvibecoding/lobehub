@@ -119,6 +119,21 @@ export interface ChatTopicMetadata {
    */
   heteroCurrentMsgId?: { msgId: string; operationId: string };
   /**
+   * Claude Code / Codex runs going on as members of a group chat, by operation id. A member does
+   * not take the conversation's `runningOperation`, which stays the host's: it is recorded here,
+   * with what its end needs (hooks, its reply message) and the command to kill on stop.
+   */
+  heteroMemberRuns?: Record<
+    string,
+    {
+      agentId: string;
+      assistantMessageId: string;
+      commandId?: string;
+      heteroType: 'claude-code' | 'codex';
+      hooks?: SerializedAgentHook[];
+    }
+  >;
+  /**
    * The Claude Code / Codex run going on in the cloud sandbox: the background command to kill
    * when the user stops it. Current only while `operationId` matches `runningOperation`'s.
    */
@@ -153,6 +168,8 @@ export interface ChatTopicMetadata {
    * readers; this map lets the UI restore the right id when switching back.
    */
   heteroSessionIdByWorkingDirectory?: Record<string, string>;
+  /** A Claude Code / Codex session id per agent, for a conversation with more than one of them */
+  heteroSessions?: Record<string, string>;
   /**
    * For topics imported from local CLI transcripts: the source transcript's
    * last message timestamp at import time. The import picker compares it with

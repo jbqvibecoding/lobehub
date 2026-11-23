@@ -215,6 +215,31 @@ describe('mobile chatRouter.history', () => {
     await cleanupTestUser(testDB, chat.userId);
   });
 
+  it('says a group’s coding member is still going after the host has answered', async () => {
+    const operationId = `op-member-${Math.random().toString(36).slice(2)}`;
+    const chat = await createConversation();
+    await testDB
+      .update(topics)
+      .set({
+        metadata: {
+          heteroMemberRuns: {
+            [operationId]: {
+              agentId: chat.agentId,
+              assistantMessageId: 'a',
+              heteroType: 'claude-code',
+            },
+          },
+        },
+      })
+      .where(eq(topics.id, chat.topicId));
+    await testDB
+      .insert(agentOperations)
+      .values({ id: operationId, provider: 'claude-code', status: 'running', userId: chat.userId });
+
+    expect((await callerFor(chat.userId).history({ topicId: chat.topicId })).run).toBe('running');
+    await cleanupTestUser(testDB, chat.userId);
+  });
+
   it('does not take an in-app run the runtime lost for a running one', async () => {
     const operationId = `op-lost-${Math.random().toString(36).slice(2)}`;
     const chat = await createConversation(operationId);
@@ -294,6 +319,34 @@ describe('mobile chatRouter.stop', () => {
       stopped: true,
     });
     expect(mockInterruptTask).toHaveBeenCalledWith({ operationId: 'op-3', topicId: chat.topicId });
+    await cleanupTestUser(testDB, chat.userId);
+  });
+
+  it('stops the group members still at work once the host has answered', async () => {
+    const chat = await createConversation();
+    await testDB
+      .update(topics)
+      .set({
+        metadata: {
+          heteroMemberRuns: {
+            'op-coder': {
+              agentId: chat.agentId,
+              assistantMessageId: 'a',
+              heteroType: 'claude-code',
+            },
+          },
+        },
+      })
+      .where(eq(topics.id, chat.topicId));
+    mockInterruptTask.mockResolvedValue({ success: true });
+
+    expect(await callerFor(chat.userId).stop({ topicId: chat.topicId })).toEqual({
+      stopped: true,
+    });
+    expect(mockInterruptTask).toHaveBeenCalledWith({
+      operationId: 'op-coder',
+      topicId: chat.topicId,
+    });
     await cleanupTestUser(testDB, chat.userId);
   });
 });

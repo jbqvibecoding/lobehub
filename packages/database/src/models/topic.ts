@@ -38,6 +38,10 @@ import { idGenerator } from '../utils/idGenerator';
 import { buildWorkspacePayload, buildWorkspaceWhere } from '../utils/workspace';
 import { recomputeTopicUsage } from './topicUsage';
 
+/** One entry of a keyed metadata map, as `updateMetadataEntry` writes it. */
+type MetadataEntry<K extends 'heteroMemberRuns' | 'heteroSessions'> = NonNullable<
+  ChatTopicMetadata[K]
+>[string];
 type OnboardingSessionMetadataPatch = Partial<NonNullable<ChatTopicMetadata['onboardingSession']>>;
 type TopicMetadataPatch = Omit<Partial<ChatTopicMetadata>, 'onboardingSession'> & {
   onboardingSession?: OnboardingSessionMetadataPatch;
@@ -1090,6 +1094,45 @@ export class TopicModel {
       return tx
         .update(topics)
         .set({ metadata: mergedMetadata })
+        .where(and(eq(topics.id, id), this.ownership()))
+        .returning();
+    });
+  };
+
+  /**
+   * Sets or removes one entry of a keyed metadata map (`heteroMemberRuns`, `heteroSessions`) under
+   * the same row lock as `updateMetadata`, so writers of different entries, e.g. two group members
+   * running at once, never drop each other's. `value` may be a function of the entry as it is
+   * under the lock; `null` removes the entry.
+   */
+  updateMetadataEntry = async <K extends 'heteroMemberRuns' | 'heteroSessions'>(
+    id: string,
+    key: K,
+    entry: string,
+    value:
+      | MetadataEntry<K>
+      | null
+      | ((current: MetadataEntry<K> | undefined) => MetadataEntry<K> | null | undefined),
+    /** Only change an entry that is there: a late write must not bring back a removed one */
+    { onlyIfPresent = false }: { onlyIfPresent?: boolean } = {},
+  ) => {
+    return this.db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({ metadata: topics.metadata })
+        .from(topics)
+        .where(and(eq(topics.id, id), this.ownership()))
+        .for('update');
+      if (!existing) return [];
+
+      const map = { ...(existing.metadata?.[key] as Record<string, MetadataEntry<K>> | undefined) };
+      if (onlyIfPresent && !(entry in map)) return [];
+      const next = typeof value === 'function' ? value(map[entry]) : value;
+      if (next === null || next === undefined) delete map[entry];
+      else map[entry] = next;
+
+      return tx
+        .update(topics)
+        .set({ metadata: { ...existing.metadata, [key]: map } as ChatTopicMetadata })
         .where(and(eq(topics.id, id), this.ownership()))
         .returning();
     });

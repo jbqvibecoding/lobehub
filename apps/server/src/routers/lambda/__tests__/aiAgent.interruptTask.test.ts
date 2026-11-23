@@ -399,5 +399,121 @@ describe('aiAgentRouter.interruptTask', () => {
       expect(sandbox.callTool).not.toHaveBeenCalled();
       expect(mockInterruptOperation).toHaveBeenCalledWith('op-interrupt-test');
     });
+
+    it('stops the coding members of a group along with its host', async () => {
+      // The host (Biber) runs on the server; the coder it asked runs in the sandbox beside it
+      const hostOperationId = `${operationId}-host`;
+      await serverDB.insert(messages).values({
+        content: 'On it',
+        id: 'msg-member-run',
+        role: 'assistant',
+        topicId: testTopicId,
+        userId,
+      });
+      await serverDB
+        .insert(agentOperations)
+        .values({ id: operationId, provider: 'claude-code', status: 'running', userId });
+      await serverDB
+        .update(topics)
+        .set({
+          metadata: {
+            heteroMemberRuns: {
+              [operationId]: {
+                agentId: testAgentId,
+                assistantMessageId: 'msg-member-run',
+                commandId: 'bg-member',
+                heteroType: 'claude-code',
+              },
+            },
+            runningOperation: { assistantMessageId: 'msg-host', operationId: hostOperationId },
+          },
+        })
+        .where(eq(topics.id, testTopicId));
+
+      await aiAgentRouter
+        .createCaller(createTestContext())
+        .interruptTask({ operationId: hostOperationId, topicId: testTopicId });
+
+      expect(sandbox.callTool).toHaveBeenCalledWith('killCommand', { commandId: 'bg-member' });
+      expect(sandbox.heteroFinish).toHaveBeenCalledWith(
+        expect.objectContaining({ operationId, result: 'cancelled', topicId: testTopicId }),
+      );
+      // The host itself is stopped the usual way
+      expect(mockInterruptOperation).toHaveBeenCalledWith(hostOperationId);
+      const [op] = await serverDB
+        .select({ status: agentOperations.status })
+        .from(agentOperations)
+        .where(eq(agentOperations.id, operationId));
+      expect(op.status).toBe('interrupted');
+      const [topic] = await serverDB.select().from(topics).where(eq(topics.id, testTopicId));
+      expect(topic.metadata?.heteroMemberRuns).toEqual({});
+    });
+
+    it('stops one coding member on its own, leaving the host and the others', async () => {
+      await serverDB
+        .insert(agentOperations)
+        .values({ id: operationId, provider: 'claude-code', status: 'running', userId });
+      await serverDB
+        .update(topics)
+        .set({
+          metadata: {
+            heteroMemberRuns: {
+              [operationId]: {
+                agentId: testAgentId,
+                assistantMessageId: 'msg-member-run',
+                commandId: 'bg-member',
+                heteroType: 'claude-code',
+              },
+              'op-other-member': {
+                agentId: testAgentId,
+                assistantMessageId: 'msg-other',
+                commandId: 'bg-other',
+                heteroType: 'claude-code',
+              },
+            },
+            runningOperation: { assistantMessageId: 'msg-host', operationId: 'op-host' },
+          },
+        })
+        .where(eq(topics.id, testTopicId));
+
+      const result = await aiAgentRouter
+        .createCaller(createTestContext())
+        .interruptTask({ operationId, topicId: testTopicId });
+
+      expect(result).toMatchObject({ operationId, success: true });
+      expect(sandbox.callTool).toHaveBeenCalledTimes(1);
+      expect(sandbox.callTool).toHaveBeenCalledWith('killCommand', { commandId: 'bg-member' });
+      expect(mockInterruptOperation).not.toHaveBeenCalled();
+      const [topic] = await serverDB.select().from(topics).where(eq(topics.id, testTopicId));
+      expect(Object.keys(topic.metadata?.heteroMemberRuns ?? {})).toEqual(['op-other-member']);
+      expect(topic.metadata?.runningOperation?.operationId).toBe('op-host');
+    });
+
+    it('leaves a group’s members running when something else is stopped', async () => {
+      await serverDB
+        .update(topics)
+        .set({
+          metadata: {
+            heteroMemberRuns: {
+              [operationId]: {
+                agentId: testAgentId,
+                assistantMessageId: 'msg-member-run',
+                commandId: 'bg-member',
+                heteroType: 'claude-code',
+              },
+            },
+            runningOperation: { assistantMessageId: 'msg-host', operationId: 'op-host' },
+          },
+        })
+        .where(eq(topics.id, testTopicId));
+
+      await aiAgentRouter
+        .createCaller(createTestContext())
+        .interruptTask({ operationId: 'op-interrupt-test', topicId: testTopicId });
+
+      expect(sandbox.callTool).not.toHaveBeenCalled();
+      const [topic] = await serverDB.select().from(topics).where(eq(topics.id, testTopicId));
+      expect(Object.keys(topic.metadata?.heteroMemberRuns ?? {})).toEqual([operationId]);
+    });
   });
 });

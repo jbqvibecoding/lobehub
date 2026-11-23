@@ -580,6 +580,62 @@ describe('HeterogeneousAgentService', () => {
 
       expect(mockPublishJSON).not.toHaveBeenCalled();
     });
+
+    it('ends a group member’s run on its own record and leaves the host’s run in place', async () => {
+      const hostHook: SerializedHook = {
+        ...taskHook,
+        id: 'host-on-complete',
+        webhook: { ...taskHook.webhook!, body: { taskId: 'host' } },
+      };
+      const topicModel = {
+        findById: vi.fn(async () => ({
+          id: 'topic-q',
+          metadata: {
+            heteroMemberRuns: {
+              'op-member': {
+                agentId: 'coder',
+                assistantMessageId: 'asst-member',
+                heteroType: 'claude-code',
+                hooks: [taskHook],
+              },
+            },
+            runningOperation: { hooks: [hostHook], operationId: 'op-host' },
+          },
+        })),
+        updateMetadata: vi.fn(async () => {}),
+        updateMetadataEntry: vi.fn(async () => []),
+      } as any;
+      const { manager } = createFakeStreamManager();
+      const service = new HeterogeneousAgentService({} as any, 'user-test', {
+        persistenceHandler: createFakePersistenceHandler(),
+        snapshotStore: null,
+        streamEventManager: manager,
+        topicModel,
+      });
+
+      await service.heteroFinish({
+        agentType: 'claude-code',
+        operationId: 'op-member',
+        result: 'success',
+        topicId: 'topic-q',
+      });
+
+      // The member's own hooks fire, not the host's
+      expect(mockPublishJSON).toHaveBeenCalledTimes(1);
+      expect(mockPublishJSON.mock.calls[0][0].body).toMatchObject({
+        hookId: 'task-on-complete',
+        taskId: 'task_q',
+      });
+      expect(topicModel.updateMetadataEntry).toHaveBeenCalledWith(
+        'topic-q',
+        'heteroMemberRuns',
+        'op-member',
+        null,
+      );
+      expect(topicModel.updateMetadata).not.toHaveBeenCalledWith('topic-q', {
+        runningOperation: null,
+      });
+    });
   });
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -717,6 +773,38 @@ describe('HeterogeneousAgentService', () => {
       // had nothing to deliver, so onTopicComplete never fires and the task
       // topic is stranded at `running`.
       expect(mockPublishJSON).not.toHaveBeenCalled();
+    });
+  });
+  describe('getHeterogeneousResumeSessionId', () => {
+    const serviceWith = (metadata: Record<string, unknown>) =>
+      new HeterogeneousAgentService({} as any, 'user-test', {
+        persistenceHandler: createFakePersistenceHandler(),
+        snapshotStore: null,
+        streamEventManager: createFakeStreamManager().manager,
+        topicModel: { findById: vi.fn(async () => ({ id: 'topic-r', metadata })) } as any,
+      });
+
+    it('resumes each agent’s own session, falling back to the topic’s for a single agent', async () => {
+      const service = serviceWith({
+        heteroSessionId: 'sess-topic',
+        heteroSessions: { coder: 'sess-coder' },
+      });
+
+      await expect(service.getHeterogeneousResumeSessionId('topic-r', 'coder')).resolves.toBe(
+        'sess-coder',
+      );
+      await expect(service.getHeterogeneousResumeSessionId('topic-r', 'reviewer')).resolves.toBe(
+        'sess-topic',
+      );
+      await expect(service.getHeterogeneousResumeSessionId('topic-r')).resolves.toBe('sess-topic');
+    });
+
+    it('never hands a group member another agent’s session', async () => {
+      const service = serviceWith({ heteroSessionId: 'sess-other' });
+
+      await expect(
+        service.getHeterogeneousResumeSessionId('topic-r', 'coder', { ownOnly: true }),
+      ).resolves.toBeUndefined();
     });
   });
 });

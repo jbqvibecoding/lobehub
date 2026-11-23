@@ -53,10 +53,12 @@ vi.mock('@/database/models/thread', () => ({
 
 const topicFindByIdMock = vi.fn().mockResolvedValue(null);
 const topicUpdateMetadataMock = vi.fn().mockResolvedValue(undefined);
+const topicUpdateMetadataEntryMock = vi.fn().mockResolvedValue([]);
 vi.mock('@/database/models/topic', () => ({
   TopicModel: vi.fn().mockImplementation(() => ({
     findById: topicFindByIdMock,
     updateMetadata: topicUpdateMetadataMock,
+    updateMetadataEntry: topicUpdateMetadataEntryMock,
   })),
 }));
 
@@ -95,6 +97,7 @@ describe('AbandonOperationService', () => {
     findThreadMock.mockReset().mockResolvedValue(null);
     topicFindByIdMock.mockReset().mockResolvedValue(null);
     topicUpdateMetadataMock.mockReset().mockResolvedValue(undefined);
+    topicUpdateMetadataEntryMock.mockReset().mockResolvedValue([]);
   });
 
   it('returns found:false when coordinator has no state', async () => {
@@ -230,6 +233,46 @@ describe('AbandonOperationService', () => {
     expect(recordCompletionMock).toHaveBeenCalled();
     expect(topicUpdateMetadataMock).not.toHaveBeenCalled();
     expect(messageUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it('ends a dead group member’s run on its own record, leaving the host’s run', async () => {
+    const coord = buildCoordinator({ loadAgentState: vi.fn().mockResolvedValue(null) });
+    const db = buildDb({
+      operationRow: {
+        agentId: 'agt_coder',
+        id: 'op_member',
+        provider: 'claude-code',
+        status: 'running',
+        topicId: 'tpc_x',
+        userId: 'user_x',
+      },
+    });
+    topicFindByIdMock.mockResolvedValue({
+      metadata: {
+        heteroMemberRuns: {
+          op_member: { agentId: 'agt_coder', assistantMessageId: 'msg_member' },
+        },
+        runningOperation: { assistantMessageId: 'msg_host', operationId: 'op_host' },
+      },
+    });
+
+    const result = await new AbandonOperationService(db, {
+      coordinator: coord as any,
+      snapshotStore: buildStore() as any,
+    }).finalizeAbandoned('op_member', 'inactivity_watchdog');
+
+    expect(result.assistantMessageUpdated).toBe(true);
+    expect(topicUpdateMetadataEntryMock).toHaveBeenCalledWith(
+      'tpc_x',
+      'heteroMemberRuns',
+      'op_member',
+      null,
+    );
+    expect(topicUpdateMetadataMock).not.toHaveBeenCalled();
+    expect(messageUpdateMock).toHaveBeenCalledWith(
+      'msg_member',
+      expect.objectContaining({ content: '' }),
+    );
   });
 
   it('finalizes snapshot and marks assistant message errored when state + partial exist', async () => {

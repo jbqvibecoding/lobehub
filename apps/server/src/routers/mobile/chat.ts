@@ -257,6 +257,15 @@ export const chatRouter = router({
         // A Claude Code / Codex run is not in the runtime's registry; its operation row says
         else if (await isHeteroRunGoing(ctx.serverDB, ctx.userId, operationId)) run = 'running';
       }
+      // A group's coding member can still be working after the host has answered
+      if (run === 'idle') {
+        for (const memberOperationId of Object.keys(topic.metadata?.heteroMemberRuns ?? {})) {
+          if (await isHeteroRunGoing(ctx.serverDB, ctx.userId, memberOperationId)) {
+            run = 'running';
+            break;
+          }
+        }
+      }
 
       const speakers: ChatSpeakers = {};
       if (groupId) {
@@ -337,19 +346,29 @@ export const chatRouter = router({
       return { operationId: result.operationId, topicId: result.topicId };
     }),
 
-  /** Stops the conversation's current run, if one is going. */
+  /**
+   * Stops the conversation's current run, if one is going, with the group members it set going;
+   * or, once the host has answered, the members still at work.
+   */
   stop: chatProcedure
     .use(withScopedPermission('message:create'))
     .input(z.object({ topicId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const topic = await ctx.topicModel.findById(input.topicId);
       const operationId = topic?.metadata?.runningOperation?.operationId;
-      if (!operationId) return { stopped: false };
+      const operationIds = operationId
+        ? [operationId]
+        : Object.keys(topic?.metadata?.heteroMemberRuns ?? {});
+      if (operationIds.length === 0) return { stopped: false };
 
-      const result = await ctx.aiAgentService.interruptTask({
-        operationId,
-        topicId: input.topicId,
-      });
-      return { stopped: !!result?.success };
+      let stopped = false;
+      for (const id of operationIds) {
+        const result = await ctx.aiAgentService.interruptTask({
+          operationId: id,
+          topicId: input.topicId,
+        });
+        stopped ||= !!result?.success;
+      }
+      return { stopped };
     }),
 });

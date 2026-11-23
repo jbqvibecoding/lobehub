@@ -59,10 +59,13 @@ vi.mock('@/libs/trusted-client', () => ({
   isTrustedClientEnabled: vi.fn().mockReturnValue(false),
 }));
 
-const { mockAssertUserInputAllowed, mockSignHeteroRunJwt } = vi.hoisted(() => ({
-  mockAssertUserInputAllowed: vi.fn().mockResolvedValue(undefined),
-  mockSignHeteroRunJwt: vi.fn().mockResolvedValue('run-jwt'),
-}));
+const { mockAssertUserInputAllowed, mockGetResumeSessionId, mockSignHeteroRunJwt } = vi.hoisted(
+  () => ({
+    mockAssertUserInputAllowed: vi.fn().mockResolvedValue(undefined),
+    mockGetResumeSessionId: vi.fn().mockResolvedValue(undefined),
+    mockSignHeteroRunJwt: vi.fn().mockResolvedValue('run-jwt'),
+  }),
+);
 
 vi.mock('@/libs/trpc/utils/internalJwt', () => ({
   signHeteroRunJwt: mockSignHeteroRunJwt,
@@ -127,6 +130,7 @@ const topicMock = {
   create: vi.fn().mockResolvedValue({ id: 'topic-1', metadata: undefined }),
   findById: vi.fn().mockResolvedValue(undefined),
   updateMetadata: vi.fn().mockResolvedValue(undefined),
+  updateMetadataEntry: vi.fn().mockResolvedValue([]),
 };
 vi.mock('@/database/models/topic', () => ({
   TopicModel: vi.fn().mockImplementation(() => topicMock),
@@ -154,7 +158,7 @@ vi.mock('@/server/services/market', () => ({
 
 vi.mock('@/server/services/heterogeneousAgent', () => ({
   HeterogeneousAgentService: vi.fn().mockImplementation(() => ({
-    getHeterogeneousResumeSessionId: vi.fn().mockResolvedValue(undefined),
+    getHeterogeneousResumeSessionId: mockGetResumeSessionId,
   })),
 }));
 
@@ -715,6 +719,55 @@ describe('AiAgentService.execAgent - Claude Code in the cloud sandbox', () => {
     expect(params.jwt).toBe('run-jwt');
     expect(params).not.toHaveProperty('githubToken');
     expect(params.systemContext).toContain('holds no GitHub token');
+  });
+
+  it('runs a group member beside the host: its own record, its own session, the host’s run untouched', async () => {
+    mockSpawnHeteroSandbox.mockResolvedValue({ commandId: 'bg-member' });
+
+    const result = await new AiAgentService(mockDb, 'user-1').execAgent({
+      agentId: 'agent-1',
+      appContext: {
+        groupId: 'group-1',
+        orchestrationRole: 'member',
+        scope: 'group',
+        topicId: 'topic-1',
+      },
+      prompt: 'Fix the failing test',
+    });
+
+    expect(mockGetResumeSessionId).toHaveBeenCalledWith('topic-1', 'agent-1', { ownOnly: true });
+    expect(topicMock.updateMetadataEntry).toHaveBeenCalledWith(
+      'topic-1',
+      'heteroMemberRuns',
+      result.operationId,
+      expect.objectContaining({
+        agentId: 'agent-1',
+        assistantMessageId: 'msg-1',
+        heteroType: 'claude-code',
+      }),
+    );
+    // The host keeps the conversation's run, and with it the phone's status and stop button
+    expect(
+      topicMock.updateMetadata.mock.calls.some(
+        ([, patch]: any[]) => 'runningOperation' in patch || 'heteroSandboxRun' in patch,
+      ),
+    ).toBe(false);
+
+    // The command goes into the member's record, only while that record lasts
+    await vi.waitFor(() =>
+      expect(topicMock.updateMetadataEntry).toHaveBeenCalledWith(
+        'topic-1',
+        'heteroMemberRuns',
+        result.operationId,
+        expect.any(Function),
+        { onlyIfPresent: true },
+      ),
+    );
+    const record = topicMock.updateMetadataEntry.mock.calls.find(
+      ([, , , value]: any[]) => typeof value === 'function',
+    )![3] as (member: any) => any;
+    expect(record({ agentId: 'agent-1' })).toEqual({ agentId: 'agent-1', commandId: 'bg-member' });
+    expect(record(undefined)).toBeUndefined();
   });
 
   it('does not start a run the mainland review refuses', async () => {

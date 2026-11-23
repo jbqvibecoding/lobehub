@@ -407,6 +407,68 @@ describe('TopicModel', () => {
     });
   });
 
+  describe('updateMetadataEntry', () => {
+    const member = (agentId: string) => ({
+      agentId,
+      assistantMessageId: `msg-${agentId}`,
+      heteroType: 'claude-code' as const,
+    });
+
+    it('keeps the entries of two writers at once, and the rest of the metadata', async () => {
+      const topic = await topicModel.create({ metadata: { model: 'gpt-4' }, title: 'group' });
+
+      await Promise.all([
+        topicModel.updateMetadataEntry(topic.id, 'heteroMemberRuns', 'op-a', member('coder')),
+        topicModel.updateMetadataEntry(topic.id, 'heteroMemberRuns', 'op-b', member('reviewer')),
+      ]);
+      const [updated] = await topicModel.updateMetadataEntry(
+        topic.id,
+        'heteroMemberRuns',
+        'op-a',
+        (current) => current && { ...current, commandId: 'bg-a' },
+      );
+
+      expect(updated.metadata).toEqual({
+        heteroMemberRuns: {
+          'op-a': { ...member('coder'), commandId: 'bg-a' },
+          'op-b': member('reviewer'),
+        },
+        model: 'gpt-4',
+      });
+    });
+
+    it('removes an entry, and does not bring one back that is gone', async () => {
+      const topic = await topicModel.create({ title: 'sessions' });
+      await topicModel.updateMetadataEntry(topic.id, 'heteroSessions', 'coder', 'sess-1');
+
+      await topicModel.updateMetadataEntry(topic.id, 'heteroSessions', 'coder', null);
+      const late = await topicModel.updateMetadataEntry(
+        topic.id,
+        'heteroSessions',
+        'coder',
+        'sess-late',
+        { onlyIfPresent: true },
+      );
+
+      expect(late).toEqual([]);
+      expect((await topicModel.findById(topic.id))?.metadata?.heteroSessions).toEqual({});
+    });
+
+    it('changes nothing on a topic of someone else', async () => {
+      const topic = await topicModel.create({ title: 'mine' });
+
+      const result = await new TopicModel(serverDB, otherUserId).updateMetadataEntry(
+        topic.id,
+        'heteroSessions',
+        'coder',
+        'sess-x',
+      );
+
+      expect(result).toEqual([]);
+      expect((await topicModel.findById(topic.id))?.metadata?.heteroSessions).toBeUndefined();
+    });
+  });
+
   describe('delete', () => {
     it('deletes a single owned topic', async () => {
       const topic = await topicModel.create({ title: 'del' });
