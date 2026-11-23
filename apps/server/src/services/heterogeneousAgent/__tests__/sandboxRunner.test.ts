@@ -85,4 +85,25 @@ describe('spawnHeteroSandbox', () => {
     expect(command).not.toMatch(/GITHUB_TOKEN|oauth2|gh auth|\.creds/);
     expect(started).toEqual({ commandId: 'bg-abc' });
   });
+
+  it('points Claude Code at the coding gateway with the run token, and Codex at nothing', async () => {
+    const base = {
+      assistantMessageId: 'msg-1',
+      jwt: 'run-token',
+      marketService: {} as any,
+      operationId: 'op-1',
+      prompt: 'hi',
+      topicId: 'topic-1',
+      userId: 'user-1',
+    };
+
+    await spawnHeteroSandbox({ ...base, agentType: 'claude-code' });
+    await spawnHeteroSandbox({ ...base, agentType: 'codex' });
+
+    const claude = mockCallTool.mock.calls[0][1].command;
+    expect(claude).toContain("ANTHROPIC_BASE_URL='https://app.example.com/api/coding/anthropic'");
+    expect(claude).toContain("ANTHROPIC_API_KEY='run-token'");
+    expect(claude).toContain('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1');
+    expect(mockCallTool.mock.calls[1][1].command).not.toContain('ANTHROPIC_');
+  });
 });

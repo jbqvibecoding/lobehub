@@ -156,6 +156,22 @@ describe('regionDeploymentProblems', () => {
       }),
     ).toEqual([]);
   });
+
+  it('keeps the coding expert’s model calls in the region', () => {
+    expect(regionDeploymentProblems({ ...MAINLAND, CODING_MODEL_PROVIDER: 'anthropic' })).toEqual([
+      expect.stringContaining('CODING_MODEL_PROVIDER=anthropic'),
+    ]);
+    expect(regionDeploymentProblems({ ...MAINLAND, CODING_MODEL_PROVIDER: 'deepseek' })).toEqual(
+      [],
+    );
+    expect(
+      regionDeploymentProblems({
+        APP_REGION: 'global',
+        CODING_MODEL_PROVIDER: 'anthropic',
+        NODE_ENV: 'production',
+      }),
+    ).toEqual([]);
+  });
 });
 
 describe('assertRegionDeployment', () => {

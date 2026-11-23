@@ -49,6 +49,12 @@ export const regionDeploymentProblems = (env: DeploymentEnv): string[] => {
     }
   }
 
+  if (env.CODING_MODEL_PROVIDER?.trim() === 'anthropic') {
+    problems.push(
+      "CODING_MODEL_PROVIDER=anthropic sends the coding expert's model calls to Anthropic, outside mainland China. Use deepseek (the default here), or point CODING_BASE_URL at an Anthropic-format endpoint in the region.",
+    );
+  }
+
   const defaultProvider = env.DEFAULT_AGENT_CONFIG?.match(/provider=([^;]+)/)?.[1]?.trim();
   if (defaultProvider && !isModelProviderAvailable(region, defaultProvider)) {
     problems.push(

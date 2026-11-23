@@ -170,6 +170,17 @@ export async function spawnHeteroSandbox(
     `LOBEHUB_JWT=${shellQuote(jwt)}`,
     `LOBEHUB_SERVER=${shellQuote(serverUrl)}`,
     `LOBEHUB_ASSISTANT_MESSAGE_ID=${shellQuote(assistantMessageId)}`,
+    // Claude Code's model calls go to this server's coding gateway with the run token, which
+    // charges them to the user and sends them on with the platform's key; no model key is here
+    ...(agentType === 'claude-code'
+      ? [
+          `ANTHROPIC_BASE_URL=${shellQuote(`${serverUrl.replace(/\/+$/, '')}/api/coding/anthropic`)}`,
+          `ANTHROPIC_API_KEY=${shellQuote(jwt)}`,
+          // No telemetry, error reports or update checks from the sandbox
+          'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1',
+          'DISABLE_AUTOUPDATER=1',
+        ]
+      : []),
   ].join(' ');
   const shellArgs = args.map(shellQuote).join(' ');
   const mainCommand = `echo ${shellQuote(base64Payload)} | base64 -d | ${envVars} ${shellArgs}`;
