@@ -21,6 +21,7 @@ import { workspaceUsageRouter } from '@/business/server/lambda-routers/workspace
 import { publicProcedure, router } from '@/libs/trpc/lambda';
 
 import { acceptanceRouter } from './acceptance';
+import { acceptanceCommentRouter } from './acceptanceComment';
 import { agentRouter } from './agent';
 import { agentBotProviderRouter } from './agentBotProvider';
 import { agentDocumentRouter } from './agentDocument';
@@ -30,8 +31,10 @@ import { agentGroupRouter } from './agentGroup';
 import { agentLabelRouter } from './agentLabel';
 import { agentNotifyRouter } from './agentNotify';
 import { agentQuotaRouter } from './agentQuota';
+import { agentShareRouter } from './agentShare';
 import { agentSignalRouter } from './agentSignal';
 import { agentSkillsRouter } from './agentSkills';
+import { agentTraceRouter } from './agentTrace';
 import { aiAgentRouter } from './aiAgent';
 import { aiChatRouter } from './aiChat';
 import { aiModelRouter } from './aiModel';
@@ -52,6 +55,7 @@ import { connectorRouter } from './connector';
 import { deviceRouter } from './device';
 import { documentRouter } from './document';
 import { documentCommentRouter } from './documentComment';
+import { documentLikeRouter } from './documentLike';
 import { expertiseRouter } from './expertise';
 import { exporterRouter } from './exporter';
 import { fileRouter } from './file';
@@ -71,6 +75,7 @@ import { mailRouter } from './mail';
 import { marketRouter } from './market';
 import { messageRouter } from './message';
 import { messengerRouter } from './messenger';
+import { metricRouter } from './metric';
 import { notebookRouter } from './notebook';
 import { notificationRouter } from './notification';
 import { oauthAppRouter } from './oauthApp';
@@ -88,6 +93,7 @@ import { searchRouter } from './search';
 import { sessionRouter } from './session';
 import { sessionGroupRouter } from './sessionGroup';
 import { shareRouter } from './share';
+import { shareChatRouter } from './shareChat';
 import { taskRouter } from './task';
 import { threadRouter } from './thread';
 import { topicRouter } from './topic';
@@ -105,6 +111,7 @@ import { workspaceUserSettingsRouter } from './workspaceUserSettings';
 
 export const lambdaRouter = router({
   acceptance: acceptanceRouter,
+  acceptanceComment: acceptanceCommentRouter,
   agent: agentRouter,
   agentBotProvider: agentBotProviderRouter,
   agentNotify: agentNotifyRouter,
@@ -114,6 +121,7 @@ export const lambdaRouter = router({
   agentEvalExternal: agentEvalExternalRouter,
   agentLabel: agentLabelRouter,
   agentSkills: agentSkillsRouter,
+  agentTrace: agentTraceRouter,
   expertise: expertiseRouter,
   agentSignal: agentSignalRouter,
   changelog: changelogRouter,
@@ -122,6 +130,7 @@ export const lambdaRouter = router({
   aiChat: aiChatRouter,
   aiModel: aiModelRouter,
   agentQuota: agentQuotaRouter,
+  agentShare: agentShareRouter,
   aiProvider: aiProviderRouter,
   apiKey: apiKeyRouter,
   asr: asrRouter,
@@ -132,6 +141,7 @@ export const lambdaRouter = router({
   device: deviceRouter,
   document: documentRouter,
   documentComment: documentCommentRouter,
+  documentLike: documentLikeRouter,
   exporter: exporterRouter,
   file: fileRouter,
   followUpAction: followUpActionRouter,
@@ -154,6 +164,7 @@ export const lambdaRouter = router({
   market: marketRouter,
   message: messageRouter,
   messenger: messengerRouter,
+  metric: metricRouter,
   notebook: notebookRouter,
   notification: notificationRouter,
   oauthApp: oauthAppRouter,
@@ -174,6 +185,7 @@ export const lambdaRouter = router({
   session: sessionRouter,
   sessionGroup: sessionGroupRouter,
   share: shareRouter,
+  shareChat: shareChatRouter,
   task: taskRouter,
   thread: threadRouter,
   topic: topicRouter,

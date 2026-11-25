@@ -14,9 +14,11 @@ vi.mock('@/business/server/model-runtime', () => ({
 // The deployment's own key, used when the user set none
 vi.mock('@/envs/llm', () => ({ getLLMConfig: () => ({ OPENAI_API_KEY: 'sk-platform' }) }));
 vi.mock('@/database/models/aiProvider', () => ({
-  AiProviderModel: vi.fn().mockImplementation(() => ({
-    getAiProviderById: mockGetAiProviderById,
-  })),
+  AiProviderModel: vi.fn().mockImplementation(function () {
+    return {
+      getAiProviderById: mockGetAiProviderById,
+    };
+  }),
 }));
 
 describe('initModelRuntimeFromDB: who pays for the call', () => {

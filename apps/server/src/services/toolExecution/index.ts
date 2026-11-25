@@ -15,6 +15,7 @@ import {
 } from '@/libs/mcp/connectorPermissionCheck';
 import { isAuditedRun, recordAgentAction } from '@/server/services/agentActionAudit';
 import { deviceGateway } from '@/server/services/deviceGateway';
+import { resolveDeviceDispatchAuthorizationFailure } from '@/server/services/deviceGateway/dispatchAuthorization';
 import { getScopedOnlineDevices } from '@/server/services/deviceGateway/scopedDevices';
 import { contentBlocksToString } from '@/server/services/mcp/contentProcessor';
 import {
@@ -25,7 +26,7 @@ import {
 import { DiscoverService } from '../discover';
 import { type MCPService } from '../mcp';
 import { type BuiltinToolsExecutor } from './builtin';
-import { classifyToolError } from './errorClassification';
+import { classifyToolError, getToolAccessDeniedError } from './errorClassification';
 import { resolveRunWorkspaceId } from './serverRuntimes/resolveWorkspaceScope';
 import {
   type ToolExecutionContext,
@@ -40,16 +41,33 @@ interface ToolExecutionServiceDeps {
   mcpService: MCPService;
 }
 
+/**
+ * Hard bound on the `error.message` of a failed tool call. The (already
+ * truncated) `content` is what the LLM reads; the error is metadata, so it
+ * never needs the full payload — and an unbounded one is dangerous: a tool
+ * that fails with megabytes of output (e.g. `rm -rf` on a read-only sandbox
+ * FS, one `cannot remove` line per file) rides the step's `nextContext` into
+ * the QStash publish body and blows the provider's 10 MB message quota, which
+ * fails the whole operation at the step boundary instead of just that one tool
+ * call. Deliberately NOT subject to `skipResultTruncation` — that opt-out is
+ * about the LLM context budget, this is a transport safety bound.
+ */
+const TOOL_ERROR_MESSAGE_MAX_LENGTH = 4000;
+
+const clampErrorMessage = (message: string | undefined): string | undefined =>
+  message === undefined ? undefined : truncateToolResult(message, TOOL_ERROR_MESSAGE_MAX_LENGTH);
+
 const normalizeExecutionError = (error: unknown, fallbackMessage: string) => {
   const normalized = classifyToolError(error || fallbackMessage);
-  const message = fallbackMessage || normalized.message;
+  // Classification reads the raw error above; only the carried copy is clamped.
+  const message = clampErrorMessage(fallbackMessage || normalized.message);
 
   if (error && typeof error === 'object') {
     if (error instanceof Error) {
       return {
         code: normalized.code,
         kind: normalized.kind,
-        message: error.message || message,
+        message: clampErrorMessage(error.message) || message,
         name: error.name,
       };
     }
@@ -59,13 +77,15 @@ const normalizeExecutionError = (error: unknown, fallbackMessage: string) => {
     return {
       ...plainError,
       code: (plainError.code as string | undefined) || normalized.code,
-      kind: normalized.kind,
-      message: (plainError.message as string | undefined) || message,
+      // A runtime may know that side effects already happened; retry keywords
+      // must not override its explicit refusal to replay the operation.
+      kind: plainError.kind === 'stop' ? 'stop' : normalized.kind,
+      message: clampErrorMessage(plainError.message as string | undefined) || message,
     };
   }
 
   if (typeof error === 'string') {
-    return { code: normalized.code, kind: normalized.kind, message: error };
+    return { code: normalized.code, kind: normalized.kind, message: clampErrorMessage(error) };
   }
 
   return { code: normalized.code, kind: normalized.kind, message };
@@ -131,6 +151,13 @@ export class ToolExecutionService {
 
       const executionTime = Date.now() - startTime;
 
+      const denial = !data.success
+        ? getToolAccessDeniedError(data.errorData ?? data.error, data.content)
+        : undefined;
+      if (denial) {
+        data = { ...data, content: JSON.stringify({ error: denial }), error: denial };
+      }
+
       // Truncate result content to prevent context overflow
       // Use agent-specific config if provided, otherwise use default
       const truncatedContent = context.skipResultTruncation
@@ -151,7 +178,7 @@ export class ToolExecutionService {
       }
 
       if (!data.success) {
-        const error = normalizeExecutionError(data.error, data.content);
+        const error = normalizeExecutionError(data.errorData ?? data.error, data.content);
         await auditRun(payload, context, 'failed', {
           errorCode: error?.code,
           executionTimeMs: executionTime,
@@ -171,14 +198,16 @@ export class ToolExecutionService {
       const executionTime = Date.now() - startTime;
       log('Error executing tool %s:%s: %O', identifier, apiName, error);
       const errorMessage = (error as Error).message;
-      const normalizedError = normalizeExecutionError(error, errorMessage);
+      const denial = getToolAccessDeniedError(error, errorMessage);
+      const content = denial ? JSON.stringify({ error: denial }) : errorMessage;
+      const normalizedError = denial || normalizeExecutionError(error, errorMessage);
       await auditRun(payload, context, 'failed', {
         errorCode: normalizedError?.code,
         executionTimeMs: executionTime,
       });
 
       return {
-        content: context.skipResultTruncation ? errorMessage : truncateToolResult(errorMessage),
+        content: context.skipResultTruncation ? content : truncateToolResult(content),
         error: normalizedError,
         executionTime,
         success: false,
@@ -363,6 +392,21 @@ export class ToolExecutionService {
   ): Promise<ToolExecutionResult> {
     const { identifier, apiName, arguments: args } = payload;
 
+    const authorizationError = await resolveDeviceDispatchAuthorizationFailure(
+      context.serverDB,
+      context.userId!,
+      target.deviceId,
+      target.workspaceId,
+    );
+    if (authorizationError) {
+      return {
+        content: 'The workspace device is no longer registered or visible for this run.',
+        error: 'DEVICE_NOT_FOUND',
+        errorData: authorizationError,
+        success: false,
+      };
+    }
+
     log(
       'Executing %s MCP tool via device: %s:%s (device=%s, workspace=%s)',
       mcpParams.type,
@@ -414,10 +458,11 @@ export class ToolExecutionService {
     if (!result.success) {
       return {
         content: result.content,
-        error: {
+        error: result.errorData ?? {
           code: 'MCP_DEVICE_EXECUTION_ERROR',
           message: result.error || result.content,
         },
+        errorData: result.errorData,
         success: false,
       };
     }

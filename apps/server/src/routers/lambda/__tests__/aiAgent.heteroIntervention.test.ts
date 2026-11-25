@@ -44,7 +44,9 @@ const aiAgentService = vi.hoisted(() => ({
 // Mock getServerDB to return our test database instance
 let testDB: LobeChatDatabase;
 vi.mock('@/database/core/db-adaptor', () => ({
-  getServerDB: vi.fn(() => testDB),
+  getServerDB: vi.fn(function () {
+    return testDB;
+  }),
 }));
 
 // Shared in-memory stream backing both procedures. The remote HITL loop only
@@ -76,15 +78,25 @@ vi.mock('@/server/modules/AgentRuntime/factory', () => ({
 // Services constructed by the aiAgentProcedure / heteroAgentProcedure middleware
 // — stub so the test stays isolated from their real deps.
 vi.mock('@/server/services/agentRuntime', () => ({
-  AgentRuntimeService: vi.fn().mockImplementation(() => ({})),
+  AgentRuntimeService: vi.fn().mockImplementation(function () {
+    return {};
+  }),
 }));
 vi.mock('@/server/services/aiAgent', () => ({
-  AiAgentService: vi.fn().mockImplementation(() => aiAgentService),
+  AiAgentService: vi.fn().mockImplementation(function () {
+    return aiAgentService;
+  }),
 }));
 vi.mock('@/server/services/aiChat', () => ({
-  AiChatService: vi.fn().mockImplementation(() => ({})),
+  AiChatService: vi.fn().mockImplementation(function () {
+    return {};
+  }),
 }));
-const hetero = vi.hoisted(() => ({ exportFile: vi.fn(), finish: vi.fn(), ingest: vi.fn() }));
+const hetero = vi.hoisted(() => ({
+  exportFile: vi.fn(),
+  finish: vi.fn(),
+  ingest: vi.fn(async () => ({ accepted: true })),
+}));
 vi.mock('@/server/services/sandbox', () => ({
   createSandboxService: vi.fn(() => ({ exportAndUploadFile: hetero.exportFile })),
 }));
@@ -92,17 +104,19 @@ vi.mock('@/server/services/file', () => ({ FileService: vi.fn() }));
 const github = vi.hoisted(() => ({ open: vi.fn(), repositories: vi.fn(), requestPush: vi.fn() }));
 vi.mock('@/server/services/githubApp', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  GithubConnectionService: vi.fn().mockImplementation(() => ({
-    openRepository: github.open,
-    repositories: github.repositories,
-    requestPush: github.requestPush,
-  })),
+  GithubConnectionService: vi.fn().mockImplementation(function () {
+    return {
+      openRepository: github.open,
+      repositories: github.repositories,
+      requestPush: github.requestPush,
+    };
+  }),
 }));
 vi.mock('@/server/services/market', () => ({ MarketService: vi.fn() }));
 vi.mock('@/server/services/heterogeneousAgent', () => ({
-  HeterogeneousAgentService: vi
-    .fn()
-    .mockImplementation(() => ({ heteroFinish: hetero.finish, heteroIngest: hetero.ingest })),
+  HeterogeneousAgentService: vi.fn().mockImplementation(function () {
+    return { heteroFinish: hetero.finish, heteroIngest: hetero.ingest };
+  }),
 }));
 
 describe('aiAgentRouter — remote Human-in-the-loop', () => {
@@ -479,6 +493,29 @@ describe('aiAgentRouter — remote Human-in-the-loop', () => {
     expect(businessV2.onAgentInterventionResolutionPublished).toHaveBeenCalledWith(
       expect.objectContaining({ claimId: 'claim-web', status: 'approved' }),
     );
+  });
+
+  it('answers a rejected source resolution with a client error instead of a 500', async () => {
+    const resolutionRequestId = '018fbd8e-7baf-7c6d-8000-000000000031';
+    await insertPendingTool({
+      batchId: 'batch-invalid',
+      messageId: 'message-invalid',
+      operationId: 'operation-invalid',
+      toolCallId: 'call-invalid',
+    });
+    businessV2.resolveAgentInterventionBySource.mockRejectedValueOnce(
+      new Error('AGENT_INTERVENTION_INVALID_ACTION'),
+    );
+
+    await expect(
+      userCaller().resolveAgentInterventionBySource({
+        action: { result: { mode: ['safe'] }, type: 'submit_answers' },
+        batchId: 'batch-invalid',
+        operationId: 'operation-invalid',
+        resolutionRequestId,
+        targets: [{ toolCallId: 'call-invalid', toolMessageId: 'message-invalid' }],
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
   it('does not dispatch again when another surface already won the source claim', async () => {
@@ -920,17 +957,17 @@ describe('aiAgentRouter — remote Human-in-the-loop', () => {
       appContext: { sourceMessageId: messageId },
       id: continuationOperationId,
       metadata: {
-        agentInterventionContinuation: {
-          resolutionRequestId,
-          sourceOperationId: operationId,
-          sourceToolMessageIds: [messageId],
-        },
         agentInterventionDispatch: {
           deduplicationId: deriveAgentInterventionQueueDeduplicationId(continuationOperationId, 0),
           messageId: 'qstash-message-published-retry',
           resolutionRequestId,
           scheduledAt: new Date().toISOString(),
           state: 'scheduled',
+        },
+        agentInterventionContinuation: {
+          resolutionRequestId,
+          sourceOperationId: operationId,
+          sourceToolMessageIds: [messageId],
         },
       },
       status: 'running',
@@ -1024,16 +1061,16 @@ describe('aiAgentRouter — remote Human-in-the-loop', () => {
       appContext: { sourceMessageId: messageId },
       id: continuationOperationId,
       metadata: {
-        agentInterventionContinuation: {
-          resolutionRequestId,
-          sourceOperationId: operationId,
-          sourceToolMessageIds: [messageId],
-        },
         agentInterventionPreparation: {
           deduplicationId,
           resolutionRequestId,
           state: 'ready',
           stepIndex: 0,
+        },
+        agentInterventionContinuation: {
+          resolutionRequestId,
+          sourceOperationId: operationId,
+          sourceToolMessageIds: [messageId],
         },
       },
       status: 'running',
@@ -1042,17 +1079,19 @@ describe('aiAgentRouter — remote Human-in-the-loop', () => {
     });
     aiAgentService.loadInterventionContinuationState.mockResolvedValue({
       metadata: {
-        agentId: 'agent-ack-backfill',
-        agentInterventionContinuation: {
-          resolutionRequestId,
-          sourceOperationId: operationId,
-          sourceToolMessageIds: [messageId],
-        },
         agentInterventionPreparation: {
           deduplicationId,
           resolutionRequestId,
           state: 'ready',
           stepIndex: 0,
+        },
+      },
+      origin: {
+        agentId: 'agent-ack-backfill',
+        continuation: {
+          resolutionRequestId,
+          sourceOperationId: operationId,
+          sourceToolMessageIds: [messageId],
         },
         sourceMessageId: messageId,
         topicId: 'topic-ack-backfill',
@@ -1141,16 +1180,16 @@ describe('aiAgentRouter — remote Human-in-the-loop', () => {
       appContext: { sourceMessageId: messageId },
       id: continuationOperationId,
       metadata: {
-        agentInterventionContinuation: {
-          resolutionRequestId,
-          sourceOperationId: operationId,
-          sourceToolMessageIds: [messageId],
-        },
         agentInterventionPreparation: {
           deduplicationId,
           resolutionRequestId,
           state: 'ready',
           stepIndex: 0,
+        },
+        agentInterventionContinuation: {
+          resolutionRequestId,
+          sourceOperationId: operationId,
+          sourceToolMessageIds: [messageId],
         },
       },
       status: 'running',
@@ -1160,17 +1199,19 @@ describe('aiAgentRouter — remote Human-in-the-loop', () => {
     aiAgentService.loadInterventionContinuationState
       .mockResolvedValueOnce({
         metadata: {
-          agentId: 'agent-ready-disappears',
-          agentInterventionContinuation: {
-            resolutionRequestId,
-            sourceOperationId: operationId,
-            sourceToolMessageIds: [messageId],
-          },
           agentInterventionPreparation: {
             deduplicationId,
             resolutionRequestId,
             state: 'ready',
             stepIndex: 0,
+          },
+        },
+        origin: {
+          agentId: 'agent-ready-disappears',
+          continuation: {
+            resolutionRequestId,
+            sourceOperationId: operationId,
+            sourceToolMessageIds: [messageId],
           },
           sourceMessageId: messageId,
           topicId: 'topic-ready-disappears',
@@ -1260,16 +1301,16 @@ describe('aiAgentRouter — remote Human-in-the-loop', () => {
       },
       id: continuationOperationId,
       metadata: {
-        agentInterventionContinuation: {
-          resolutionRequestId,
-          sourceOperationId: operationId,
-          sourceToolMessageIds: [messageId],
-        },
         agentInterventionPreparation: {
           deduplicationId: deriveAgentInterventionQueueDeduplicationId(continuationOperationId, 0),
           resolutionRequestId,
           state: 'ready',
           stepIndex: 0,
+        },
+        agentInterventionContinuation: {
+          resolutionRequestId,
+          sourceOperationId: operationId,
+          sourceToolMessageIds: [messageId],
         },
       },
       status: 'running',
@@ -1571,6 +1612,7 @@ describe('aiAgentRouter — remote Human-in-the-loop', () => {
       const topicId = await ownTopic();
 
       await expect(ingest(runCaller('op-run', topicId), 'op-run', topicId)).resolves.toEqual({
+        accepted: true,
         ack: true,
       });
       await runCaller('op-run', topicId).heteroFinish({

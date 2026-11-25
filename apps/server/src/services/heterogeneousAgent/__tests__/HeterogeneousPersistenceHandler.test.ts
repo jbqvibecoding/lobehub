@@ -347,12 +347,7 @@ describe('HeterogeneousPersistenceHandler', () => {
       expect(update(member)).toEqual({ ...member, assistantMessageId: createdId });
       expect(update(undefined)).toBeUndefined();
 
-      await h.handler.finish({
-        operationId: 'op-member',
-        result: 'success',
-        sessionId: 'sess-coder',
-      });
-      // The member resumes its own session next time
+      // The member resumes its own session next time: saved as soon as the CLI reports it
       expect(h.topicModel.updateMetadataEntry).toHaveBeenCalledWith(
         'topic-1',
         'heteroSessions',
@@ -382,45 +377,6 @@ describe('HeterogeneousPersistenceHandler', () => {
 
       const [[created]] = h.messageModel.create.mock.calls as [any][];
       expect(created).toMatchObject({ agentId: 'agt_coder', role: 'assistant' });
-    });
-
-    it('drops only a failed member’s own session, never the one the topic resumes', async () => {
-      const h = createHarness({
-        assistantMessageId: 'asst-member',
-        operationId: 'op-member',
-        topicId: 'topic-1',
-      });
-      h.topicModel.findById.mockResolvedValue({
-        agentId: 'biber',
-        id: 'topic-1',
-        metadata: {
-          heteroMemberRuns: {
-            'op-member': { agentId: 'coder', assistantMessageId: 'asst-member' },
-          },
-          heteroSessionId: 'sess-other-agent',
-        } as any,
-      } as any);
-
-      await h.handler.ingest({
-        events: [buildEvent('stream_chunk', 0, { chunkType: 'text', content: 'x' })],
-        operationId: 'op-member',
-        topicId: 'topic-1',
-      });
-      await h.handler.finish({
-        error: { message: 'resume failed', type: 'error' },
-        operationId: 'op-member',
-        result: 'error',
-      });
-
-      expect(h.topicModel.updateMetadataEntry).toHaveBeenCalledWith(
-        'topic-1',
-        'heteroSessions',
-        'coder',
-        null,
-      );
-      expect(h.topicModel.updateMetadata).not.toHaveBeenCalledWith('topic-1', {
-        heteroSessionId: undefined,
-      });
     });
 
     it('rejects seeded assistant ids once runningOperation has been cleared', async () => {
@@ -1554,6 +1510,57 @@ describe('HeterogeneousPersistenceHandler', () => {
 
       const asst = h.messages.get('asst-1')!;
       expect(asst.content).toBe('final answer');
+    });
+
+    /**
+     * @example A finish request on a stale replica preserves the final snapshot written elsewhere.
+     */
+    it('does not let a stale finish overwrite a newer assistant snapshot', async () => {
+      // ROOT CAUSE:
+      //
+      // A warm serverless replica can retain an older per-operation accumulator
+      // while another replica persists a newer text snapshot to the shared DB.
+      // Before the fix, heteroFinish flushed the stale accumulator and replaced
+      // the final answer with the preceding progress message.
+      //
+      // We fixed this by making heteroIngest the only content/reasoning writer;
+      // a successful finish now releases operation state without rewriting text.
+      const h = createHarness({
+        assistantMessageId: 'asst-1',
+        operationId: 'op-1',
+        topicId: 'topic-1',
+      });
+
+      await h.handler.ingest({
+        events: [
+          buildEvent('stream_chunk', 0, {
+            chunkType: 'text',
+            content: 'progress',
+            snapshotMode: 'replace',
+            snapshotSeq: 4,
+          }),
+        ],
+        operationId: 'op-1',
+        topicId: 'topic-1',
+      });
+
+      // Simulate a newer snapshot committed by another Lambda replica.
+      h.messages.set('asst-1', {
+        ...h.messages.get('asst-1')!,
+        content: 'progress\n\nfinal answer',
+        metadata: { heteroTextSnapshotSeq: 5 },
+      });
+
+      await h.handler.finish({
+        operationId: 'op-1',
+        result: 'success',
+        topicId: 'topic-1',
+      });
+
+      expect(h.messages.get('asst-1')).toMatchObject({
+        content: 'progress\n\nfinal answer',
+        metadata: { heteroTextSnapshotSeq: 5 },
+      });
     });
 
     it('writes error onto the assistant when terminal event is error', async () => {

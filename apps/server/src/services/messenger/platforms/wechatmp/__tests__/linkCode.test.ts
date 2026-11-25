@@ -19,7 +19,7 @@ vi.mock('@/server/modules/AgentRuntime/redis', () => ({
 const mockUpsert = vi.fn();
 const mockModel = vi.fn();
 vi.mock('@/database/models/messengerAccountLink', () => ({
-  MessengerAccountLinkModel: vi.fn().mockImplementation((...args: unknown[]) => {
+  MessengerAccountLinkModel: vi.fn().mockImplementation(function (...args: unknown[]) {
     mockModel(...args);
     return { upsertForPlatform: mockUpsert };
   }),

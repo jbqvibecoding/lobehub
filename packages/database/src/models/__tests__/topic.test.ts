@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getTestDB } from '../../core/getTestDB';
@@ -33,6 +33,97 @@ describe('TopicModel', () => {
 
   afterEach(async () => {
     await serverDB.delete(users);
+  });
+
+  describe('rate-limit cancellation', () => {
+    const run = {
+      createdAt: '2026-09-19T00:00:00.000Z',
+      failedAssistantMessageId: 'failed-message',
+      kind: 'resume_after_rate_limit' as const,
+      source: 'heterogeneous_agent' as const,
+      runAt: '2026-09-19T01:00:00.000Z',
+      updatedAt: '2026-09-19T00:00:00.000Z',
+      userMessageId: 'user-message',
+    };
+    const claim = { claimedAt: run.createdAt, expiresAt: run.runAt, id: 'dispatcher' };
+
+    it('cancels status and payload together and prevents a later dispatcher claim', async () => {
+      const topic = await topicModel.create({ title: 'source' });
+      await topicModel.armScheduledRun(topic.id, run);
+      const result = await topicModel.cancelRateLimitContinuation(topic.id);
+      expect(result.status).toBe('cancelled');
+      const [row] = await serverDB.select().from(topics).where(eq(topics.id, topic.id));
+      expect(row.status).toBe('failed');
+      expect(row.metadata?.scheduledRun).toBeNull();
+      expect(await TopicModel.claimScheduledTopic(serverDB, topic.id, claim)).toBe(false);
+    });
+
+    it('refuses cancellation after the dispatcher claims, even if its lease expired', async () => {
+      const topic = await topicModel.create({ title: 'source' });
+      await topicModel.armScheduledRun(topic.id, run);
+      await TopicModel.claimScheduledTopic(serverDB, topic.id, claim, new Date(run.createdAt));
+      expect(await topicModel.cancelRateLimitContinuation(topic.id)).toEqual({ status: 'busy' });
+      const [row] = await serverDB.select().from(topics).where(eq(topics.id, topic.id));
+      expect(row.status).toBe('scheduled');
+      expect(row.metadata?.scheduledRun?.claim?.id).toBe('dispatcher');
+    });
+
+    it('rolls back both fields when the database rejects cancellation', async () => {
+      const topic = await topicModel.create({ title: 'source' }, 'cancel-rejected');
+      await topicModel.armScheduledRun(topic.id, run);
+      await serverDB.execute(
+        sql`ALTER TABLE topics ADD CONSTRAINT test_cancel_failure CHECK (id != 'cancel-rejected' OR status != 'failed')`,
+      );
+      try {
+        await expect(topicModel.cancelRateLimitContinuation(topic.id)).rejects.toThrow();
+        const [row] = await serverDB.select().from(topics).where(eq(topics.id, topic.id));
+        expect(row.status).toBe('scheduled');
+        expect(row.metadata?.scheduledRun).toEqual(run);
+      } finally {
+        await serverDB.execute(sql`ALTER TABLE topics DROP CONSTRAINT test_cancel_failure`);
+      }
+    });
+
+    it('allows only one of a concurrent cancellation and dispatcher claim', async () => {
+      const topic = await topicModel.create({ title: 'source' });
+      await topicModel.armScheduledRun(topic.id, run);
+      const [cancelled, claimed] = await Promise.all([
+        topicModel.cancelRateLimitContinuation(topic.id),
+        TopicModel.claimScheduledTopic(serverDB, topic.id, claim, new Date(run.createdAt)),
+      ]);
+      expect(Number(cancelled.status === 'cancelled') + Number(claimed)).toBe(1);
+    });
+
+    it('also cancels the legacy rate-limit payload the dispatcher can run', async () => {
+      const topic = await topicModel.create({ title: 'legacy' });
+      const { kind: _kind, runAt: _runAt, ...legacy } = run;
+      await serverDB
+        .update(topics)
+        .set({
+          status: 'scheduled',
+          metadata: sql`${JSON.stringify({ scheduledRun: { ...legacy, reason: 'rate_limit' } })}::jsonb`,
+        })
+        .where(eq(topics.id, topic.id));
+      expect((await topicModel.cancelRateLimitContinuation(topic.id)).status).toBe('cancelled');
+    });
+
+    it('does not cancel another user or a delayed-start schedule', async () => {
+      const topic = await topicModel.create({ title: 'source' });
+      await topicModel.armScheduledRun(topic.id, run);
+      expect(
+        await new TopicModel(serverDB, otherUserId).cancelRateLimitContinuation(topic.id),
+      ).toEqual({ status: 'unchanged' });
+      await topicModel.armScheduledRun(topic.id, {
+        createdAt: run.createdAt,
+        kind: 'delayed_start',
+        runAt: run.runAt,
+        updatedAt: run.updatedAt,
+        userMessageId: run.userMessageId,
+      });
+      expect(await topicModel.cancelRateLimitContinuation(topic.id)).toEqual({
+        status: 'unchanged',
+      });
+    });
   });
 
   describe('create', () => {
@@ -131,6 +222,105 @@ describe('TopicModel', () => {
       const found = await topicModel.findById('topic-foreign');
       expect(found).toBeUndefined();
     });
+
+    it('does not return an agent-share visitor topic by default (creator-facing scope)', async () => {
+      await serverDB.insert(topics).values({
+        id: 'topic-visitor-find',
+        senderId: 'visitor-user-x',
+        title: 'visitor topic',
+        userId,
+      });
+
+      const found = await topicModel.findById('topic-visitor-find');
+      expect(found).toBeUndefined();
+    });
+
+    it('returns an agent-share visitor topic when includeShareVisitor is opted in', async () => {
+      await serverDB.insert(topics).values({
+        id: 'topic-visitor-find-opted',
+        senderId: 'visitor-user-x',
+        title: 'visitor topic',
+        userId,
+      });
+
+      const shareRuntimeModel = new TopicModel(serverDB, userId, undefined, undefined, {
+        includeShareVisitor: true,
+      });
+      const found = await shareRuntimeModel.findById('topic-visitor-find-opted');
+      expect(found?.id).toBe('topic-visitor-find-opted');
+    });
+  });
+
+  describe('findOwnTopicById', () => {
+    it('returns the creator’s own topic', async () => {
+      const topic = await topicModel.create({ title: 'own' });
+
+      const found = await topicModel.findOwnTopicById(topic.id);
+      expect(found?.id).toBe(topic.id);
+    });
+
+    it('excludes an agent-share visitor topic', async () => {
+      // Visitor topics carry the creator's userId, so ownership alone would let
+      // the creator read a visitor conversation from a raw topic id.
+      await serverDB.insert(topics).values({
+        id: 'topic-visitor-find-own',
+        senderId: 'visitor-user-x',
+        title: 'visitor topic',
+        userId,
+      });
+
+      const found = await topicModel.findOwnTopicById('topic-visitor-find-own');
+      expect(found).toBeUndefined();
+    });
+  });
+
+  describe('findOwnTopicsByIds', () => {
+    it('returns the creator’s own topics', async () => {
+      const topic = await topicModel.create({ title: 'own' });
+
+      const found = await topicModel.findOwnTopicsByIds([topic.id]);
+      expect(found.map((t) => t.id)).toEqual([topic.id]);
+    });
+
+    it('excludes an agent-share visitor topic from a mixed batch', async () => {
+      // Visitor topics carry the creator's userId, so ownership alone would let
+      // the creator read a visitor conversation from a raw topic id.
+      const own = await topicModel.create({ title: 'own' });
+      await serverDB.insert(topics).values({
+        id: 'topic-visitor-find-own-ids',
+        senderId: 'visitor-user-x',
+        title: 'visitor topic',
+        userId,
+      });
+
+      const found = await topicModel.findOwnTopicsByIds([own.id, 'topic-visitor-find-own-ids']);
+
+      expect(found.map((t) => t.id)).toEqual([own.id]);
+    });
+  });
+
+  describe('findShareVisitorTopicIds', () => {
+    it('reports only the visitor ids of a mixed batch', async () => {
+      // Creator-facing update RPCs diff their targets against this finder, so
+      // it must name visitor rows and stay silent about the creator's own.
+      const own = await topicModel.create({ title: 'own' });
+      await serverDB.insert(topics).values({
+        id: 'topic-visitor-ids',
+        senderId: 'visitor-user-x',
+        title: 'visitor topic',
+        userId,
+      });
+
+      const visitorIds = await topicModel.findShareVisitorTopicIds([own.id, 'topic-visitor-ids']);
+
+      expect(visitorIds).toEqual(['topic-visitor-ids']);
+    });
+
+    it('ignores ids that match no row', async () => {
+      const visitorIds = await topicModel.findShareVisitorTopicIds(['topic-missing']);
+
+      expect(visitorIds).toEqual([]);
+    });
   });
 
   describe('query', () => {
@@ -179,6 +369,34 @@ describe('TopicModel', () => {
 
       const { items } = await topicModel.query({ groupId: 'group-q' });
       expect(items.map((t) => t.id)).toEqual(['t-g1']);
+    });
+
+    it('excludes agent-share visitor topics from the agentId branch', async () => {
+      // Agent-share visitor topics keep the CREATOR's userId (so plain
+      // ownership matches them) but carry a non-null senderId. The creator's
+      // own topic sidebar (`query({ agentId })`) must never surface them —
+      // only the visitor-scoped `queryBySender` should.
+      await serverDB.insert(agents).values({ id: 'agent-share', userId });
+      await serverDB.insert(topics).values([
+        { agentId: 'agent-share', id: 't-creator', title: 'creator', userId },
+        {
+          agentId: 'agent-share',
+          id: 't-visitor',
+          senderId: 'visitor-user-x',
+          title: 'visitor',
+          userId,
+        },
+      ]);
+
+      const { items, total } = await topicModel.query({ agentId: 'agent-share' });
+      expect(items.map((t) => t.id)).toEqual(['t-creator']);
+      expect(total).toBe(1);
+
+      const visitorItems = await topicModel.queryBySender({
+        agentId: 'agent-share',
+        senderId: 'visitor-user-x',
+      });
+      expect(visitorItems.map((t) => t.id)).toEqual(['t-visitor']);
     });
 
     describe('status filtering & ordering', () => {
@@ -311,6 +529,64 @@ describe('TopicModel', () => {
     });
   });
 
+  describe('queryBySender', () => {
+    it('projects only the visitor-safe runningOperation fields, stripping the rest of metadata', async () => {
+      await serverDB.insert(agents).values({ id: 'agent-share-running', userId });
+      await serverDB.insert(topics).values({
+        agentId: 'agent-share-running',
+        id: 't-visitor-running',
+        metadata: {
+          // Creator-only fields that must never reach a visitor.
+          model: 'gpt-4',
+          runningOperation: {
+            assistantMessageId: 'ast-1',
+            deviceId: 'device-1',
+            heteroType: 'claude-code',
+            hooks: [{ event: 'onComplete', type: 'webhook', url: 'https://example.com' } as any],
+            operationId: 'op-1',
+            scope: 'main',
+            threadId: 'thd-1',
+          },
+        },
+        senderId: 'visitor-user-running',
+        title: 'running',
+        userId,
+      });
+
+      const [item] = await topicModel.queryBySender({
+        agentId: 'agent-share-running',
+        senderId: 'visitor-user-running',
+      });
+
+      expect(item.runningOperation).toEqual({
+        assistantMessageId: 'ast-1',
+        heteroType: 'claude-code',
+        operationId: 'op-1',
+        scope: 'main',
+        threadId: 'thd-1',
+      });
+      expect(item).not.toHaveProperty('metadata');
+    });
+
+    it('returns a null runningOperation when the topic has no active run', async () => {
+      await serverDB.insert(agents).values({ id: 'agent-share-idle', userId });
+      await serverDB.insert(topics).values({
+        agentId: 'agent-share-idle',
+        id: 't-visitor-idle',
+        senderId: 'visitor-user-idle',
+        title: 'idle',
+        userId,
+      });
+
+      const [item] = await topicModel.queryBySender({
+        agentId: 'agent-share-idle',
+        senderId: 'visitor-user-idle',
+      });
+
+      expect(item.runningOperation).toBeNull();
+    });
+  });
+
   describe('queryTopics', () => {
     it('filters by the given statuses and is scoped to the owner', async () => {
       await serverDB.insert(topics).values([
@@ -331,6 +607,22 @@ describe('TopicModel', () => {
 
       const result = await topicModel.queryTopics();
       expect(result.map((t) => t.id).sort()).toEqual(['t1', 't2']);
+    });
+
+    it('excludes agent-share visitor topics', async () => {
+      await serverDB.insert(topics).values([
+        { id: 'qt-creator', status: 'running', title: 'creator', userId },
+        {
+          id: 'qt-visitor',
+          senderId: 'visitor-user-x',
+          status: 'running',
+          title: 'visitor',
+          userId,
+        },
+      ]);
+
+      const result = await topicModel.queryTopics({ statuses: ['running'] });
+      expect(result.map((t) => t.id)).toEqual(['qt-creator']);
     });
 
     it('omits the last assistant message unless asked for it', async () => {
@@ -486,6 +778,106 @@ describe('TopicModel', () => {
 
       expect(topic.runStartedAt).toBeNull();
     });
+
+    // This feed is not scoped by agent, so in a workspace `ownership()` matches
+    // every member's rows. Without a parent check a teammate's PRIVATE agent
+    // conversation — title and last assistant reply included — lands in the
+    // home inbox of everyone in the workspace.
+    describe('workspace parent scope', () => {
+      const workspaceId = 'topic-model-test-workspace';
+      const workspaceModel = new TopicModel(serverDB, userId, workspaceId);
+
+      beforeEach(async () => {
+        await serverDB
+          .insert(workspaces)
+          .values({ id: workspaceId, name: 'ws', primaryOwnerId: userId, slug: workspaceId });
+        await serverDB.insert(agents).values([
+          { id: 'agent-shared', userId, visibility: 'public', workspaceId },
+          { id: 'agent-private-mine', userId, visibility: 'private', workspaceId },
+          { id: 'agent-private-other', userId: otherUserId, visibility: 'private', workspaceId },
+          { id: 'agent-personal-other', userId: otherUserId, workspaceId: null },
+        ]);
+        await serverDB.insert(topics).values([
+          {
+            agentId: 'agent-shared',
+            id: 'ws-shared',
+            status: 'unread',
+            title: 'shared',
+            userId: otherUserId,
+            workspaceId,
+          },
+          {
+            agentId: 'agent-private-mine',
+            id: 'ws-private-mine',
+            status: 'unread',
+            title: 'my private',
+            userId,
+            workspaceId,
+          },
+          {
+            agentId: 'agent-private-other',
+            id: 'ws-private-other',
+            status: 'unread',
+            title: 'teammate private',
+            userId: otherUserId,
+            workspaceId,
+          },
+          {
+            agentId: 'agent-personal-other',
+            id: 'ws-personal-parent',
+            status: 'unread',
+            title: 'personal parent',
+            userId: otherUserId,
+            workspaceId,
+          },
+          // Legacy row with no resolvable parent — nothing to check.
+          {
+            id: 'ws-parentless',
+            status: 'unread',
+            title: 'parentless',
+            userId,
+            workspaceId,
+          },
+        ]);
+      });
+
+      it('excludes topics whose owning agent is a teammate private or out-of-scope agent', async () => {
+        const result = await workspaceModel.queryTopics({ statuses: ['unread'] });
+
+        expect(result.map((t) => t.id).sort()).toEqual([
+          'ws-parentless',
+          'ws-private-mine',
+          'ws-shared',
+        ]);
+      });
+
+      it('reports the parent visibility so a team view can drop private conversations', async () => {
+        const result = await workspaceModel.queryTopics({ statuses: ['unread'] });
+        const byId = new Map(result.map((t) => [t.id, t.parentVisibility]));
+
+        expect(byId.get('ws-shared')).toBe('public');
+        expect(byId.get('ws-private-mine')).toBe('private');
+        expect(byId.get('ws-parentless')).toBeNull();
+      });
+
+      it('keeps the preview of a teammate private conversation out of the feed', async () => {
+        await serverDB.insert(messages).values({
+          content: 'Confidential reply',
+          id: 'ws-private-other-msg',
+          role: 'assistant',
+          topicId: 'ws-private-other',
+          userId: otherUserId,
+          workspaceId,
+        });
+
+        const result = await workspaceModel.queryTopics({
+          statuses: ['unread'],
+          withLastMessage: true,
+        });
+
+        expect(result.map((t) => t.lastAssistantMessage)).not.toContain('Confidential reply');
+      });
+    });
   });
 
   describe('count', () => {
@@ -500,9 +892,53 @@ describe('TopicModel', () => {
       expect(await topicModel.count()).toBe(2);
       expect(await topicModel.count({ agentId: 'agent-c' })).toBe(1);
     });
+
+    it('excludes agent-share visitor topics', async () => {
+      await serverDB.insert(topics).values([
+        { id: 'count-creator', title: 'creator', userId },
+        { id: 'count-visitor', senderId: 'visitor-user-x', title: 'visitor', userId },
+      ]);
+
+      expect(await topicModel.count()).toBe(1);
+    });
   });
 
   describe('update', () => {
+    it.each([{ model: 'b' }, { provider: 'other' }, { model: null }])(
+      'clears stale reasoning on a legacy model update %j',
+      async (patch) => {
+        const topic = await topicModel.create({
+          metadata: {
+            reasoningConfig: { reasoningEffort: 'high' },
+            heteroEffort: 'low',
+            workingDirectory: '/w',
+          },
+          model: 'a',
+          provider: 'openai',
+          title: 'legacy',
+        });
+        const [updated] = await topicModel.update(topic.id, { ...patch, title: 'changed' });
+        expect(updated.metadata).toEqual({ heteroEffort: 'low', workingDirectory: '/w' });
+        expect(updated.title).toBe('changed');
+        expect(updated).toMatchObject(patch);
+      },
+    );
+
+    it.each([{ title: 'renamed' }, { model: 'a', provider: 'openai' }])(
+      'preserves reasoning when the model does not change %j',
+      async (patch) => {
+        const metadata = { reasoningConfig: { reasoningEffort: 'high' as const } };
+        const topic = await topicModel.create({
+          metadata,
+          model: 'a',
+          provider: 'openai',
+          title: 'pin',
+        });
+        const [updated] = await topicModel.update(topic.id, patch);
+        expect(updated.metadata).toEqual(metadata);
+      },
+    );
+
     it('updates status and bumps updatedAt', async () => {
       const topic = await topicModel.create({ title: 'to update' });
       const before = topic.updatedAt.getTime();
@@ -750,6 +1186,45 @@ describe('TopicModel', () => {
       const settled = await topicModel.settleRunningOperation(topic.id, 'op-old');
 
       expect(settled).toEqual({ assistantMessageId: 'msg-current', status: 'missing' });
+    });
+  });
+
+  describe('updateModelPin', () => {
+    it('switches model and replaces the reasoning pin in one write', async () => {
+      const topic = await topicModel.create({
+        metadata: { reasoningConfig: { glm5_2ReasoningEffort: 'max' }, workingDirectory: '/w' },
+        model: 'glm-5.2',
+        provider: 'lobehub',
+        title: 'pin',
+      });
+
+      const [updated] = await topicModel.updateModelPin(topic.id, {
+        metadata: { reasoningConfig: { deepseekV4GAReasoningEffort: 'low' } },
+        model: 'deepseek-v4-flash',
+        provider: 'lobehub',
+      });
+
+      expect(updated.model).toBe('deepseek-v4-flash');
+      expect(updated.metadata).toEqual({
+        reasoningConfig: { deepseekV4GAReasoningEffort: 'low' },
+        workingDirectory: '/w',
+      });
+    });
+
+    it('drops a stale reasoning pin and keeps heteroEffort when not given', async () => {
+      const topic = await topicModel.create({
+        metadata: { heteroEffort: 'high', reasoningConfig: { effort: 'max' } },
+        model: 'a',
+        provider: 'claude-code',
+        title: 'pin',
+      });
+
+      const [updated] = await topicModel.updateModelPin(topic.id, {
+        model: 'b',
+        provider: 'claude-code',
+      });
+
+      expect(updated.metadata).toEqual({ heteroEffort: 'high' });
     });
   });
 

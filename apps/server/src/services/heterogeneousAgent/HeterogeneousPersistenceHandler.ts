@@ -230,12 +230,29 @@ interface StoredHeterogeneousIntervention {
 }
 
 const HETEROGENEOUS_INTERVENTION_STATE_KEY = 'heterogeneousIntervention';
+const MAX_INTERVENTION_SUMMARY_LENGTH = 160;
 
-const interventionSummary = (request?: AgentInterventionRequestData): string => {
+const interventionSummary = (
+  request?: AgentInterventionRequestData,
+  reviewDetail?: Extract<
+    AgentInterventionReviewDetail,
+    { type: 'permission' | 'plan' | 'question' }
+  >,
+): string => {
+  if (reviewDetail?.type === 'question') {
+    const question = reviewDetail.questions[0]?.question.trim().replaceAll(/\s+/g, ' ');
+    if (question) {
+      const characters = [...question];
+      return characters.length > MAX_INTERVENTION_SUMMARY_LENGTH
+        ? `${characters.slice(0, MAX_INTERVENTION_SUMMARY_LENGTH - 1).join('')}…`
+        : question;
+    }
+  }
+
   const provider = request?.provider ?? 'heterogeneous-agent';
   const kind = request?.interactionKind ?? 'question';
   const apiName = request?.apiName || 'interaction';
-  return `${provider} ${kind}: ${apiName}`.slice(0, 160);
+  return `${provider} ${kind}: ${apiName}`.slice(0, MAX_INTERVENTION_SUMMARY_LENGTH);
 };
 
 const buildHeterogeneousReviewDetail = (
@@ -312,6 +329,8 @@ const INTERVENTION_KINDS = new Set<AgentInterventionInteractionKind>([
 const INTERVENTION_PROVIDERS = new Set<AgentInterventionProvider>([
   'claude-code',
   'cursor',
+  'devin',
+  'droid',
   'qoder',
 ]);
 
@@ -437,21 +456,26 @@ export class HeterogeneousPersistenceHandler {
   }
 
   /**
-   * Flush trailing accumulators, persist the CLI's native session id (when
-   * present) for next-turn resume, and drop the per-operation state.
+   * Flush trailing accumulators and drop the per-operation state.
    *
    * Resume id source: CC's `--resume <sessionId>` token comes from the
-   * adapter's cached `system:init.session_id`. The CLI surfaces it here as a
-   * `heteroFinish` argument; we write it to `topic.metadata.heteroSessionId`
-   * (the same field the desktop renderer uses), so the next CLI spawn for
-   * this topic can include `--resume <id>`.
+   * adapter's cached `system:init.session_id`. The heterogeneous-agent service
+   * settles topic-level resume ownership after this flush.
+   *
+   * Use when:
+   * - A heterogeneous operation reaches a terminal producer callback.
+   *
+   * Expects:
+   * - The operation state was created by ingest or can be bootstrapped from the topic marker.
+   *
+   * Returns:
+   * - A promise that resolves after any finish-only error is projected and state is released.
    */
   async finish(params: {
     assistantMessageId?: string;
     error?: { body?: Record<string, unknown>; message: string; type: string };
     operationId: string;
     result: 'success' | 'error' | 'cancelled';
-    sessionId?: string;
     /**
      * Needed to bootstrap state for a failed run that never ingested: a
      * process-level failure (spawn ENOENT, auth printed straight to stderr)
@@ -490,21 +514,7 @@ export class HeterogeneousPersistenceHandler {
     if (!state) return;
 
     try {
-      await this.flushFinalState(state, params.error, params.result);
-      if (params.sessionId) {
-        await this.persistSessionId(state, params.sessionId);
-      } else if (params.result === 'error') {
-        // No new session id was produced and the run failed. The most common
-        // cause in cloud sandboxes is `--resume <staleId>` failing because the
-        // container was recycled and session files are gone. Clear any persisted
-        // `heteroSessionId` so the next turn starts a fresh CC session instead
-        // of looping on the same stale id.
-        //
-        // When CC ran (system.init was emitted) but produced an error result,
-        // `params.sessionId` is set — so this branch is NOT reached and the
-        // valid session id is kept for resume on the next turn.
-        await this.clearSessionId(state);
-      }
+      if (params.error) await this.persistFinishError(state, params.error);
     } finally {
       operationStates.delete(params.operationId);
     }
@@ -532,28 +542,6 @@ export class HeterogeneousPersistenceHandler {
       log('persisted sessionId topic=%s agent=%s sessionId=%s', topicId, agentId, sessionId);
     } catch (err) {
       log('persistSessionId failed topic=%s err=%O', topicId, err);
-    }
-  }
-
-  /**
-   * Remove a stale `heteroSessionId` from topic metadata. Called when a run
-   * fails without producing a new session id (e.g. `--resume` rejected because
-   * the sandbox was recycled). Prevents the next turn from inheriting a session
-   * id that will never succeed. A group member's run clears only its own entry:
-   * the topic-wide id may be another agent's working session.
-   */
-  private async clearSessionId(state: OperationState): Promise<void> {
-    const { agentId, topicId } = state;
-    try {
-      if (!state.isMemberRun) {
-        await this.deps.topicModel.updateMetadata(topicId, { heteroSessionId: undefined });
-      }
-      if (agentId) {
-        await this.deps.topicModel.updateMetadataEntry(topicId, 'heteroSessions', agentId, null);
-      }
-      log('cleared stale sessionId topic=%s agent=%s', topicId, agentId);
-    } catch (err) {
-      log('clearSessionId failed topic=%s err=%O', topicId, err);
     }
   }
 
@@ -1378,8 +1366,23 @@ export class HeterogeneousPersistenceHandler {
       );
     }
 
-    const summary = interventionSummary(intent.request);
     const reviewRequest = sanitizeAgentInterventionRequestForReview(intent.request);
+    const reviewDetail = reviewRequest ? buildHeterogeneousReviewDetail(reviewRequest) : undefined;
+    const summary = interventionSummary(intent.request, reviewDetail);
+    const transitionKey = `${state.operationId}:${intent.toolCallId}:${intent.transition}`;
+    const pendingTransitionKey = `${state.operationId}:${intent.toolCallId}:pending`;
+    const requiresPendingReviewNotification =
+      !!this.deps.userId &&
+      !state.notifiedInterventionTransitions.has(transitionKey) &&
+      !state.notifiedInterventionTransitions.has(pendingTransitionKey);
+    if (
+      requiresPendingReviewNotification &&
+      (!reviewRequest?.interactionKind || !reviewRequest.provider || !reviewDetail)
+    ) {
+      throw new Error(
+        `Unsafe heterogeneous intervention review payload toolCallId=${intent.toolCallId}`,
+      );
+    }
     const durableState: StoredHeterogeneousIntervention = {
       deadline: intent.request?.deadline,
       interactionKind: intent.request?.interactionKind,
@@ -1398,12 +1401,10 @@ export class HeterogeneousPersistenceHandler {
       [HETEROGENEOUS_INTERVENTION_STATE_KEY]: durableState,
     });
 
-    const transitionKey = `${state.operationId}:${intent.toolCallId}:${intent.transition}`;
     if (!this.deps.userId || state.notifiedInterventionTransitions.has(transitionKey)) return;
 
-    const pendingTransitionKey = `${state.operationId}:${intent.toolCallId}:pending`;
     if (!state.notifiedInterventionTransitions.has(pendingTransitionKey)) {
-      if (!reviewRequest?.interactionKind || !reviewRequest.provider) {
+      if (!reviewRequest?.interactionKind || !reviewRequest.provider || !reviewDetail) {
         throw new Error(
           `Unsafe heterogeneous intervention review payload toolCallId=${intent.toolCallId}`,
         );
@@ -1458,7 +1459,7 @@ export class HeterogeneousPersistenceHandler {
         items: [
           {
             allowedActions,
-            detail: buildHeterogeneousReviewDetail(reviewRequest),
+            detail: reviewDetail,
             interactionKind: reviewRequest.interactionKind,
             provider: reviewRequest.provider,
             requestRevision: {
@@ -1520,40 +1521,36 @@ export class HeterogeneousPersistenceHandler {
     return update;
   }
 
-  /** Final safety flush triggered by `heteroFinish`. */
-  private async flushFinalState(
+  /**
+   * Persist an error supplied only by `heteroFinish` without rewriting streamed content.
+   *
+   * `heteroIngest` is the single writer for content and reasoning. A finish request can
+   * reach a warm serverless replica whose accumulator predates a newer snapshot written
+   * by another replica; replaying that accumulator here would roll the final answer back.
+   */
+  private async persistFinishError(
     state: OperationState,
-    error: { body?: Record<string, unknown>; message: string; type: string } | undefined,
-    result: 'success' | 'error' | 'cancelled',
+    error: { body?: Record<string, unknown>; message: string; type: string },
   ) {
-    if (!state.main.accContent && !state.main.accReasoning && !error && result !== 'error') {
-      // Nothing pending — terminal event already flushed in-stream.
-      return;
-    }
-
     const updateValue: Record<string, any> = {};
-    if (state.main.accContent) updateValue.content = state.main.accContent;
-    if (state.main.accReasoning) updateValue.reasoning = { content: state.main.accReasoning };
-    if (error) {
-      if (error.body?.clearEchoedContent === true) updateValue.content = '';
-      // Same canonical normalization as the in-stream `setError` path — the CLI's
-      // free-form `{ message, type }` runs through formatErrorForState so the
-      // terminal flush and the in-stream write produce one classified error shape.
-      // A structured `body` (status-guide error: agentType + code) passes
-      // through untouched — the client's guide UI gates on it.
-      //
-      // Never DOWNGRADE, though: the in-stream `setError` path may already have
-      // persisted the adapter's classified status-guide error on this assistant,
-      // while older CLIs flatten the finish error to a bare `{ message }`.
-      // Overwriting would demote the client from the dedicated guide card to
-      // the generic error alert — keep the richer persisted error instead.
-      const overwritesGuideError =
-        !isHeteroStatusGuideErrorData(error.body) &&
-        isHeteroStatusGuideErrorData(
-          (await this.deps.messageModel.findById(state.main.currentAssistantId))?.error?.body,
-        );
-      if (!overwritesGuideError) updateValue.error = formatErrorForState(error);
-    }
+    if (error.body?.clearEchoedContent === true) updateValue.content = '';
+    // Same canonical normalization as the in-stream `setError` path — the CLI's
+    // free-form `{ message, type }` runs through formatErrorForState so the
+    // finish-only write and the in-stream write produce one classified error shape.
+    // A structured `body` (status-guide error: agentType + code) passes
+    // through untouched — the client's guide UI gates on it.
+    //
+    // Never DOWNGRADE, though: the in-stream `setError` path may already have
+    // persisted the adapter's classified status-guide error on this assistant,
+    // while older CLIs flatten the finish error to a bare `{ message }`.
+    // Overwriting would demote the client from the dedicated guide card to
+    // the generic error alert — keep the richer persisted error instead.
+    const overwritesGuideError =
+      !isHeteroStatusGuideErrorData(error.body) &&
+      isHeteroStatusGuideErrorData(
+        (await this.deps.messageModel.findById(state.main.currentAssistantId))?.error?.body,
+      );
+    if (!overwritesGuideError) updateValue.error = formatErrorForState(error);
 
     if (Object.keys(updateValue).length > 0) {
       await this.deps.messageModel.update(state.main.currentAssistantId, updateValue);

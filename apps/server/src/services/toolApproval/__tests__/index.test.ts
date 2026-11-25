@@ -26,7 +26,9 @@ const { mockExecAgent, mockQueueMode } = vi.hoisted(() => ({
 }));
 
 vi.mock('@/server/services/aiAgent', () => ({
-  AiAgentService: vi.fn().mockImplementation(() => ({ execAgent: mockExecAgent })),
+  AiAgentService: vi.fn().mockImplementation(function () {
+    return { execAgent: mockExecAgent };
+  }),
 }));
 vi.mock('@/server/services/queue/impls', () => ({
   isQueueAgentRuntimeEnabled: mockQueueMode,

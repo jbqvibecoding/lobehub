@@ -1,7 +1,1 @@
-{
-  "src/store/chat/slices/message/action.test.ts": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  }
-}
+{}

@@ -30,7 +30,9 @@ const { billing, MockBillingError } = vi.hoisted(() => {
 
 vi.mock('@/server/services/billing', () => ({
   BillingError: MockBillingError,
-  BillingService: vi.fn().mockImplementation(() => billing),
+  BillingService: vi.fn().mockImplementation(function () {
+    return billing;
+  }),
 }));
 vi.mock('@/database/core/db-adaptor', () => ({ getServerDB: vi.fn(async () => ({})) }));
 

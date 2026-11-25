@@ -18,7 +18,9 @@ const mocks = vi.hoisted(() => ({ execAgent: vi.fn(), region: { APP_REGION: 'glo
 
 vi.mock('@/database/server', () => ({ serverDB: {} }));
 vi.mock('@/server/services/aiAgent', () => ({
-  AiAgentService: vi.fn().mockImplementation(() => ({ execAgent: mocks.execAgent })),
+  AiAgentService: vi.fn().mockImplementation(function () {
+    return { execAgent: mocks.execAgent };
+  }),
 }));
 vi.mock('@/envs/region', () => ({ regionEnv: mocks.region }));
 

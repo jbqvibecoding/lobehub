@@ -13,6 +13,11 @@ export const wechat: PlatformDefinition = {
   documentation: {
     setupGuideUrl: channelDocUrl('wechat'),
   },
+  // The QR handshake writes botId / userId / botToken together, and with no
+  // credentials in `schema` there is no `type: 'password'` marking to separate
+  // them. Name the two identifiers so the connected-account panel keeps showing
+  // them; the token stays masked.
+  publicCredentialKeys: ['botId', 'userId'],
   schema,
   // WeChat shows markdown markers as typed, so the agent is told to write plain text
   supportsMarkdown: false,

@@ -25,11 +25,13 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/server/services/githubApp', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  GithubConnectionService: vi.fn().mockImplementation(() => ({
-    declinePush: mocks.declinePush,
-    pendingPush: mocks.pendingPush,
-    push: mocks.push,
-  })),
+  GithubConnectionService: vi.fn().mockImplementation(function () {
+    return {
+      declinePush: mocks.declinePush,
+      pendingPush: mocks.pendingPush,
+      push: mocks.push,
+    };
+  }),
 }));
 
 vi.mock('@/server/services/approvalNotification', async (importOriginal) => ({
@@ -40,7 +42,9 @@ vi.mock('@/server/modules/AgentRuntime/factory', () => ({
   createStreamEventManager: () => ({ publishStreamEvent: mocks.publish }),
 }));
 vi.mock('@/server/services/aiAgent', () => ({
-  AiAgentService: vi.fn().mockImplementation(() => ({ execAgent: mocks.execAgent })),
+  AiAgentService: vi.fn().mockImplementation(function () {
+    return { execAgent: mocks.execAgent };
+  }),
 }));
 
 let db: LobeChatDatabase;

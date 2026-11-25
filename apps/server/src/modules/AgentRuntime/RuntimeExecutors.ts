@@ -39,9 +39,9 @@ export const createRuntimeExecutors = (
 };
 
 const auditScope = (ctx: RuntimeExecutorContext, state: AgentState, userId: string) => ({
-  agentId: state.metadata?.agentId,
+  agentId: state.origin?.agentId,
   operationId: ctx.operationId,
-  topicId: ctx.topicId ?? state.metadata?.topicId,
+  topicId: ctx.topicId ?? state.origin?.topicId,
   userId,
   workspaceId: ctx.workspaceId,
 });
@@ -94,9 +94,9 @@ const tellUserTheRunWaits = async (
 
   try {
     await notifyPendingApprovals(ctx.serverDB, {
-      agentId: state.metadata?.agentId,
+      agentId: state.origin?.agentId,
       pendingTools: instruction.pendingToolsCalling,
-      topicId: ctx.topicId ?? state.metadata?.topicId,
+      topicId: ctx.topicId ?? state.origin?.topicId,
       userId: ctx.userId,
       workspaceId: ctx.workspaceId,
     });

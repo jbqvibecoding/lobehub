@@ -5,6 +5,8 @@ import { type LobeChatDatabase } from '@lobechat/database';
 import { type DocumentItem } from '@lobechat/database/schemas';
 import { documents, files } from '@lobechat/database/schemas';
 import { loadFile, UnsupportedFileTypeError } from '@lobechat/file-loaders';
+import type { FileAccessScope } from '@lobechat/types';
+import { ordinaryFileAccessScope, stripAgentShareFileProvenance } from '@lobechat/types';
 import { TRPCError } from '@trpc/server';
 import debug from 'debug';
 import { and, eq, sql } from 'drizzle-orm';
@@ -16,6 +18,7 @@ import { KnowledgeBaseModel } from '@/database/models/knowledgeBase';
 import { buildWorkspaceWhere } from '@/database/utils/workspace';
 import { isValidEditorData } from '@/libs/editor/isValidEditorData';
 import { normalizeEditorDataDiffNodes } from '@/libs/editor/normalizeDiffNodes';
+import { diffAddedMentionUserIds } from '@/server/utils/documentMentions';
 import { type LobeDocument } from '@/types/document';
 
 import { EditLockService } from '../editLock';
@@ -143,6 +146,7 @@ export class DocumentService {
       slug,
       visibility,
     } = params;
+    const sanitizedMetadata = stripAgentShareFileProvenance(metadata);
 
     // Calculate character and line counts
     const totalCharCount = content?.length || 0;
@@ -175,7 +179,7 @@ export class DocumentService {
         {
           fileType,
           knowledgeBaseId,
-          metadata,
+          metadata: sanitizedMetadata,
           name: title,
           parentId,
           size: totalCharCount,
@@ -190,8 +194,8 @@ export class DocumentService {
     // Store knowledgeBaseId in metadata for folders (which don't have fileId)
     const finalMetadata =
       knowledgeBaseId && fileType === CUSTOM_FOLDER_FILE_TYPE
-        ? { ...metadata, knowledgeBaseId }
-        : metadata;
+        ? { ...sanitizedMetadata, knowledgeBaseId }
+        : sanitizedMetadata;
 
     const document = await this.documentModel.create({
       content,
@@ -644,6 +648,26 @@ export class DocumentService {
         throw new Error(`Document not found: ${id}`);
       }
 
+      // Optimistic-concurrency predicate for the client's CONFLICT recovery:
+      // the retry asserts the exact version it verified. Re-read the row with
+      // FOR UPDATE so the check-and-write is atomic inside this transaction —
+      // an interleaved save from another session either commits first (and
+      // fails this predicate) or blocks until we commit.
+      if (params.expectedUpdatedAt !== undefined) {
+        const [row] = await transactionDb
+          .select({ updatedAt: documents.updatedAt })
+          .from(documents)
+          .where(eq(documents.id, id))
+          .for('update');
+        if (!row?.updatedAt || row.updatedAt.getTime() !== params.expectedUpdatedAt.getTime()) {
+          throw new TRPCError({
+            cause: { data: { code: 'DocumentVersionMismatch' } },
+            code: 'CONFLICT',
+            message: 'Document has been updated by another session',
+          });
+        }
+      }
+
       // Accepted-view projections used only for historyAppended comparison and
       // for the "before" snapshot written into history. The persisted editorData
       // keeps any pending diff nodes — they're only normalized when the user
@@ -658,6 +682,11 @@ export class DocumentService {
       const historyAppended =
         nextEditorDataAccepted !== undefined &&
         !isEqual(nextEditorDataAccepted, currentEditorDataAccepted);
+      // Mentions are diffed on the accepted view so a chip inside a pending
+      // AI diff block only pings once the suggestion is accepted.
+      const addedMentionUserIds = historyAppended
+        ? diffAddedMentionUserIds(currentEditorDataAccepted, nextEditorDataAccepted)
+        : [];
 
       // Collaborative edit lock guard: reject writes to a workspace document that
       // another member is actively editing, so concurrent edits can't clobber
@@ -738,6 +767,7 @@ export class DocumentService {
       changed = Object.keys(updates).length > 0 || historyAppended;
 
       return {
+        ...(addedMentionUserIds.length > 0 ? { addedMentionUserIds } : {}),
         historyAppended,
         id,
         savedAt,
@@ -820,12 +850,18 @@ export class DocumentService {
    * transaction scoped, so a nested call would hold it until the outer
    * transaction commits instead of releasing it after the insert.
    */
-  async parseFile(fileId: string): Promise<LobeDocument> {
+  async parseFile(
+    fileId: string,
+    accessScope: FileAccessScope = ordinaryFileAccessScope,
+  ): Promise<LobeDocument> {
     // Idempotent: return existing document if already parsed
-    const existingDoc = await this.documentModel.findByFileId(fileId);
+    const existingDoc = await this.documentModel.findByFileId(fileId, accessScope);
     if (existingDoc) return existingDoc as LobeDocument;
 
-    const { filePath, file, cleanup } = await this.fileService.downloadFileToLocal(fileId);
+    const { filePath, file, cleanup } = await this.fileService.downloadFileToLocal(
+      fileId,
+      accessScope,
+    );
 
     const logPrefix = `[${file.name}]`;
     log(`${logPrefix} Starting to parse file, path: ${filePath}`);
@@ -870,7 +906,7 @@ export class DocumentService {
 
         // Whoever inserted first wins; discard this parse rather than adding a
         // second document for the same file.
-        const raced = await transactionDocumentModel.findByFileId(fileId);
+        const raced = await transactionDocumentModel.findByFileId(fileId, accessScope);
         if (raced) return raced;
 
         return transactionDocumentModel.create({

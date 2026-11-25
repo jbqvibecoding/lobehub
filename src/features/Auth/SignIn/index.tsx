@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useAuthServerConfigStore } from '@/features/AuthShell';
 
+import DevSeedSignIn from './DevSeedSignIn';
 import { SignInEmailSentStep } from './SignInEmailSentStep';
 import { SignInEmailStep } from './SignInEmailStep';
 import { SignInPasswordStep } from './SignInPasswordStep';
@@ -70,22 +71,25 @@ const SignIn = () => {
     );
 
   const emailStep = (
-    <SignInEmailStep
-      disableEmailPassword={disableEmailPassword}
-      form={form as any}
-      isSocialOnly={isSocialOnly}
-      lastAuthProvider={lastAuthProvider}
-      loading={loading}
-      oAuthSSOProviders={oAuthSSOProviders}
-      serverConfigInit={serverConfigInit}
-      sessionExpired={sessionExpired}
-      socialLoading={socialLoading}
-      onCheckUser={handleCheckUser}
-      onGoToSignup={handleGoToSignup}
-      onResetEmail={handleBackToEmail}
-      onSetPassword={handleForgotPassword}
-      onSocialSignIn={handleSocialSignIn}
-    />
+    <>
+      <SignInEmailStep
+        disableEmailPassword={disableEmailPassword}
+        form={form as any}
+        isSocialOnly={isSocialOnly}
+        lastAuthProvider={lastAuthProvider}
+        loading={loading}
+        oAuthSSOProviders={oAuthSSOProviders}
+        serverConfigInit={serverConfigInit}
+        sessionExpired={sessionExpired}
+        socialLoading={socialLoading}
+        onCheckUser={handleCheckUser}
+        onGoToSignup={handleGoToSignup}
+        onResetEmail={handleBackToEmail}
+        onSetPassword={handleForgotPassword}
+        onSocialSignIn={handleSocialSignIn}
+      />
+      <DevSeedSignIn />
+    </>
   );
   if (!enablePhoneSignIn) return emailStep;
 

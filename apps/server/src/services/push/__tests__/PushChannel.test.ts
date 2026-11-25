@@ -11,9 +11,11 @@ vi.mock('debug', () => ({ default: () => mockLog }));
 
 vi.mock('@/database/models/pushToken', () => ({
   deletePushTokensOfProvider: (...args: unknown[]) => mockDeleteOfProvider(...args),
-  PushTokenModel: vi.fn(() => ({
-    listByUserId: mockListByUserId,
-  })),
+  PushTokenModel: vi.fn(function () {
+    return {
+      listByUserId: mockListByUserId,
+    };
+  }),
 }));
 
 vi.mock('@/database/server', () => ({ serverDB: {} }));

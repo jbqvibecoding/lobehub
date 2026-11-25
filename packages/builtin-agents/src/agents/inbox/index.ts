@@ -25,7 +25,10 @@ export const INBOX: BuiltinAgentDefinition = {
       UserInteractionIdentifier,
       ...(ctx.plugins || []),
     ],
-    systemRole: createSystemRole(ctx.userLocale),
+    // A user-customized prompt wins; the runtime one is only the default.
+    systemRole:
+      ctx.storedSystemRole ||
+      createSystemRole(ctx.userLocale, { name: ctx.agentName, title: ctx.agentTitle }),
   }),
 
   slug: BUILTIN_AGENT_SLUGS.inbox,

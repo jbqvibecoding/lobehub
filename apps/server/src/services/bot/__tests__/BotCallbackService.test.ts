@@ -28,27 +28,31 @@ const mockReplaceReaction = vi.hoisted(() =>
 
 // Mock PlatformClient's getMessenger
 const mockGetMessenger = vi.hoisted(() =>
-  vi.fn().mockImplementation(() => ({
-    createMessage: mockCreateMessage,
-    editMessage: mockEditMessage,
-    removeReaction: mockRemoveReaction,
-    replaceReaction: mockReplaceReaction,
-    triggerTyping: mockTriggerTyping,
-    updateThreadName: mockUpdateThreadName,
-  })),
+  vi.fn().mockImplementation(function () {
+    return {
+      createMessage: mockCreateMessage,
+      editMessage: mockEditMessage,
+      removeReaction: mockRemoveReaction,
+      replaceReaction: mockReplaceReaction,
+      triggerTyping: mockTriggerTyping,
+      updateThreadName: mockUpdateThreadName,
+    };
+  }),
 );
 
 const mockCreateBot = vi.hoisted(() =>
-  vi.fn().mockImplementation(() => ({
-    applicationId: 'mock-app',
-    createAdapter: () => ({}),
-    extractChatId: (id: string) => id,
-    getMessenger: mockGetMessenger,
-    parseMessageId: (id: string) => id,
-    id: 'mock',
-    start: vi.fn(),
-    stop: vi.fn(),
-  })),
+  vi.fn().mockImplementation(function () {
+    return {
+      applicationId: 'mock-app',
+      createAdapter: () => ({}),
+      extractChatId: (id: string) => id,
+      getMessenger: mockGetMessenger,
+      parseMessageId: (id: string) => id,
+      id: 'mock',
+      start: vi.fn(),
+      stop: vi.fn(),
+    };
+  }),
 );
 
 // Mocks for messenger-originated callbacks (synthetic applicationIds like
@@ -56,7 +60,9 @@ const mockCreateBot = vi.hoisted(() =>
 // store + binder, bypassing `agent_bot_providers` entirely.
 const mockMessengerStoreResolveByKey = vi.hoisted(() => vi.fn());
 const mockMessengerGetInstallationStore = vi.hoisted(() =>
-  vi.fn().mockImplementation(() => ({ resolveByKey: mockMessengerStoreResolveByKey })),
+  vi.fn().mockImplementation(function () {
+    return { resolveByKey: mockMessengerStoreResolveByKey };
+  }),
 );
 const mockMessengerBinderCreateClient = vi.hoisted(() =>
   vi.fn().mockImplementation(async () => ({
@@ -68,7 +74,9 @@ const mockMessengerBinderCreateClient = vi.hoisted(() =>
   })),
 );
 const mockMessengerCreateBinder = vi.hoisted(() =>
-  vi.fn().mockImplementation(() => ({ createClient: mockMessengerBinderCreateClient })),
+  vi.fn().mockImplementation(function () {
+    return { createClient: mockMessengerBinderCreateClient };
+  }),
 );
 
 const mockListPendingInterventions = vi.hoisted(() => vi.fn());
@@ -76,9 +84,11 @@ const mockListPendingInterventions = vi.hoisted(() => vi.fn());
 // ==================== vi.mock ====================
 
 vi.mock('@/database/models/message', () => ({
-  MessageModel: vi.fn().mockImplementation(() => ({
-    listPendingInterventions: mockListPendingInterventions,
-  })),
+  MessageModel: vi.fn().mockImplementation(function () {
+    return {
+      listPendingInterventions: mockListPendingInterventions,
+    };
+  }),
 }));
 
 vi.mock('@/database/models/agentBotProvider', () => ({
@@ -88,10 +98,12 @@ vi.mock('@/database/models/agentBotProvider', () => ({
 }));
 
 vi.mock('@/database/models/topic', () => ({
-  TopicModel: vi.fn().mockImplementation(() => ({
-    findById: mockFindById,
-    update: mockTopicUpdate,
-  })),
+  TopicModel: vi.fn().mockImplementation(function () {
+    return {
+      findById: mockFindById,
+      update: mockTopicUpdate,
+    };
+  }),
 }));
 
 vi.mock('@/server/modules/KeyVaultsEncrypt', () => ({
@@ -110,6 +122,17 @@ vi.mock('../AgentBridgeService', () => ({
   },
 }));
 
+const mockBotRouterReplay = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const mockMessengerRouterReplay = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+
+vi.mock('../BotMessageRouter', () => ({
+  getBotMessageRouter: () => ({ replayDeferredMessages: mockBotRouterReplay }),
+}));
+
+vi.mock('@/server/services/messenger/MessengerRouter', () => ({
+  getMessengerRouter: () => ({ replayDeferredMessages: mockMessengerRouterReplay }),
+}));
+
 vi.mock('@/server/services/gateway/MessageGatewayClient', () => ({
   getMessageGatewayClient: vi.fn().mockReturnValue({
     isConfigured: false,
@@ -120,9 +143,11 @@ vi.mock('@/server/services/gateway/MessageGatewayClient', () => ({
 }));
 
 vi.mock('@/server/services/systemAgent', () => ({
-  SystemAgentService: vi.fn().mockImplementation(() => ({
-    generateTopicTitle: mockGenerateTopicTitle,
-  })),
+  SystemAgentService: vi.fn().mockImplementation(function () {
+    return {
+      generateTopicTitle: mockGenerateTopicTitle,
+    };
+  }),
 }));
 
 vi.mock('@/server/services/messenger/installations', () => ({
@@ -145,11 +170,13 @@ vi.mock('@/server/services/messenger/installations', () => ({
 vi.mock('@/server/services/messenger/platforms', () => ({
   messengerPlatformRegistry: {
     createBinder: mockMessengerCreateBinder,
-    getPlatform: vi.fn().mockImplementation((platform: string) => ({
-      connectionMode: platform === 'discord' ? 'websocket' : 'webhook',
-      id: platform,
-      name: platform,
-    })),
+    getPlatform: vi.fn().mockImplementation(function (platform: string) {
+      return {
+        connectionMode: platform === 'discord' ? 'websocket' : 'webhook',
+        id: platform,
+        name: platform,
+      };
+    }),
   },
 }));
 
@@ -158,7 +185,7 @@ vi.mock('../platforms', async (importOriginal) => {
   return {
     ...actual,
     platformRegistry: {
-      getPlatform: vi.fn().mockImplementation((platform: string) => {
+      getPlatform: vi.fn().mockImplementation(function (platform: string) {
         if (platform === 'unknown') return undefined;
         return {
           clientFactory: { createClient: mockCreateBot },
@@ -211,6 +238,12 @@ function makeTelegramBody(overrides: Partial<BotCallbackBody> = {}): BotCallback
 
 // ==================== Tests ====================
 
+const mockScheduleDeferredReplay = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('../deferredReplay', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  scheduleDeferredReplay: mockScheduleDeferredReplay,
+}));
+
 describe('BotCallbackService', () => {
   let service: BotCallbackService;
 
@@ -226,14 +259,16 @@ describe('BotCallbackService', () => {
     });
 
     // Default: getMessenger returns the main messenger mock
-    mockGetMessenger.mockImplementation(() => ({
-      createMessage: mockCreateMessage,
-      editMessage: mockEditMessage,
-      removeReaction: mockRemoveReaction,
-      replaceReaction: mockReplaceReaction,
-      triggerTyping: mockTriggerTyping,
-      updateThreadName: mockUpdateThreadName,
-    }));
+    mockGetMessenger.mockImplementation(function () {
+      return {
+        createMessage: mockCreateMessage,
+        editMessage: mockEditMessage,
+        removeReaction: mockRemoveReaction,
+        replaceReaction: mockReplaceReaction,
+        triggerTyping: mockTriggerTyping,
+        updateThreadName: mockUpdateThreadName,
+      };
+    });
 
     // Default messenger install store + binder responses for messenger-* runs.
     mockMessengerStoreResolveByKey.mockResolvedValue({
@@ -244,9 +279,11 @@ describe('BotCallbackService', () => {
       platform: 'telegram',
       tenantId: '',
     });
-    mockMessengerGetInstallationStore.mockImplementation(() => ({
-      resolveByKey: mockMessengerStoreResolveByKey,
-    }));
+    mockMessengerGetInstallationStore.mockImplementation(function () {
+      return {
+        resolveByKey: mockMessengerStoreResolveByKey,
+      };
+    });
     mockMessengerBinderCreateClient.mockImplementation(async () => ({
       applicationId: 'mock-messenger-app',
       createAdapter: () => ({}),
@@ -254,9 +291,11 @@ describe('BotCallbackService', () => {
       getMessenger: mockGetMessenger,
       parseMessageId: (id: string) => id,
     }));
-    mockMessengerCreateBinder.mockImplementation(() => ({
-      createClient: mockMessengerBinderCreateClient,
-    }));
+    mockMessengerCreateBinder.mockImplementation(function () {
+      return {
+        createClient: mockMessengerBinderCreateClient,
+      };
+    });
   });
 
   // ==================== Platform detection ====================
@@ -545,6 +584,64 @@ describe('BotCallbackService', () => {
   });
 
   // ==================== Completion handling ====================
+
+  describe('deferred follow-up replay', () => {
+    it('replays deferred messages through the bot router after completion', async () => {
+      await service.handleCallback(
+        makeBody({ lastAssistantContent: 'done', reason: 'completed', type: 'completion' }),
+      );
+
+      expect(mockBotRouterReplay).toHaveBeenCalledWith(
+        'discord',
+        'app-123',
+        'discord:guild:channel-id',
+      );
+      expect(mockMessengerRouterReplay).not.toHaveBeenCalled();
+    });
+
+    it('routes messenger-originated runs to the messenger router', async () => {
+      await service.handleCallback(
+        makeTelegramBody({
+          applicationId: 'messenger-telegram',
+          lastAssistantContent: 'done',
+          messengerInstallationKey: 'telegram:singleton',
+          reason: 'completed',
+          type: 'completion',
+        }),
+      );
+
+      expect(mockMessengerRouterReplay).toHaveBeenCalledWith(
+        'telegram:singleton',
+        'messenger-telegram',
+        'telegram:chat-456',
+      );
+      expect(mockBotRouterReplay).not.toHaveBeenCalled();
+    });
+
+    it('does not replay on step callbacks', async () => {
+      await service.handleCallback(makeBody({ shouldContinue: true, type: 'step' }));
+
+      expect(mockBotRouterReplay).not.toHaveBeenCalled();
+    });
+
+    it('schedules an isolated retry after replay fails without failing the completion', async () => {
+      mockBotRouterReplay.mockRejectedValueOnce(new Error('redis down'));
+
+      await expect(
+        service.handleCallback(
+          makeBody({ lastAssistantContent: 'done', reason: 'completed', type: 'completion' }),
+        ),
+      ).resolves.toBeUndefined();
+      expect(mockScheduleDeferredReplay).toHaveBeenCalledWith(
+        expect.objectContaining({
+          applicationId: 'app-123',
+          platform: 'discord',
+          platformThreadId: 'discord:guild:channel-id',
+        }),
+        expect.any(String),
+      );
+    });
+  });
 
   describe('completion handling', () => {
     it('should render operation id when reason is error', async () => {
@@ -1077,6 +1174,7 @@ describe('BotCallbackService', () => {
       await vi.waitFor(() => {
         expect(mockGenerateTopicTitle).toHaveBeenCalledWith({
           lastAssistantContent: 'Here is the answer.',
+          topicId: 'topic-1',
           userPrompt: 'What is the meaning of life?',
         });
       });

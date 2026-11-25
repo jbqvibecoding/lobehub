@@ -5,7 +5,9 @@ import { expertsRouter } from '../experts';
 const mocks = vi.hoisted(() => ({ add: vi.fn(), list: vi.fn(), remove: vi.fn() }));
 
 vi.mock('@/server/services/experts', () => ({
-  ExpertService: vi.fn(() => ({ add: mocks.add, list: mocks.list, remove: mocks.remove })),
+  ExpertService: vi.fn(function () {
+    return { add: mocks.add, list: mocks.list, remove: mocks.remove };
+  }),
 }));
 
 const caller = () => expertsRouter.createCaller({ serverDB: {} as any, userId: 'user-1' } as any);

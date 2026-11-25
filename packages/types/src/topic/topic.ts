@@ -1,5 +1,8 @@
+import type { AiModelReasoningConfig } from 'model-bank';
+import { AiModelReasoningConfigSchema } from 'model-bank/aiModel';
 import { z } from 'zod';
 
+import type { HeterogeneousReasoningEffort } from '../agent/heteroSelectorCapabilities';
 import type { SerializedAgentHook } from '../agentHook';
 import { serializedAgentHookSchema } from '../agentHook';
 import type { WorkingDirConfig } from '../device';
@@ -154,6 +157,15 @@ export interface ChatTopicMetadata {
    */
   heteroCurrentMsgId?: { msgId: string; operationId: string };
   /**
+   * Topic-pinned reasoning effort for a heterogeneous agent (Claude Code /
+   * Codex / …). Snapshotted from `agencyConfig.heterogeneousProvider.effort`
+   * when the topic is created and overwritten when the user picks an effort
+   * while the topic is active, so a single session can run at a higher effort
+   * without retuning the agent. Resolved as "topic effort if present, else the
+   * agent's effort" by `applyTopicModelToHeterogeneousProvider`.
+   */
+  heteroEffort?: HeterogeneousReasoningEffort;
+  /**
    * Claude Code / Codex runs going on as members of a group chat, by operation id. A member does
    * not take the conversation's `runningOperation`, which stays the host's: it is recorded here,
    * with what its end needs (hooks, its reply message) and the command to kill on stop.
@@ -177,6 +189,7 @@ export interface ChatTopicMetadata {
     heteroType: 'claude-code' | 'codex';
     operationId: string;
   } | null;
+
   /**
    * Secret-free identity of the provider/auth binding that created
    * `heteroSessionId`. Resume is allowed only when this identity still matches.
@@ -243,6 +256,18 @@ export interface ChatTopicMetadata {
   /** Measured dominant provider by token volume — see {@link ChatTopicMetadata.model}. */
   provider?: string;
   /**
+   * Topic-pinned reasoning effort / mode for the pinned API model
+   * (`ChatTopic.model`). Mirrors the model pin: snapshotted from the user's
+   * model-instance reasoning config when the topic is created, re-snapshotted
+   * for the new model when the user switches model while the topic is active,
+   * and overwritten when the user picks an effort while the topic is active.
+   * Generation resolves "topic config if present (and its pinned model matches
+   * the run model), else the user-level model-instance config" — see
+   * `resolveEffectiveReasoningChatConfig`. An empty object is a valid snapshot:
+   * it pins the topic to the model's own defaults.
+   */
+  reasoningConfig?: AiModelReasoningConfig;
+  /**
    * Web (cloud) only. Ordered list of GitHub repos selected for this topic.
    * Each repo will be cloned into the Gateway sandbox before execution.
    * `workingDirectory` is kept in sync with repos[0] (the primary repo).
@@ -260,7 +285,7 @@ export interface ChatTopicMetadata {
       deviceId?: string;
       deviceUserId?: string;
       deviceWorkspaceId?: string;
-      heteroType?: string;
+      heteroType?: string | null;
       hooks?: SerializedAgentHook[];
       operationId: string;
       orchestrationRole?: 'supervisor' | 'member';
@@ -274,7 +299,7 @@ export interface ChatTopicMetadata {
     /** Workspace principal used for a workspace-enrolled device. */
     deviceWorkspaceId?: string;
     /** Notify-based platform type used to select the cancellation protocol. */
-    heteroType?: string;
+    heteroType?: string | null;
     /**
      * Serialized lifecycle hooks (onComplete / onError) registered for this run.
      *
@@ -499,9 +524,11 @@ export const parseTopicScheduledRun = (raw: unknown): TopicScheduledRun | null =
   };
 };
 
-/** Metadata patch accepted by the topic update API. */
 export const chatTopicMetadataUpdateSchema = z.object({
   boundDeviceId: z.string().optional(),
+  heteroEffort: z
+    .custom<HeterogeneousReasoningEffort>((value) => typeof value === 'string')
+    .optional(),
   heteroSessionBindingKey: z.string().optional(),
   heteroSessionBindingKeyByWorkingDirectory: z.record(z.string(), z.string()).optional(),
   heteroSessionId: z.string().optional(),
@@ -541,6 +568,7 @@ export const chatTopicMetadataUpdateSchema = z.object({
     .optional(),
   provider: z.string().optional(),
   lastSettledOperationId: z.string().optional(),
+  reasoningConfig: AiModelReasoningConfigSchema.optional(),
   repos: z.array(z.string()).optional(),
   runningOperation: z
     .object({
@@ -552,7 +580,7 @@ export const chatTopicMetadataUpdateSchema = z.object({
             deviceId: z.string().optional(),
             deviceUserId: z.string().optional(),
             deviceWorkspaceId: z.string().optional(),
-            heteroType: z.string().optional(),
+            heteroType: z.string().nullable().optional(),
             hooks: z.array(serializedAgentHookSchema).optional(),
             operationId: z.string(),
             orchestrationRole: z.enum(['supervisor', 'member']).optional(),
@@ -564,7 +592,7 @@ export const chatTopicMetadataUpdateSchema = z.object({
       deviceId: z.string().optional(),
       deviceUserId: z.string().optional(),
       deviceWorkspaceId: z.string().optional(),
-      heteroType: z.string().optional(),
+      heteroType: z.string().nullable().optional(),
       hooks: z.array(serializedAgentHookSchema).optional(),
       operationId: z.string(),
       orchestrationRole: z.enum(['supervisor', 'member']).optional(),
@@ -583,6 +611,15 @@ export const chatTopicMetadataUpdateSchema = z.object({
   scheduledRun: topicScheduledRunSchema.nullish(),
   workingDirectory: z.string().optional(),
   workingDirectoryConfig: workingDirConfigSchema.optional(),
+});
+
+/**
+ * Metadata a client may seed when creating a topic: the pinned reasoning
+ * snapshot taken alongside the pinned model (see `snapshotAgentModel`).
+ */
+export const chatTopicCreateMetadataSchema = chatTopicMetadataUpdateSchema.pick({
+  heteroEffort: true,
+  reasoningConfig: true,
 });
 
 export interface ChatTopicSummary {

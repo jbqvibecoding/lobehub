@@ -16,7 +16,7 @@ const imap = vi.hoisted(() => ({
 }));
 
 vi.mock('imapflow', () => ({
-  ImapFlow: vi.fn().mockImplementation((options: any) => {
+  ImapFlow: vi.fn().mockImplementation(function (options: any) {
     imap.options.push(options);
     return {
       append: async (folder: string, raw: Buffer, flags: string[]) => {

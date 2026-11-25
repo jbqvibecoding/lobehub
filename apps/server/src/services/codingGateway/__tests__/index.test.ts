@@ -27,10 +27,12 @@ vi.mock('@/libs/oidc-provider/access-control', () => ({
   assertOIDCUserActive: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('@/server/services/billing', () => ({
-  BillingService: vi.fn().mockImplementation(() => ({
-    chargeCredits: mocks.chargeCredits,
-    getAllowance: mocks.getAllowance,
-  })),
+  BillingService: vi.fn().mockImplementation(function () {
+    return {
+      chargeCredits: mocks.chargeCredits,
+      getAllowance: mocks.getAllowance,
+    };
+  }),
 }));
 vi.mock('@/server/services/contentSafety', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),

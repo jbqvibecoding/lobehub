@@ -1,4 +1,5 @@
 import type { ToolRunResult } from '@lobechat/agent-runtime';
+import type { SerializedAgentHook } from '@lobechat/types';
 import debug from 'debug';
 import urlJoin from 'url-join';
 
@@ -127,7 +128,7 @@ function buildWebhookPayload(
  * HookDispatcher — central hub for registering and dispatching agent lifecycle hooks
  *
  * Local mode: hooks are stored in memory, handler functions called directly
- * Production mode: webhook configs persisted in AgentState.metadata._hooks,
+ * Production mode: webhook configs persisted in AgentState.host.hooks,
  *   delivered via HTTP POST or QStash
  */
 export class HookDispatcher {
@@ -147,7 +148,11 @@ export class HookDispatcher {
     operationId: string,
     type: AgentHookType,
     event: AnyHookEvent,
-    serializedHooks?: SerializedHook[],
+    /**
+     * Hooks persisted on `state.host.hooks` (wire shape). Narrowed here to the
+     * runtime-precise {@link SerializedHook} once the type / webhook are checked.
+     */
+    serializedHooks?: SerializedAgentHook[],
   ): Promise<void> {
     const isQueueMode = isQueueAgentRuntimeEnabled();
 
@@ -167,7 +172,9 @@ export class HookDispatcher {
     } else {
       // Production mode: deliver via webhooks
       const webhookHooks =
-        serializedHooks?.filter((h) => h.type === type && h.webhook) ||
+        serializedHooks?.filter(
+          (h): h is SerializedHook => h.type === type && h.webhook !== undefined,
+        ) ||
         this.getSerializedHooks(operationId)?.filter((h) => h.type === type) ||
         [];
 
@@ -289,7 +296,7 @@ export class HookDispatcher {
    * Register hooks for an operation
    *
    * In local mode: stores hooks in memory (including handler functions)
-   * In production mode: caller should persist getSerializedHooks() to state.metadata._hooks
+   * In production mode: caller should persist getSerializedHooks() to state.host.hooks
    */
   register(operationId: string, hooks: AgentHook[]): void {
     if (hooks.length === 0) return;

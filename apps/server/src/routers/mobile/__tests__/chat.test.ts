@@ -23,18 +23,22 @@ const mockExecAgent = vi.fn();
 const mockExecGroupAgent = vi.fn();
 const mockInterruptTask = vi.fn();
 vi.mock('@/server/services/aiAgent', () => ({
-  AiAgentService: vi.fn().mockImplementation(() => ({
-    execAgent: mockExecAgent,
-    execGroupAgent: mockExecGroupAgent,
-    interruptTask: mockInterruptTask,
-  })),
+  AiAgentService: vi.fn().mockImplementation(function () {
+    return {
+      execAgent: mockExecAgent,
+      execGroupAgent: mockExecGroupAgent,
+      interruptTask: mockInterruptTask,
+    };
+  }),
 }));
 
 const mockGetOperationStatus = vi.fn();
 vi.mock('@/server/services/agentRuntime', () => ({
-  AgentRuntimeService: vi.fn().mockImplementation(() => ({
-    getOperationStatus: mockGetOperationStatus,
-  })),
+  AgentRuntimeService: vi.fn().mockImplementation(function () {
+    return {
+      getOperationStatus: mockGetOperationStatus,
+    };
+  }),
 }));
 
 const callerFor = (userId: string) =>

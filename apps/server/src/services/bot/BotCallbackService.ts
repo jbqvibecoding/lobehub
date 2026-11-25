@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+
+import type { ChatErrorBudgetContext, ChatErrorHeterogeneousContext } from '@lobechat/types';
 import debug from 'debug';
 
 import type { MessengerPlatform } from '@/config/messenger';
@@ -19,6 +22,7 @@ import { SystemAgentService } from '@/server/services/systemAgent';
 import { describeApprovalCall } from '@/server/services/toolApproval/describe';
 
 import { AgentBridgeService } from './AgentBridgeService';
+import { runDeferredReplay, scheduleDeferredReplay } from './deferredReplay';
 import type {
   BotMessageAttachment,
   BotReplyLocale,
@@ -91,6 +95,15 @@ export interface BotCallbackBody {
    * lifecycle event.
    */
   errorAttribution?: string;
+  /**
+   * Which spending allowance ran out, and by how much, when the run failed on
+   * an insufficient-credits code. Lets the reply name the exhausted allowance
+   * instead of the generic personal-credits copy (the figures themselves are
+   * never rendered — they belong to the billed owner, not the recipient).
+   * Forwarded verbatim from the agent lifecycle event.
+   */
+  errorBudget?: ChatErrorBudgetContext;
+  errorHeterogeneous?: ChatErrorHeterogeneousContext;
   errorMessage?: string;
   errorType?: string;
   executionTimeMs?: number;
@@ -235,6 +248,42 @@ export class BotCallbackService {
         { ...body, workspaceId: body.workspaceId ?? workspaceId ?? undefined },
         messenger,
       );
+      // The topic is idle now — replay any follow-up the bridge parked while
+      // this run was executing (WeChat "one image + one sentence" arrives as
+      // two messages; the second used to fail the topic-start reservation).
+      await this.replayDeferredMessages(
+        platform,
+        applicationId,
+        platformThreadId,
+        messengerInstallationKey,
+        body.operationId ?? randomUUID(),
+      );
+    }
+  }
+
+  private async replayDeferredMessages(
+    platform: string,
+    applicationId: string,
+    platformThreadId: string,
+    messengerInstallationKey: string | undefined,
+    replayId: string,
+  ): Promise<void> {
+    const target = { applicationId, messengerInstallationKey, platform, platformThreadId };
+    try {
+      await runDeferredReplay(target);
+    } catch (error) {
+      log('replayDeferredMessages failed for thread=%s: %O', platformThreadId, error);
+      // Only the replay job retries. Redelivering this completion would post
+      // the already-delivered final response again.
+      try {
+        await scheduleDeferredReplay(target, replayId);
+      } catch (scheduleError) {
+        log(
+          'Could not schedule deferred replay for thread=%s: %O',
+          platformThreadId,
+          scheduleError,
+        );
+      }
     }
   }
 
@@ -462,6 +511,8 @@ export class BotCallbackService {
       reason,
       lastAssistantContent,
       errorAttribution,
+      errorBudget,
+      errorHeterogeneous,
       errorMessage,
       errorType,
       operationId,
@@ -481,6 +532,8 @@ export class BotCallbackService {
         operationId,
         replyLocale,
         errorAttribution,
+        errorBudget,
+        errorHeterogeneous,
       );
       const errorText = client.formatMarkdown?.(errorBody) ?? errorBody;
       if (deliveredChunkCount < 1) {
@@ -850,6 +903,7 @@ export class BotCallbackService {
         const systemAgent = new SystemAgentService(this.db, userId, body.workspaceId ?? undefined);
         const title = await systemAgent.generateTopicTitle({
           lastAssistantContent,
+          topicId,
           userPrompt,
         });
         if (!title) return;

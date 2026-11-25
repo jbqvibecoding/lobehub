@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/server/services/calendar', () => ({
-  CalendarService: vi.fn().mockImplementation((...args: unknown[]) => {
+  CalendarService: vi.fn().mockImplementation(function (...args: unknown[]) {
     mocks.built.push(args);
     return mocks.service;
   }),

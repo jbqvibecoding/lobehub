@@ -97,7 +97,9 @@ vi.mock('@lobechat/chat-adapter-wechat', () => ({
 
 vi.mock('@/business/server/bot/featureAccess', () => ({
   assertBotFeatureAccess: mockAssertBotFeatureAccess,
-  withBotPlatformAccessMeta: vi.fn((platforms) => platforms),
+  withBotPlatformAccessMeta: vi.fn(function (platforms) {
+    return platforms;
+  }),
 }));
 
 vi.mock('@/config/messenger', () => ({
@@ -189,12 +191,16 @@ vi.mock('@/server/services/messenger', () => ({
     listSerializedPlatforms: vi.fn().mockReturnValue([]),
   },
   MessengerSlackBinder: vi.fn(),
-  MessengerTelegramBinder: vi.fn().mockImplementation(() => ({
-    notifyLinkSuccess: mockNotifyTelegramLinkSuccess,
-  })),
-  MessengerWechatMpBinder: vi.fn().mockImplementation(() => ({
-    askForLinkCode: mockAskForLinkCode,
-  })),
+  MessengerTelegramBinder: vi.fn().mockImplementation(function () {
+    return {
+      notifyLinkSuccess: mockNotifyTelegramLinkSuccess,
+    };
+  }),
+  MessengerWechatMpBinder: vi.fn().mockImplementation(function () {
+    return {
+      askForLinkCode: mockAskForLinkCode,
+    };
+  }),
   peekWechatQrSession: mockPeekWechatQrSession,
   peekConsumedLinkToken: mockPeekConsumedLinkToken,
   peekLinkToken: mockPeekLinkToken,
@@ -220,9 +226,11 @@ vi.mock('@/server/services/messenger/installations', () => ({
 
 vi.mock('@/server/services/bot/platforms/slack/api', () => ({
   SLACK_API_BASE: 'https://slack.com/api',
-  SlackApi: vi.fn().mockImplementation(() => ({
-    authTest: mockSlackAuthTest,
-  })),
+  SlackApi: vi.fn().mockImplementation(function () {
+    return {
+      authTest: mockSlackAuthTest,
+    };
+  }),
 }));
 
 vi.mock('@/database/models/file', () => ({
@@ -275,9 +283,13 @@ const buildTelegramLink = () => ({
 
 const createSelectBuilder = <T>(result: T) => {
   const builder = {
-    from: vi.fn(() => builder),
+    from: vi.fn(function () {
+      return builder;
+    }),
     limit: vi.fn().mockResolvedValue(result),
-    where: vi.fn(() => builder),
+    where: vi.fn(function () {
+      return builder;
+    }),
   };
 
   return builder;
@@ -285,9 +297,13 @@ const createSelectBuilder = <T>(result: T) => {
 
 const createAgentListBuilder = <T>(result: T) => {
   const builder = {
-    from: vi.fn(() => builder),
+    from: vi.fn(function () {
+      return builder;
+    }),
     orderBy: vi.fn().mockResolvedValue(result),
-    where: vi.fn(() => builder),
+    where: vi.fn(function () {
+      return builder;
+    }),
   };
 
   return builder;
@@ -436,7 +452,9 @@ describe('messengerRouter.pollWechatQrSession', () => {
       { id: 'agent-inbox', title: 'Biber', userId: 'user-1', workspaceId: null },
     ]);
     const serverDB = {
-      select: vi.fn(() => selectBuilder),
+      select: vi.fn(function () {
+        return selectBuilder;
+      }),
       transaction: vi.fn(),
     };
     serverDB.transaction.mockImplementation(async (callback: (tx: typeof serverDB) => unknown) =>
@@ -516,7 +534,9 @@ describe('messengerRouter.pollWechatQrSession', () => {
       { id: 'agent-inbox', title: 'Biber', userId: 'user-1', workspaceId: null },
     ]);
     const serverDB = {
-      select: vi.fn(() => selectBuilder),
+      select: vi.fn(function () {
+        return selectBuilder;
+      }),
       transaction: vi.fn(),
     };
     serverDB.transaction.mockImplementation(async (callback: (tx: typeof serverDB) => unknown) =>
@@ -562,7 +582,9 @@ describe('messengerRouter.pollWechatQrSession', () => {
       { id: 'agent-inbox', title: 'Biber', userId: 'user-1', workspaceId: null },
     ]);
     const serverDB = {
-      select: vi.fn(() => selectBuilder),
+      select: vi.fn(function () {
+        return selectBuilder;
+      }),
       transaction: vi.fn(),
     };
     serverDB.transaction.mockImplementation(async (callback: (tx: typeof serverDB) => unknown) =>
@@ -630,7 +652,11 @@ describe('messengerRouter.peekLinkToken', () => {
 
   it('returns status:active with payload when the token is live', async () => {
     const selectBuilder = createSelectBuilder([]);
-    const serverDB = { select: vi.fn(() => selectBuilder) };
+    const serverDB = {
+      select: vi.fn(function () {
+        return selectBuilder;
+      }),
+    };
     mockGetServerDB.mockResolvedValue(serverDB);
     mockPeekLinkToken.mockResolvedValue({
       platform: 'slack',
@@ -696,7 +722,11 @@ describe('messengerRouter.confirmLink', () => {
 
   it('blocks linking a different Telegram account when the user already has one', async () => {
     const selectBuilder = createSelectBuilder([{ id: 'agent-1', title: 'Agent 1' }]);
-    const serverDB = { select: vi.fn(() => selectBuilder) };
+    const serverDB = {
+      select: vi.fn(function () {
+        return selectBuilder;
+      }),
+    };
 
     mockGetServerDB.mockResolvedValue(serverDB);
     mockPeekLinkToken.mockResolvedValue({
@@ -726,7 +756,11 @@ describe('messengerRouter.confirmLink', () => {
 
   it('blocks linking a different Discord account when the user already has one', async () => {
     const selectBuilder = createSelectBuilder([{ id: 'agent-1', title: 'Agent 1' }]);
-    const serverDB = { select: vi.fn(() => selectBuilder) };
+    const serverDB = {
+      select: vi.fn(function () {
+        return selectBuilder;
+      }),
+    };
 
     mockGetServerDB.mockResolvedValue(serverDB);
     mockPeekLinkToken.mockResolvedValue({
@@ -756,7 +790,11 @@ describe('messengerRouter.confirmLink', () => {
 
   it('blocks linking a different Slack account in the same workspace when the user already has one', async () => {
     const selectBuilder = createSelectBuilder([{ id: 'agent-1', title: 'Agent 1' }]);
-    const serverDB = { select: vi.fn(() => selectBuilder) };
+    const serverDB = {
+      select: vi.fn(function () {
+        return selectBuilder;
+      }),
+    };
 
     mockGetServerDB.mockResolvedValue(serverDB);
     mockPeekLinkToken.mockResolvedValue({
@@ -788,7 +826,11 @@ describe('messengerRouter.confirmLink', () => {
     const selectBuilder = createSelectBuilder([
       { id: 'agent-1', title: 'Agent 1', userId: 'user-1', workspaceId: null },
     ]);
-    const serverDB = { select: vi.fn(() => selectBuilder) };
+    const serverDB = {
+      select: vi.fn(function () {
+        return selectBuilder;
+      }),
+    };
     const linkPayload = {
       platform: 'telegram',
       platformUserId: 'tg-same',
@@ -861,7 +903,11 @@ describe('messengerRouter.confirmLink', () => {
         workspaceId: 'workspace-1',
       },
     ]);
-    const serverDB = { select: vi.fn(() => selectBuilder) };
+    const serverDB = {
+      select: vi.fn(function () {
+        return selectBuilder;
+      }),
+    };
     const linkPayload = {
       platform: 'telegram',
       platformUserId: 'tg-same',
@@ -917,7 +963,11 @@ describe('messengerRouter.listAgentsForBinding', () => {
 
   it('rejects workspace-scoped agent listing when workspace feature is disabled', async () => {
     const selectBuilder = createAgentListBuilder([]);
-    const serverDB = { select: vi.fn(() => selectBuilder) };
+    const serverDB = {
+      select: vi.fn(function () {
+        return selectBuilder;
+      }),
+    };
 
     mockGetServerDB.mockResolvedValue(serverDB);
     mockGetServerFeatureFlagsStateFromRuntimeConfig.mockResolvedValue({ enableWorkspace: false });

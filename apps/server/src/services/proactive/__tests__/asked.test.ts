@@ -17,7 +17,9 @@ const mocks = vi.hoisted(() => ({ deliver: vi.fn(), review: vi.fn() }));
 
 vi.mock('@/database/server', () => ({ serverDB: {} }));
 vi.mock('../../push/PushChannel', () => ({
-  PushChannel: vi.fn(() => ({ deliver: mocks.deliver })),
+  PushChannel: vi.fn(function () {
+    return { deliver: mocks.deliver };
+  }),
 }));
 vi.mock('@/server/services/contentSafety', () => ({ reviewModelReply: mocks.review }));
 vi.mock('../compose', async (importOriginal) => ({

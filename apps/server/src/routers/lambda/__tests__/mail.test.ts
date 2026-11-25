@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/database/core/db-adaptor', () => ({ getServerDB: vi.fn(async () => ({})) }));
 vi.mock('@/server/services/mail', () => ({
-  MailService: vi.fn().mockImplementation((...args: unknown[]) => {
+  MailService: vi.fn().mockImplementation(function (...args: unknown[]) {
     mocks.built.push(args);
     return { read: mocks.read, search: mocks.search, send: mocks.send };
   }),

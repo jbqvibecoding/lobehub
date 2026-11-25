@@ -15,7 +15,9 @@ vi.mock('@/database/core/db-adaptor', () => ({
 
 const mockExecAgent = vi.fn();
 vi.mock('@/server/services/aiAgent', () => ({
-  AiAgentService: vi.fn().mockImplementation(() => ({ execAgent: mockExecAgent })),
+  AiAgentService: vi.fn().mockImplementation(function () {
+    return { execAgent: mockExecAgent };
+  }),
 }));
 
 const addToolCall = async (

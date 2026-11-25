@@ -28,11 +28,14 @@ import {
   type IdentityEntryPayload,
 } from '@/database/models/userMemory';
 import {
+  normalizeUserMemorySearchQueries,
+  shouldRunUserMemoryLexicalSearch,
   UserMemoryActivityModel,
   UserMemoryExperienceModel,
   UserMemoryIdentityModel,
   UserMemoryModel,
 } from '@/database/models/userMemory';
+import { FtsSearchCandidateError } from '@/database/repositories/ftsSearch';
 import { UserMemoryTopicRepository } from '@/database/repositories/userMemory';
 import {
   userMemories,
@@ -47,6 +50,11 @@ import { authedProcedure, router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { getServerDefaultFilesConfig } from '@/server/globalConfig';
 import { initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
+import { createFtsSearchRepo } from '@/server/services/ftsSearch';
+import {
+  recordUserMemoryLexicalSearchDecision,
+  type UserMemoryLexicalSearchSource,
+} from '@/server/services/ftsSearch/observability';
 import type { UserMemoryEmbeddingRuntime } from '@/server/services/memory/userMemory/embedding';
 import { embedUserMemoryTexts } from '@/server/services/memory/userMemory/embedding';
 import { normalizeSearchMemoryParams } from '@/server/services/memory/userMemory/searchParams';
@@ -124,14 +132,13 @@ const applySearchLimitsByEffort = (
 const searchUserMemories = async (
   ctx: MemorySearchContext,
   input: z.infer<typeof searchMemorySchema>,
+  source: UserMemoryLexicalSearchSource,
 ): Promise<SearchMemoryResult> => {
   const normalizedInput = normalizeSearchMemoryParams(input);
   const { provider, model: embeddingModel } =
     getServerDefaultFilesConfig().embeddingModel || DEFAULT_USER_MEMORY_EMBEDDING_MODEL_ITEM;
   const modelRuntime = await initModelRuntimeFromDB(ctx.serverDB, ctx.userId, provider);
-  const normalizedQueries = [
-    ...new Set((normalizedInput.queries ?? []).map((query) => query.trim()).filter(Boolean)),
-  ];
+  const normalizedQueries = normalizeUserMemorySearchQueries(normalizedInput.queries);
 
   const queryEmbeddings =
     normalizedQueries.length > 0
@@ -145,6 +152,12 @@ const searchUserMemories = async (
           })
         ).filter((embedding): embedding is number[] => Boolean(embedding))
       : [];
+  const lexicalSearch = shouldRunUserMemoryLexicalSearch(normalizedQueries, queryEmbeddings);
+  recordUserMemoryLexicalSearchDecision({
+    decision: lexicalSearch ? 'executed' : 'skipped_long_context',
+    queryCharacters: Array.from(normalizedQueries.join(' ')).length,
+    source,
+  });
 
   const effectiveEffort = normalizeMemoryEffort(normalizedInput.effort ?? ctx.memoryEffort);
   const effortDefaults = MEMORY_SEARCH_TOP_K_LIMITS[effectiveEffort];
@@ -239,6 +252,11 @@ const normalizeEmbeddable = (value?: string | null): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+/** Candidate-provider outages must not be converted into successful empty memory responses. */
+const rethrowCandidateSearchError = (error: unknown) => {
+  if (error instanceof FtsSearchCandidateError) throw error;
+};
+
 const memoryProcedure = authedProcedure.use(serverDatabase).use(async (opts) => {
   const { ctx } = opts;
   const userSettingsRow = await ctx.serverDB.query.userSettings.findFirst({
@@ -258,6 +276,23 @@ const memoryProcedure = authedProcedure.use(serverDatabase).use(async (opts) => 
       identityModel: new UserMemoryIdentityModel(ctx.serverDB, ctx.userId),
       memoryModel: new UserMemoryModel(ctx.serverDB, ctx.userId),
       memoryEffort,
+    },
+  });
+});
+const memorySearchProcedure = memoryProcedure.use(async (opts) => {
+  const { ctx } = opts;
+  const ftsSearchRepo = await createFtsSearchRepo({
+    db: ctx.serverDB,
+    userId: ctx.userId,
+    usage: 'memory',
+  });
+
+  return opts.next({
+    ctx: {
+      activityModel: new UserMemoryActivityModel(ctx.serverDB, ctx.userId, ftsSearchRepo),
+      experienceModel: new UserMemoryExperienceModel(ctx.serverDB, ctx.userId, ftsSearchRepo),
+      identityModel: new UserMemoryIdentityModel(ctx.serverDB, ctx.userId, ftsSearchRepo),
+      memoryModel: new UserMemoryModel(ctx.serverDB, ctx.userId, ftsSearchRepo),
     },
   });
 });
@@ -282,7 +317,7 @@ export const userMemoriesRouter = router({
       }
     }),
 
-  queryActivities: memoryProcedure
+  queryActivities: memorySearchProcedure
     .input(
       z
         .object({
@@ -305,12 +340,13 @@ export const userMemoriesRouter = router({
       try {
         return await ctx.activityModel.queryList(params);
       } catch (error) {
+        rethrowCandidateSearchError(error);
         console.error('Failed to query activities:', error);
         return { items: [], page: fallbackPage, pageSize: fallbackPageSize, total: 0 };
       }
     }),
 
-  queryExperiences: memoryProcedure
+  queryExperiences: memorySearchProcedure
     .input(
       z
         .object({
@@ -332,12 +368,13 @@ export const userMemoriesRouter = router({
       try {
         return await ctx.experienceModel.queryList(params);
       } catch (error) {
+        rethrowCandidateSearchError(error);
         console.error('Failed to query experiences:', error);
         return { items: [], page: fallbackPage, pageSize: fallbackPageSize, total: 0 };
       }
     }),
 
-  queryIdentities: memoryProcedure
+  queryIdentities: memorySearchProcedure
     .input(
       z
         .object({
@@ -360,6 +397,7 @@ export const userMemoriesRouter = router({
       try {
         return await ctx.identityModel.queryList(params);
       } catch (error) {
+        rethrowCandidateSearchError(error);
         console.error('Failed to query identities:', error);
         return { items: [], page: fallbackPage, pageSize: fallbackPageSize, total: 0 };
       }
@@ -394,7 +432,7 @@ export const userMemoriesRouter = router({
       }
     }),
 
-  queryMemories: memoryProcedure
+  queryMemories: memorySearchProcedure
     .input(
       z
         .object({
@@ -432,6 +470,7 @@ export const userMemoriesRouter = router({
           sort: params.sort,
         });
       } catch (error) {
+        rethrowCandidateSearchError(error);
         console.error('Failed to query memories:', error);
         return { items: [], page: fallbackPage, pageSize: fallbackPageSize, total: 0 };
       }
@@ -934,7 +973,7 @@ export const userMemoriesRouter = router({
    * Retrieve memories for a specific topic
    * Uses concatenated user messages (first 7000 chars) as the search query
    */
-  retrieveMemoryForTopic: memoryProcedure
+  retrieveMemoryForTopic: memorySearchProcedure
     .input(z.object({ topicId: z.string() }))
     .query(async ({ ctx, input }) => {
       // Dev-only escape hatch: skip the embedding + memory search triggered by topic
@@ -965,18 +1004,20 @@ export const userMemoriesRouter = router({
           topK: DEFAULT_SEARCH_USER_MEMORY_TOP_K,
         };
 
-        const result = await searchUserMemories(ctx, searchParams);
+        const result = await searchUserMemories(ctx, searchParams, 'topic_retrieval');
         return result;
       } catch (error) {
+        rethrowCandidateSearchError(error);
         console.error('Failed to retrieve memory for topic:', error);
         return EMPTY_SEARCH_RESULT;
       }
     }),
 
-  searchMemory: memoryProcedure.input(searchMemorySchema).query(async ({ input, ctx }) => {
+  searchMemory: memorySearchProcedure.input(searchMemorySchema).query(async ({ input, ctx }) => {
     try {
-      return await searchUserMemories(ctx, input);
+      return await searchUserMemories(ctx, input, 'api');
     } catch (error) {
+      rethrowCandidateSearchError(error);
       console.error('Failed to retrieve memories:', error);
       return EMPTY_SEARCH_RESULT;
     }
@@ -1311,10 +1352,12 @@ export const userMemoriesRouter = router({
       }
     }),
 
-  toolSearchMemory: memoryProcedure.input(searchMemorySchema).query(async ({ input, ctx }) => {
-    const result = await searchUserMemories(ctx, input);
-    return result;
-  }),
+  toolSearchMemory: memorySearchProcedure
+    .input(searchMemorySchema)
+    .query(async ({ input, ctx }) => {
+      const result = await searchUserMemories(ctx, input, 'tool');
+      return result;
+    }),
 
   toolUpdateIdentityMemory: memoryToolWriteProcedure
     .input(UpdateIdentityActionSchema)
