@@ -8,6 +8,7 @@ import { agentService } from '@/services/agent';
 import { messageService } from '@/services/message';
 import { notebookService } from '@/services/notebook';
 import { profileService } from '@/services/profile';
+import { sandboxStorageService } from '@/services/sandboxStorage';
 import { userService } from '@/services/user';
 import { getAgentStoreState } from '@/store/agent';
 import { agentSelectors } from '@/store/agent/selectors';
@@ -233,6 +234,16 @@ export const createBrowserContextFactProviders = ({
     chatSelectors
       .currentUserFiles(getChatStoreState())
       .map((file) => ({ name: file.name, size: file.size })),
+
+  // Asked of the server, because the placement follows an entitlement only it
+  // can resolve. Left unimplemented, the prompt described a disposable sandbox
+  // to a run that had a persistent directory, and the model — told its files
+  // would not survive — cloned into /tmp.
+  resolveSandboxPersistence: async () => {
+    const topicId = getChatStoreState().activeTopicId ?? undefined;
+    const placement = await sandboxStorageService.resolveSessionPlacement({ topicId });
+    return placement ?? undefined;
+  },
 
   listTopicMessages: async (topic) => {
     const msgs = await messageService.getMessages({

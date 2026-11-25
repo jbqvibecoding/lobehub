@@ -18,6 +18,7 @@ import { memoryExecutor } from '@lobechat/builtin-tool-memory/executor';
 import { profileExecutor } from '@lobechat/builtin-tool-profile/client/executor';
 import { remindersExecutor } from '@lobechat/builtin-tool-reminders/client/executor';
 import { taskExecutor } from '@lobechat/builtin-tool-task/client/executor';
+import { videoGenerationExecutor } from '@lobechat/builtin-tool-video-generation/executor';
 
 import type { IBuiltinToolExecutor } from '../types';
 import {
@@ -37,6 +38,7 @@ import {
 } from './heteroCli';
 import { activatorExecutor } from './lobe-activator';
 import { agentDocumentsExecutor } from './lobe-agent-documents';
+import { attachmentsExecutor } from './lobe-attachments';
 import { messageExecutor } from './lobe-message';
 import { notebookExecutor } from './lobe-notebook';
 import { pageAgentExecutor } from './lobe-page-agent';
@@ -67,6 +69,7 @@ export const builtinToolExecutors = [
   agentBuilderExecutor,
   agentDocumentsExecutor,
   agentManagementExecutor,
+  attachmentsExecutor,
   auvExecutor,
   calculatorExecutor,
   cloudSandboxExecutor,
@@ -91,6 +94,7 @@ export const builtinToolExecutors = [
   skillStoreExecutor,
   skillsExecutor,
   taskExecutor,
+  videoGenerationExecutor,
   activatorExecutor,
   topicReferenceExecutor,
   userInteractionExecutor,

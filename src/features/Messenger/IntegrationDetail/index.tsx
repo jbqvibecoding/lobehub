@@ -5,6 +5,7 @@ import { memo } from 'react';
 import type { MessengerPlatform } from '../constants';
 import DiscordDetail from './Discord';
 import LarkDetail from './Lark';
+import LinqDetail from './Linq';
 import SharedBotDetail from './SharedBot';
 import SlackDetail from './Slack';
 import WechatDetail from './Wechat';
@@ -56,6 +57,9 @@ const IntegrationDetail = memo<IntegrationDetailProps>(
       }
       case 'wechat': {
         return <WechatDetail {...rest} />;
+      }
+      case 'linq': {
+        return <LinqDetail {...rest} />;
       }
     }
   },

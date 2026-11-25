@@ -4,6 +4,7 @@ import type { ConnectionMode } from '../../bot/platforms';
 import { DiscordInstallationStore } from './discord';
 import { ImessageInstallationStore } from './imessage';
 import { LarkInstallationStore } from './lark';
+import { LinqInstallationStore } from './linq';
 import { SlackInstallationStore } from './slack';
 import { TelegramInstallationStore } from './telegram';
 import type { MessengerInstallationStore } from './types';
@@ -40,6 +41,9 @@ const create = (platform: MessengerPlatform): MessengerInstallationStore | null 
     }
     case 'wechat': {
       return new WechatInstallationStore();
+    }
+    case 'linq': {
+      return new LinqInstallationStore();
     }
     default: {
       return null;
@@ -133,6 +137,7 @@ export const messengerConnectionIdForUser = (params: {
 export { DISCORD_INSTALLATION_KEY, DiscordInstallationStore } from './discord';
 export { IMESSAGE_INSTALLATION_KEY, ImessageInstallationStore } from './imessage';
 export { LarkInstallationStore } from './lark';
+export { LINQ_INSTALLATION_KEY, LinqInstallationStore } from './linq';
 export { SlackInstallationStore } from './slack';
 export { TELEGRAM_INSTALLATION_KEY, TelegramInstallationStore } from './telegram';
 export type { InstallationCredentials, MessengerInstallationStore } from './types';

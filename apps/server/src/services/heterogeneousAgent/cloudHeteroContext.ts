@@ -1,3 +1,5 @@
+import type { SandboxMode } from '@lobechat/builtin-tool-cloud-sandbox';
+
 export interface ConversationHistoryEntry {
   content: string;
   role: 'assistant' | 'user';
@@ -17,6 +19,18 @@ export interface ConversationHistoryEntry {
  * via sandboxRunner → spawnHeteroSandbox. If nothing meaningful to inject,
  * returns undefined so no extra block is added.
  */
+/**
+ * Where the run keeps its files. Absent or `ephemeral` renders the original
+ * wording byte for byte; `persistent` describes the instance directory the
+ * execution plane starts the run in — by its place in the workspace, never by
+ * an absolute path, which is the plane's to choose.
+ */
+export interface CloudHeteroSandboxPlacement {
+  /** Chosen subdirectory of the workspace, relative to its root. */
+  cwd?: string;
+  mode?: SandboxMode;
+}
+
 export function buildCloudHeteroContext(params: {
   repos: string[];
   /** Static systemContext from HeterogeneousProviderConfig.systemContext (agent-level). */
@@ -32,8 +46,10 @@ export function buildCloudHeteroContext(params: {
    * false on a sandbox that is recycled after about an hour.
    */
   persistentWorkspace?: boolean;
+  sandbox?: CloudHeteroSandboxPlacement;
 }): string {
-  const { repos, agentSystemContext, conversationHistory, persistentWorkspace } = params;
+  const { repos, agentSystemContext, conversationHistory, persistentWorkspace, sandbox } = params;
+  const persistent = sandbox?.mode === 'persistent';
 
   const parts: string[] = [];
 
@@ -43,14 +59,28 @@ export function buildCloudHeteroContext(params: {
   }
 
   // --- Cloud workspace context ---
-  // No credential of any kind is put in the sandbox (the run token reports this run and nothing
-  // else), so the agent is told plainly not to try pushing or authenticating.
+  // Where the run keeps its files: a persistent environment instance, the user's own cloud
+  // computer, or an ephemeral sandbox. No credential of any kind is put in the sandbox (the run
+  // token reports this run and nothing else), so the agent is told plainly not to try pushing or
+  // authenticating.
+  const placementLines: string[] = persistent
+    ? [
+        '## Cloud Workspace',
+        sandbox?.cwd
+          ? `You are running inside a cloud sandbox. Your working directory is \`${sandbox.cwd}\`, a subdirectory of a **persistent workspace**: files written there survive session expiry and are still there in your next session.`
+          : 'You are running inside a cloud sandbox. Your working directory is a **persistent workspace**: files written there survive session expiry and are shared with the other conversation topics that use this workspace.',
+        "The workspace root is above you. Its other subdirectories belong to this user's other topics — reachable with relative paths, but do not write into them unless the user asks.",
+        'The workspace is network storage: fine for source files, results and notes, but slow for the thousands of small files a package install or a build writes. Install packages and build where the toolchain puts things by default.',
+      ]
+    : [
+        '## Cloud Workspace',
+        'You are running inside a cloud sandbox. Your working directory is `/workspace`.',
+        persistentWorkspace
+          ? "This is the user's own cloud computer: files in `/workspace` are kept between conversations, but it is not a backup."
+          : 'This sandbox is ephemeral: it is destroyed after about an hour of inactivity, and files in `/workspace` go with it.',
+      ];
   const workspaceLines: string[] = [
-    '## Cloud Workspace',
-    'You are running inside a cloud sandbox. Your working directory is `/workspace`.',
-    persistentWorkspace
-      ? "This is the user's own cloud computer: files in `/workspace` are kept between conversations, but it is not a backup."
-      : 'This sandbox is ephemeral: it is destroyed after about an hour of inactivity, and files in `/workspace` go with it.',
+    ...placementLines,
     '',
     '## No Credentials',
     'This sandbox holds no GitHub token or other account credentials, and none will be given to you.',
@@ -58,15 +88,19 @@ export function buildCloudHeteroContext(params: {
     '- Commit your work locally in its repository. To hand changes or files to the user, use the tools your instructions name; without such a tool, say in your reply exactly what you changed and where it is.',
   ];
 
+  // Repos are cloned into the working directory, wherever that is: an absolute
+  // path is only known for the ephemeral box.
+  const repoRoot = persistent ? '.' : '/workspace';
+  const repoRootLabel = persistent ? 'your working directory' : '`/workspace`';
   if (repos.length > 0) {
     workspaceLines.push(
       '',
       '## GitHub Repositories',
-      'The following repositories were pre-cloned into `/workspace` before this conversation started:',
+      `The following repositories were pre-cloned into ${repoRootLabel} before this conversation started:`,
       ...repos.map((repo) => {
         const dir = repoToLocalDir(repo);
         const url = toGithubUrl(repo);
-        return `- \`/workspace/${dir}\`  (${url})`;
+        return `- \`${repoRoot}/${dir}\`  (${url})`;
       }),
       '',
       'You can start working in any of these directories immediately.',

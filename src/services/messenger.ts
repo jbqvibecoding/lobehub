@@ -3,12 +3,20 @@ import type { MessengerOversizeImageStrategy } from '@lobechat/const';
 import { lambdaClient } from '@/libs/trpc/client';
 
 type MessengerPlatform =
-  'telegram' | 'slack' | 'discord' | 'wechat' | 'imessage' | 'lark' | 'feishu' | 'wechatmp';
+  | 'telegram'
+  | 'slack'
+  | 'discord'
+  | 'wechat'
+  | 'linq'
+  | 'imessage'
+  | 'lark'
+  | 'feishu'
+  | 'wechatmp';
 
 /** The platforms upstream's push-to-my-DM supports; Biber's shared bots have no push */
 type MessengerPushPlatform = Extract<
   MessengerPlatform,
-  'discord' | 'slack' | 'telegram' | 'wechat'
+  'discord' | 'linq' | 'slack' | 'telegram' | 'wechat'
 >;
 
 class MessengerService {
@@ -66,6 +74,14 @@ class MessengerService {
 
   pollWechatQrSession = async (sessionId: string) => {
     return lambdaClient.messenger.pollWechatQrSession.mutate({ sessionId });
+  };
+
+  createLinqLink = async () => {
+    return lambdaClient.messenger.createLinqLink.mutate();
+  };
+
+  pollLinqLink = async (pollId: string) => {
+    return lambdaClient.messenger.pollLinqLink.query({ pollId });
   };
 
   getMessengerPushWindow = async (platform: MessengerPushPlatform, tenantId?: string) => {

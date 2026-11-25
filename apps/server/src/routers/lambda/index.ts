@@ -52,7 +52,9 @@ import { computerRouter } from './computer';
 import { computerToolsRouter } from './computerTools';
 import { configRouter } from './config';
 import { connectorRouter } from './connector';
+import { dashboardRouter } from './dashboard';
 import { deviceRouter } from './device';
+import { deviceMetricRouter } from './deviceMetric';
 import { documentRouter } from './document';
 import { documentCommentRouter } from './documentComment';
 import { documentLikeRouter } from './documentLike';
@@ -89,6 +91,8 @@ import { recentRouter } from './recent';
 import { remindersRouter } from './reminders';
 import { resourcePermissionRouter } from './resourcePermission';
 import { resourceTransferRequestRouter } from './resourceTransferRequest';
+import { sandboxStorageRouter } from './sandboxStorage';
+import { scmRouter } from './scm';
 import { searchRouter } from './search';
 import { sessionRouter } from './session';
 import { sessionGroupRouter } from './sessionGroup';
@@ -98,6 +102,7 @@ import { taskRouter } from './task';
 import { threadRouter } from './thread';
 import { topicRouter } from './topic';
 import { topicCommentRouter } from './topicComment';
+import { trashRouter } from './trash';
 import { uploadRouter } from './upload';
 import { usageRouter } from './usage';
 import { userRouter } from './user';
@@ -106,6 +111,7 @@ import { userMemoryRouter } from './userMemory';
 import { verifyRouter } from './verify';
 import { videoRouter } from './video';
 import { webBrowsingRouter } from './webBrowsing';
+import { widgetRouter } from './widget';
 import { workRouter } from './work';
 import { workspaceUserSettingsRouter } from './workspaceUserSettings';
 
@@ -121,6 +127,7 @@ export const lambdaRouter = router({
   agentEvalExternal: agentEvalExternalRouter,
   agentLabel: agentLabelRouter,
   agentSkills: agentSkillsRouter,
+  sandboxStorage: sandboxStorageRouter,
   agentTrace: agentTraceRouter,
   expertise: expertiseRouter,
   agentSignal: agentSignalRouter,
@@ -138,7 +145,9 @@ export const lambdaRouter = router({
   comfyui: comfyuiRouter,
   config: configRouter,
   connector: connectorRouter,
+  dashboard: dashboardRouter,
   device: deviceRouter,
+  deviceMetric: deviceMetricRouter,
   document: documentRouter,
   documentComment: documentCommentRouter,
   documentLike: documentLikeRouter,
@@ -182,6 +191,7 @@ export const lambdaRouter = router({
   resourcePermission: resourcePermissionRouter,
   resourceTransferRequest: resourceTransferRequestRouter,
   search: searchRouter,
+  scm: scmRouter,
   session: sessionRouter,
   sessionGroup: sessionGroupRouter,
   share: shareRouter,
@@ -189,6 +199,7 @@ export const lambdaRouter = router({
   task: taskRouter,
   thread: threadRouter,
   topic: topicRouter,
+  trash: trashRouter,
   topicComment: topicCommentRouter,
   upload: uploadRouter,
   usage: usageRouter,
@@ -198,6 +209,7 @@ export const lambdaRouter = router({
   verify: verifyRouter,
   video: videoRouter,
   webBrowsing: webBrowsingRouter,
+  widget: widgetRouter,
   work: workRouter,
   workspace: workspaceRouter,
   workspaceAuditLog: workspaceAuditLogRouter,

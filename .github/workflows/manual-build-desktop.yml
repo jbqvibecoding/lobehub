@@ -126,6 +126,8 @@ jobs:
         env:
           UPDATE_CHANNEL: ${{ inputs.channel }}
           APP_REGION: global
+          UPDATE_SERVER_URL: ${{ secrets.UPDATE_SERVER_URL }}
+          SPARKLE_ED_PUBLIC_KEY: ${{ secrets.SPARKLE_ED_PUBLIC_KEY }}
           APP_URL: http://localhost:3015
           DATABASE_URL: 'postgresql://postgres@localhost:5432/postgres'
           KEY_VAULTS_SECRET: 'oLXWIiR/AKF+rWaqy9lHkrYgzpATbW3CtJp3UfkVgpE='

@@ -15,6 +15,7 @@ import {
   requireWorkspaceRoleWhenScoped,
   wsCompatProcedure,
 } from '@/business/server/trpc-middlewares/workspaceAuth';
+import { AiModelModel } from '@/database/models/aiModel';
 import { AiProviderModel } from '@/database/models/aiProvider';
 import { UserModel } from '@/database/models/user';
 import { AiInfraRepos } from '@/database/repositories/aiInfra';
@@ -65,6 +66,7 @@ const aiProviderProcedure = wsCompatProcedure.use(serverDatabase).use(async (opt
         aiProvider as Record<string, ProviderConfig>,
         ctx.workspaceId ?? undefined,
       ),
+      aiModelModel: new AiModelModel(ctx.serverDB, ctx.userId, ctx.workspaceId ?? undefined),
       aiProviderModel: new AiProviderModel(ctx.serverDB, ctx.userId, ctx.workspaceId ?? undefined),
       gateKeeper,
       userModel: new UserModel(ctx.serverDB, ctx.userId),
@@ -198,12 +200,16 @@ export const aiProviderRouter = router({
   getAiProviderRuntimeState: aiProviderProcedure
     .input(z.object({ isLogin: z.boolean().optional() }))
     .query(async ({ ctx }): Promise<AiProviderRuntimeState> => {
-      // Only the providers this edition offers (see `offeredRuntimeState`)
-      const state = offeredRuntimeState(
-        await getUserScopedAiProviderRuntimeState(ctx.userId, () =>
+      const [scopedState, modelReasoningConfigs] = await Promise.all([
+        getUserScopedAiProviderRuntimeState(ctx.userId, () =>
           ctx.aiInfraRepos.getAiProviderRuntimeState(KeyVaultsGateKeeper.getUserKeyVaults),
         ),
-      );
+        // Loaded here rather than in the shared runtime-state loader: only the
+        // client model list needs it, and server-side callers skip the query
+        ctx.aiModelModel.getAllModelReasoningConfigs(),
+      ]);
+      // Only the providers this edition offers (see `offeredRuntimeState`)
+      const state = offeredRuntimeState({ ...scopedState, modelReasoningConfigs });
       const providerBindingAgentTypes = resolveProviderBindingAgentTypes(state);
 
       // restricted API keys must not exfiltrate decrypted provider credentials

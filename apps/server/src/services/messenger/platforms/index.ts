@@ -5,6 +5,7 @@ import { regionEnv } from '@/envs/region';
 import { discord } from './discord';
 import { imessage } from './imessage';
 import { feishu, lark } from './lark';
+import { linq } from './linq';
 import { MessengerPlatformRegistry } from './registry';
 import { slack } from './slack';
 import { telegram } from './telegram';
@@ -14,6 +15,7 @@ import { wechatmp } from './wechatmp';
 export { MessengerDiscordBinder } from './discord';
 export { MessengerImessageBinder } from './imessage';
 export { MessengerLarkBinder } from './lark';
+export { linqWebhookGate, MessengerLinqBinder } from './linq';
 export { MessengerPlatformRegistry } from './registry';
 export { MessengerSlackBinder, slackWebhookGate } from './slack';
 export { MessengerTelegramBinder } from './telegram';
@@ -33,7 +35,19 @@ export { MessengerWechatMpBinder } from './wechatmp';
 export const messengerPlatformRegistry = new MessengerPlatformRegistry();
 
 // The mainland edition offers only the bots reachable from mainland China (see @lobechat/region).
-for (const definition of [slack, telegram, discord, wechat, imessage, lark, feishu, wechatmp]) {
+// Upstream's `linq` (a shared Linq number pool, iMessage and SMS) sits beside Biber's `imessage`
+// (iMessage only, with approvals); it is offered only when its own credentials are configured.
+for (const definition of [
+  slack,
+  telegram,
+  discord,
+  wechat,
+  linq,
+  imessage,
+  lark,
+  feishu,
+  wechatmp,
+]) {
   if (isMessengerPlatformAvailable(regionEnv.APP_REGION, definition.id)) {
     messengerPlatformRegistry.register(definition);
   }

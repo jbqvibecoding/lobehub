@@ -112,6 +112,7 @@ export const createServerAgentToolsEngine = (
     executionPlan,
     globalMemoryEnabled = false,
     hasEnabledKnowledgeBases = false,
+    hasOversizedFiles = false,
     isBotConversation = false,
     isGroupSupervisor = false,
     manifestContext,
@@ -160,6 +161,7 @@ export const createServerAgentToolsEngine = (
     disabledPluginIds,
     executionTarget,
     hasEnabledKnowledgeBases,
+    hasOversizedFiles,
     isBotConversation,
     isGroupSupervisor,
     // Local tools reach a machine only through an online, auto-activated

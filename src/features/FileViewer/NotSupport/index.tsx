@@ -25,10 +25,18 @@ interface NotSupportProps {
   /** Why there is no preview; replaces the default note that invites preview requests */
   message?: ReactNode;
   style?: CSSProperties;
+  /** Explain a bounded-preview limit instead of claiming the format is unsupported. */
+  tooLarge?: boolean;
   url?: string | null;
 }
 
-const NotSupport: ComponentType<NotSupportProps> = ({ fileName, message, url, style }) => {
+const NotSupport: ComponentType<NotSupportProps> = ({
+  fileName,
+  message,
+  url,
+  style,
+  tooLarge,
+}) => {
   const { t } = useTranslation('file');
   const [loading, setLoading] = useState(false);
 
@@ -38,7 +46,9 @@ const NotSupport: ComponentType<NotSupportProps> = ({ fileName, message, url, st
         <Flexbox align={'center'} gap={12}>
           <FluentEmoji emoji={'👀'} size={64} />
           <Flexbox style={{ textAlign: 'center' }}>
-            {message ?? (
+            {(message ?? tooLarge) ? (
+              (message ?? t('preview.tooLarge'))
+            ) : (
               <Trans
                 i18nKey="preview.unsupportedFileAndContact"
                 ns={'file'}

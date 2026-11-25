@@ -4,23 +4,6 @@ import { snapdom } from '@zumer/snapdom';
 import dayjs from 'dayjs';
 import { useCallback, useState } from 'react';
 
-import { getServerConfigStoreState, serverConfigSelectors } from '@/store/serverConfig';
-
-/**
- * Fetches cross-origin images for the export, so they are not left blank. Every such image's
- * full address goes to this service abroad, so only the Global edition uses it.
- */
-const CROSS_ORIGIN_IMAGE_PROXY = 'https://proxy.corsfix.com/?';
-
-/** Outside the Global edition, images that refuse cross-origin reads export as grey boxes. */
-const imageProxyOption = () => {
-  const state = getServerConfigStoreState();
-
-  return state && serverConfigSelectors.isGlobalEdition(state)
-    ? { useProxy: CROSS_ORIGIN_IMAGE_PROXY }
-    : {};
-};
-
 export enum ImageType {
   JPG = 'jpg',
   PNG = 'png',
@@ -54,6 +37,7 @@ export const getImageUrl = async ({
   }
 
   const baseOptions = {
+    placeholders: false,
     scale: 2,
     width,
   };
@@ -69,8 +53,8 @@ export const getImageUrl = async ({
     // For raster formats, use toBlob directly with type option
     const blobType = (imageType === ImageType.JPG ? 'jpg' : imageType) as 'png' | 'jpg' | 'webp';
     const blobResult = await snapdom.toBlob(width ? copy : dom, {
+      ...baseOptions,
       type: blobType,
-      ...imageProxyOption(),
     });
 
     if (!blobResult) {

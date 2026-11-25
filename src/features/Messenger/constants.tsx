@@ -2,16 +2,25 @@ import { Discord, IMessage, Lark, Slack, Telegram, WeChat } from '@lobehub/ui/ic
 import type { ReactNode } from 'react';
 
 export type MessengerPlatform =
-  'telegram' | 'slack' | 'discord' | 'wechat' | 'imessage' | 'lark' | 'feishu' | 'wechatmp';
+  | 'telegram'
+  | 'slack'
+  | 'discord'
+  | 'wechat'
+  | 'linq'
+  | 'imessage'
+  | 'lark'
+  | 'feishu'
+  | 'wechatmp';
 
 /** The platforms upstream's push-to-my-DM supports; Biber's shared bots have no push */
 export type MessengerPushPlatform = Extract<
   MessengerPlatform,
-  'discord' | 'slack' | 'telegram' | 'wechat'
+  'discord' | 'linq' | 'slack' | 'telegram' | 'wechat'
 >;
 
 export const MESSENGER_PUSH_PLATFORMS: readonly MessengerPushPlatform[] = [
   'discord',
+  'linq',
   'slack',
   'telegram',
   'wechat',
@@ -22,6 +31,7 @@ export const SUPPORTED_MESSENGER_PLATFORMS = [
   { id: 'slack', name: 'Slack' },
   { id: 'discord', name: 'Discord' },
   { id: 'wechat', name: 'WeChat' },
+  { id: 'linq', name: 'iMessage' },
   { id: 'imessage', name: 'iMessage' },
   { id: 'lark', name: 'Lark' },
   { id: 'feishu', name: 'Feishu' },
@@ -42,6 +52,7 @@ export type LarkFamilyPlatform = Extract<MessengerPlatform, 'feishu' | 'lark'>;
 
 export const PLATFORM_TAB_ICONS: Record<MessengerPlatform, ReactNode> = {
   discord: <Discord.Color size={16} />,
+  linq: <IMessage.Color size={16} />,
   imessage: <IMessage.Color size={16} />,
   feishu: <Lark.Color size={16} />,
   lark: <Lark.Color size={16} />,
@@ -64,6 +75,7 @@ export const PlatformAvatar = ({
   if (platform === 'lark' || platform === 'feishu') return <Lark.Avatar size={size} />;
   if (platform === 'wechatmp') return <WeChat.Avatar size={size} />;
   if (platform === 'wechat') return <WeChat.Avatar size={size} />;
+  if (platform === 'linq') return <IMessage.Avatar size={size} />;
   return <Slack.Avatar size={size} />;
 };
 
@@ -80,6 +92,7 @@ export const PlatformBrandIcon = ({
   if (platform === 'lark' || platform === 'feishu') return <Lark.Color size={size} />;
   if (platform === 'wechatmp') return <WeChat.Color size={size} />;
   if (platform === 'wechat') return <WeChat.Color size={size} />;
+  if (platform === 'linq') return <IMessage.Color size={size} />;
   return <Slack.Color size={size} />;
 };
 

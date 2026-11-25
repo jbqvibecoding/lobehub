@@ -1,11 +1,17 @@
 'use client';
 
-import { CloseCircleFilled, DownloadOutlined } from '@ant-design/icons';
 import type { BuiltinRenderProps } from '@lobechat/types';
-import { Flexbox } from '@lobehub/ui';
+import { Flexbox, Icon } from '@lobehub/ui';
 import { ActionIcon, Text } from '@lobehub/ui/base-ui';
 import { createStaticStyles, cssVar } from 'antd-style';
-import { FileIcon, FileSpreadsheet, FileText, Presentation } from 'lucide-react';
+import {
+  CircleXIcon,
+  DownloadIcon,
+  FileIcon,
+  FileSpreadsheet,
+  FileText,
+  Presentation,
+} from 'lucide-react';
 import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -30,9 +36,6 @@ const styles = createStaticStyles(({ css }) => ({
   icon: css`
     flex: none;
     color: ${cssVar.colorTextSecondary};
-  `,
-  statusIcon: css`
-    font-size: 12px;
   `,
 }));
 
@@ -91,7 +94,7 @@ const ExportFile = memo<BuiltinRenderProps<ExportFileParams, ExportFileState>>(
     if (!pluginState.success || !pluginState.downloadUrl) {
       return (
         <Flexbox horizontal align={'center'} className={styles.failed} gap={8}>
-          <CloseCircleFilled className={styles.statusIcon} style={{ color: cssVar.colorError }} />
+          <Icon color={cssVar.colorError} icon={CircleXIcon} size={12} />
           <Text code fontSize={12}>
             {t('builtins.lobe-cloud-sandbox.exportFile.failed', { path: args.path })}
           </Text>
@@ -99,13 +102,13 @@ const ExportFile = memo<BuiltinRenderProps<ExportFileParams, ExportFileState>>(
       );
     }
 
-    const Icon = iconFor(filename);
+    const TypeIcon = iconFor(filename);
     const extension = filename.split('.').pop()?.toUpperCase();
     const details = [extension, formatSize(pluginState.size)].filter(Boolean).join(' · ');
 
     return (
       <Flexbox horizontal align={'center'} className={styles.card} gap={12}>
-        <Icon className={styles.icon} size={28} />
+        <TypeIcon className={styles.icon} size={28} />
         <Flexbox flex={1} gap={2} style={{ minWidth: 0 }}>
           <Text ellipsis weight={500}>
             {filename}
@@ -117,7 +120,7 @@ const ExportFile = memo<BuiltinRenderProps<ExportFileParams, ExportFileState>>(
           )}
         </Flexbox>
         <ActionIcon
-          icon={DownloadOutlined}
+          icon={DownloadIcon}
           title={t('builtins.lobe-cloud-sandbox.exportFile.download')}
           onClick={handleDownload}
         />

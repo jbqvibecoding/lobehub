@@ -11,6 +11,7 @@ import debug from 'debug';
 import { appEnv } from '@/envs/app';
 import type { MarketService } from '@/server/services/market';
 import { createSandboxService } from '@/server/services/sandbox';
+import type { SandboxSessionConfig } from '@/server/services/sandbox/session';
 
 const log = debug('lobe-server:hetero-sandbox-runner');
 
@@ -47,6 +48,16 @@ export interface SandboxRunParams {
   /** Full system context used only by the automatic retry without native resume. */
   resumeFallbackSystemContext?: string;
   resumeSessionId?: string;
+  /**
+   * Where this run keeps its files — the topic's persistence preferences as
+   * `resolveSandboxSessionConfig` resolved them. Absent means the throwaway
+   * sandbox every run used before persistence existed. The entitlement itself
+   * travels on `marketService`'s trust token, not here.
+   */
+  sandbox?: Pick<
+    SandboxSessionConfig,
+    'cwd' | 'environment' | 'mode' | 'specification' | 'workingDir'
+  >;
   /**
    * Optional context injected as a text block BEFORE the user's prompt.
    * Useful for priming CC with workspace state (cloned repos, env info, etc.).
@@ -120,18 +131,31 @@ export async function spawnHeteroSandbox(
     prompt,
     repos,
     resumeSessionId,
+    sandbox,
     topicId,
     userId,
     workspaceId,
   } = params;
 
-  // For cloud sandbox, default cwd is /workspace — must be explicit so CC stores and
-  // finds session files at the same path on every invocation (session files live under
-  // ~/.claude/projects/<encoded-cwd>/). Without a consistent --cwd the session id stored
-  // in topic.metadata.heteroSessionId can't be resolved on --resume after a page reload.
+  // For the ephemeral sandbox the cwd is /workspace, and it must be explicit so
+  // CC stores and finds session files at the same path on every invocation
+  // (session files live under ~/.claude/projects/<encoded-cwd>/). Without a
+  // consistent --cwd the session id stored in topic.metadata.heteroSessionId
+  // can't be resolved on --resume after a page reload.
+  //
+  // A persistent run gets NO --cwd: the execution plane starts every command
+  // inside the instance's directory, and where it mounts the workspace is its
+  // business — a path spelled out here would be a second source of truth that
+  // can only drift. `lh` falls back to its process cwd, which is that
+  // directory, and it is the same one on every run of this topic, so session
+  // files stay findable exactly as they do under /workspace.
+  //
   // LOBEHUB_HETERO_SANDBOX_CWD is for a cloud computer run locally (development, smoke runs),
   // whose workspace is a temporary directory rather than the image's /workspace
-  const cwd = params.cwd ?? process.env.LOBEHUB_HETERO_SANDBOX_CWD ?? '/workspace';
+  const persistent = sandbox?.mode === 'persistent';
+  const cwd =
+    params.cwd ??
+    (persistent ? undefined : (process.env.LOBEHUB_HETERO_SANDBOX_CWD ?? '/workspace'));
 
   // Build the `lh hetero exec` command string.
   // Prompt is passed via --input-json stdin ('-') to avoid shell quoting issues
@@ -154,7 +178,7 @@ export async function spawnHeteroSandbox(
   if (resumeSessionId) {
     args.push('--resume', resumeSessionId);
   }
-  args.push('--cwd', cwd);
+  if (cwd) args.push('--cwd', cwd);
   args.push(...(extraArgs ?? []));
 
   // Encode the prompt as base64 to avoid all shell quoting issues.
@@ -164,6 +188,7 @@ export async function spawnHeteroSandbox(
   // changes required.
   const stdinPayload = buildHeteroExecStdinPayload({
     imageList: params.imageList,
+    isNewSession: !resumeSessionId,
     prompt,
     resumeFallbackSystemContext: params.resumeFallbackSystemContext,
     systemContext: params.systemContext,
@@ -211,6 +236,11 @@ export async function spawnHeteroSandbox(
   const sandboxService = createSandboxService({
     marketService,
     purpose: 'coding',
+    sandboxCwd: sandbox?.cwd,
+    sandboxInstanceId: sandbox?.environment,
+    sandboxMode: sandbox?.mode,
+    sandboxSpecification: sandbox?.specification,
+    sandboxWorkingDir: sandbox?.workingDir,
     topicId,
     userId,
   });

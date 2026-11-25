@@ -1,62 +1,92 @@
 'use client';
 
-import { Flexbox } from '@lobehub/ui';
-import { css, cx } from 'antd-style';
-import { memo } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Center, Flexbox } from '@lobehub/ui';
+import { Spin } from '@lobehub/ui/base-ui';
+import { lazy, memo, Suspense } from 'react';
 
-import { serverConfigSelectors, useServerConfigStore } from '@/store/serverConfig';
+import AsyncError from '@/components/AsyncError';
 
+import { useBlobFileLoader } from '../../hooks/useBlobFileLoader';
 import NotSupport from '../../NotSupport';
+import OfficeOnlinePane from '../Document/OfficeOnlinePane';
 
-const container = css`
-  position: relative;
-  overflow: hidden;
-  border-radius: 4px;
-`;
+// Deferred: pulls in react-pdf and the office renderers.
+const DocumentPreview = lazy(() => import('../Document'));
 
-const content = css`
-  position: absolute;
-  inset-block: -1px;
-  inset-inline-start: -1px;
+const OFFICE_MIME_TYPES: Record<string, string> = {
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  odt: 'application/vnd.oasis.opendocument.text',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+};
 
-  width: calc(100% + 2px);
-  height: calc(100% + 2px);
-  border: 0;
-`;
+const OFFICE_MIME_VALUES = new Set(Object.values(OFFICE_MIME_TYPES));
+
+// `fileType` is either a bare extension or a full MIME depending on how the file
+// was uploaded; the renderer map keys on MIME, so normalize both to a MIME.
+export const resolveContentType = (fileType?: string, fileName?: string): string => {
+  const lowerFileType = fileType?.toLowerCase();
+  if (lowerFileType) {
+    if (OFFICE_MIME_VALUES.has(lowerFileType)) return lowerFileType;
+    if (OFFICE_MIME_TYPES[lowerFileType]) return OFFICE_MIME_TYPES[lowerFileType];
+  }
+
+  const extension = fileName?.toLowerCase().split('.').at(-1);
+  return (extension && OFFICE_MIME_TYPES[extension]) || 'application/octet-stream';
+};
 
 interface MSDocViewerProps {
   fileId: string;
   fileName?: string;
+  fileType?: string;
   url: string | null;
 }
 
-/**
- * Previews Office files with Microsoft's online viewer, whose servers download the whole file.
- * Only the Global edition sends files there; elsewhere the file can be downloaded instead.
- */
-const MSDocViewer = memo<MSDocViewerProps>(({ fileName, url }) => {
-  const { t } = useTranslation('file');
-  const isGlobalEdition = useServerConfigStore(serverConfigSelectors.isGlobalEdition);
+const MSDocViewer = memo<MSDocViewerProps>(({ fileName, fileType, url }) => {
+  const { blob, error, loading, tooLarge } = useBlobFileLoader(url);
 
-  if (!url) return null;
-
-  if (!isGlobalEdition) {
+  if (loading)
     return (
-      <NotSupport fileName={fileName} message={t('preview.officeOnlineUnavailable')} url={url} />
+      <Center height={'100%'} width={'100%'}>
+        <Spin size="large" />
+      </Center>
+    );
+
+  // Oversized or unreachable for an in-app render, but the online viewer only
+  // needs the URL — it downloads the file server-side.
+  if (!blob) {
+    if (url) return <OfficeOnlinePane fileName={fileName} url={url} />;
+
+    return (
+      <Flexbox height={'100%'} width={'100%'}>
+        {error && <AsyncError error={error} variant={'block'} />}
+        <NotSupport fileName={fileName} tooLarge={tooLarge} url={url} />
+      </Flexbox>
     );
   }
 
   return (
-    <Flexbox className={cx(container)} height={'100%'} id="msdoc-renderer" width={'100%'}>
-      <iframe
-        className={cx(content)}
-        id="msdoc-iframe"
-        src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`}
-        title="msdoc-iframe"
+    <Suspense
+      fallback={
+        <Center height={'100%'} width={'100%'}>
+          <Spin size="large" />
+        </Center>
+      }
+    >
+      <DocumentPreview
+        blob={blob}
+        contentType={resolveContentType(fileType, fileName)}
+        filePath={fileName ?? ''}
+        isLocalFile={false}
+        sourceUrl={url}
       />
-    </Flexbox>
+    </Suspense>
   );
 });
+
+MSDocViewer.displayName = 'MSDocViewer';
 
 export default MSDocViewer;
