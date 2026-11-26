@@ -13,6 +13,8 @@ import {
   truncate,
 } from '../../utils/format';
 import { log } from '../../utils/logger';
+import { resolveUrlBuilder, resourcePath, withUrl, withUrls } from '../resourceUrl';
+import { registerArchiveCommands } from './archive';
 import { resolveAssigneeUserId } from './assignee';
 import { registerCheckpointCommands } from './checkpoint';
 import { registerDepCommands } from './dep';
@@ -38,6 +40,7 @@ export function registerTaskCommand(program: Command) {
     .option('--root', 'Only show root tasks (no parent)')
     .option('--parent <id>', 'Filter by parent task ID')
     .option('--agent <id>', 'Filter by assignee agent ID')
+    .option('--archived', 'Include archived tasks')
     .option('-L, --limit <n>', 'Page size', '50')
     .option('--offset <n>', 'Offset', '0')
     .option('--tree', 'Display as tree structure')
@@ -46,6 +49,7 @@ export function registerTaskCommand(program: Command) {
     .action(
       async (options: {
         agent?: string;
+        archived?: boolean;
         board?: boolean;
         json?: string | boolean;
         limit?: string;
@@ -62,6 +66,7 @@ export function registerTaskCommand(program: Command) {
         if (options.root) input.parentTaskId = null;
         if (options.parent) input.parentTaskId = options.parent;
         if (options.agent) input.assigneeAgentId = options.agent;
+        if (options.archived) input.includeArchived = true;
         if (options.limit) input.limit = Number.parseInt(options.limit, 10);
         if (options.offset) input.offset = Number.parseInt(options.offset, 10);
 
@@ -74,7 +79,10 @@ export function registerTaskCommand(program: Command) {
         const result = await client.task.list.query(input as any);
 
         if (options.json !== undefined) {
-          outputJson(result.data, options.json);
+          outputJson(
+            withUrls(result.data, await resolveUrlBuilder(client), resourcePath.task),
+            options.json,
+          );
           return;
         }
 
@@ -209,7 +217,10 @@ export function registerTaskCommand(program: Command) {
         const doc = await client.document.getDocumentDetail.query({ id });
 
         if (options.json !== undefined) {
-          outputJson(doc, options.json);
+          outputJson(
+            withUrl(doc, await resolveUrlBuilder(client), resourcePath.document(doc)),
+            options.json,
+          );
           return;
         }
 
@@ -235,7 +246,10 @@ export function registerTaskCommand(program: Command) {
         const items = Array.isArray(messages) ? messages : [];
 
         if (options.json !== undefined) {
-          outputJson(items, options.json);
+          outputJson(
+            withUrls(items, await resolveUrlBuilder(client), resourcePath.message),
+            options.json,
+          );
           return;
         }
 
@@ -274,6 +288,7 @@ export function registerTaskCommand(program: Command) {
 
       // ── Header ──
       console.log(`\n${pc.bold(t.identifier)} ${t.name || ''}`);
+      console.log(`ID: ${t.id}`);
       console.log(`${pc.dim('URL:')} ${url}`);
       console.log(
         `${pc.dim('Status:')} ${statusBadge(t.status)}  ${pc.dim('Priority:')} ${priorityLabel(t.priority)}`,
@@ -527,7 +542,6 @@ export function registerTaskCommand(program: Command) {
     .option('--user <idOrEmail>', 'Assign to a workspace member (user id, email or username)')
     .option('--parent <id>', 'Parent task ID')
     .option('--priority <n>', 'Priority (0=none, 1=urgent, 2=high, 3=normal, 4=low)', '0')
-    .option('--prefix <prefix>', 'Identifier prefix', 'T')
     .option('--json [fields]', 'Output JSON')
     .action(
       async (options: {
@@ -536,7 +550,6 @@ export function registerTaskCommand(program: Command) {
         json?: string | boolean;
         name?: string;
         parent?: string;
-        prefix?: string;
         priority?: string;
         user?: string;
       }) => {
@@ -545,7 +558,7 @@ export function registerTaskCommand(program: Command) {
         const assigneeUserId = await resolveUserOption(client, options.user);
         if (assigneeUserId === false) return;
 
-        const input: Record<string, any> = {
+        const input: Parameters<typeof client.task.create.mutate>[0] = {
           instruction: options.instruction,
         };
         if (options.name) input.name = options.name;
@@ -553,9 +566,8 @@ export function registerTaskCommand(program: Command) {
         if (assigneeUserId) input.assigneeUserId = assigneeUserId;
         if (options.parent) input.parentTaskId = options.parent;
         if (options.priority) input.priority = Number.parseInt(options.priority, 10);
-        if (options.prefix) input.identifierPrefix = options.prefix;
 
-        const result = await client.task.create.mutate(input as any);
+        const result = await client.task.create.mutate(input);
         const url = buildUrl(taskPath(result.data.identifier, result.data.name));
 
         if (options.json !== undefined) {
@@ -564,6 +576,7 @@ export function registerTaskCommand(program: Command) {
         }
 
         log.info(`Task created: ${pc.bold(result.data.identifier)} ${result.data.name || ''}`);
+        console.log(`ID: ${result.data.id}`);
         console.log(`${pc.bold('task')}: ${url}`);
       },
     );
@@ -632,7 +645,19 @@ export function registerTaskCommand(program: Command) {
           }
           if (!hasFieldEdits) {
             const result = await client.task.updateStatus.mutate({ id, status: options.status });
-            log.info(`${pc.bold(result.data.identifier)} → ${options.status}`);
+            if (options.json !== undefined) {
+              outputJson(
+                withUrl(
+                  result.data,
+                  await resolveUrlBuilder(client),
+                  resourcePath.task(result.data),
+                ),
+                typeof options.json === 'string' ? options.json : undefined,
+              );
+            } else {
+              log.info(`${pc.bold(result.data.identifier)} → ${options.status}`);
+              console.log(`ID: ${result.data.id}`);
+            }
             return;
           }
 
@@ -642,12 +667,16 @@ export function registerTaskCommand(program: Command) {
         const result = await client.task.update.mutate(input as any);
 
         if (options.json !== undefined) {
-          outputJson(result.data, typeof options.json === 'string' ? options.json : undefined);
+          outputJson(
+            withUrl(result.data, await resolveUrlBuilder(client), resourcePath.task(result.data)),
+            typeof options.json === 'string' ? options.json : undefined,
+          );
           return;
         }
 
         const statusSuffix = options.status ? ` → ${options.status}` : '';
         log.info(`Task updated: ${pc.bold(result.data.identifier)}${statusSuffix}`);
+        console.log(`ID: ${result.data.id}`);
       },
     );
 
@@ -664,8 +693,8 @@ export function registerTaskCommand(program: Command) {
       }
 
       const client = await getTrpcClient();
-      await client.task.delete.mutate({ id });
-      log.info(`Task ${pc.bold(id)} deleted.`);
+      const result = await client.task.delete.mutate({ id });
+      log.info(`Task ${pc.bold(result.data.identifier)} (id: ${result.data.id}) deleted.`);
     });
 
   // ── clear ──────────────────────────────────────────────
@@ -696,7 +725,10 @@ export function registerTaskCommand(program: Command) {
       const result = await client.task.getTaskTree.query({ id });
 
       if (options.json !== undefined) {
-        outputJson(result.data, options.json);
+        outputJson(
+          withUrls(result.data, await resolveUrlBuilder(client), resourcePath.task),
+          options.json,
+        );
         return;
       }
 
@@ -736,8 +768,36 @@ export function registerTaskCommand(program: Command) {
       else log.info('Root task not found in tree.');
     });
 
+  // ── usage ──────────────────────────────────────────────
+
+  task
+    .command('usage <id>')
+    .description('Show task run usage')
+    .option('--json [fields]', 'Output JSON')
+    .action(async (id: string, options: { json?: string | boolean }) => {
+      const client = await getTrpcClient();
+      const result = await client.task.usage.query({ id });
+
+      if (options.json !== undefined) {
+        outputJson(result.data, options.json);
+        return;
+      }
+
+      const usage = result.data;
+      console.log(`${pc.dim('Task:')} ${pc.bold(usage.taskIdentifier)}`);
+      console.log(`${pc.dim('Runs:')} ${usage.runs.toLocaleString('en-US')}`);
+      console.log(
+        `${pc.dim('Tokens:')} ${usage.totalTokens.toLocaleString('en-US')} ` +
+          pc.dim(
+            `(input ${usage.totalInputTokens.toLocaleString('en-US')}, output ${usage.totalOutputTokens.toLocaleString('en-US')})`,
+          ),
+      );
+      console.log(`${pc.dim('Cost:')} $${usage.totalCost.toFixed(6)}`);
+    });
+
   // Register subcommand groups
   registerLifecycleCommands(task);
+  registerArchiveCommands(task);
   registerCheckpointCommands(task);
   registerReviewCommands(task);
   registerDepCommands(task);

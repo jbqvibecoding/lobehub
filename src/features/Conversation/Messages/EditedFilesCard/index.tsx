@@ -1,6 +1,7 @@
 'use client';
 
 import type { EditedFileEntry } from '@lobechat/builtin-tools/fileEditScan';
+import type { OperationEditedFile } from '@lobechat/builtin-tools/operationArtifacts';
 import {
   FilePathDisplay,
   getFileLanguage,
@@ -9,9 +10,7 @@ import {
   KindDot,
   LineStats,
 } from '@lobechat/shared-tool-ui/components';
-import { Center, Flexbox, PatchDiff } from '@lobehub/ui';
-import { Button, Text } from '@lobehub/ui/base-ui';
-import { createStaticStyles, cx } from 'antd-style';
+import { Button, Center, createStaticStyles, cx, Flexbox, PatchDiff, Text } from '@lobehub/ui';
 import {
   ArrowUpRightIcon,
   ChevronDownIcon,
@@ -24,7 +23,7 @@ import { useTranslation } from 'react-i18next';
 
 import FileIcon from '@/components/FileIcon';
 
-import { type OperationEditedFile, summarizeEditedFilesTotals } from './deriveEditedFiles';
+import { summarizeEditedFilesTotals } from './deriveEditedFiles';
 import { useOpenEditedFile } from './useOpenEditedFile';
 
 export const SINGLE_EDITED_FILE_ICON_SIZE = 40;
@@ -301,18 +300,23 @@ const SingleEditedFileCard = memo<{ entry: EditedFileEntry; onOpen?: () => void 
     const fileName = getFileName(entry.path);
     const { displayPath } = getFilePathDisplayInfo(entry.path);
     const language = getFileLanguage(entry.path);
+    // Same fallback as a list row: a file nothing can read back (e.g. written
+    // outside the working directory) still opens its diff snapshot, and one
+    // with neither says so instead of swallowing the click.
+    const handleClick = onOpen ?? (hasDiff ? () => setShowDiff((prev) => !prev) : undefined);
 
     return (
       <Flexbox className={styles.card}>
         <Flexbox
           horizontal
           align={'center'}
-          className={cx(styles.singleHeader, onOpen && styles.singleHeaderClickable)}
+          aria-expanded={onOpen ? undefined : hasDiff ? showDiff : undefined}
+          className={cx(styles.singleHeader, handleClick && styles.singleHeaderClickable)}
           gap={10}
-          role={onOpen ? 'button' : undefined}
-          tabIndex={onOpen ? 0 : undefined}
-          onClick={onOpen}
-          onKeyDown={onOpen ? toggleOnKey(onOpen) : undefined}
+          role={handleClick ? 'button' : undefined}
+          tabIndex={handleClick ? 0 : undefined}
+          onClick={handleClick}
+          onKeyDown={handleClick ? toggleOnKey(handleClick) : undefined}
         >
           <FileIcon
             fileName={getEditedFileIconName(entry.path)}
@@ -329,6 +333,11 @@ const SingleEditedFileCard = memo<{ entry: EditedFileEntry; onOpen?: () => void 
               linesDeleted={entry.linesDeleted}
             />
           </Flexbox>
+          {!handleClick && (
+            <Text fontSize={12} type={'secondary'}>
+              {t('editedFiles.previewUnavailable')}
+            </Text>
+          )}
           {hasDiff && (
             <div
               data-view-changes

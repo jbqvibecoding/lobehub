@@ -1,5 +1,4 @@
-import { Flexbox } from '@lobehub/ui';
-import { Button, Input, Text } from '@lobehub/ui/base-ui';
+import { Button, Flexbox, Input, Text } from '@lobehub/ui';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';

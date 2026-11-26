@@ -7,6 +7,8 @@
  * - Per-request runtimes (e.g., CloudSandbox - needs topicId, userId)
  */
 
+import { LegacyGoalIdentifier } from '@lobechat/builtin-tool-goal';
+
 import type { ToolExecutionContext } from '../types';
 import { acceptanceEvidenceRuntime } from './acceptanceEvidence';
 import { activatorRuntime } from './activator';
@@ -23,9 +25,12 @@ import { briefRuntime } from './brief';
 import { browserRuntime } from './browser';
 import { calculatorRuntime } from './calculator';
 import { calendarRuntime } from './calendar';
+import { canvasRuntime } from './canvas';
+import { channelRuntime } from './channel';
 import { cloudSandboxRuntime } from './cloudSandbox';
 import { computerRuntime } from './computer';
 import { credsRuntime } from './creds';
+import { dashboardRuntime } from './dashboard';
 import { goalRuntime } from './goal';
 import { goalReportRuntime } from './goalReport';
 import { goalSupervisorRuntime } from './goalSupervisor';
@@ -48,7 +53,6 @@ import { skillManagementRuntime } from './skillManagement';
 import { skillsRuntime } from './skills';
 import { skillStoreRuntime } from './skillStore';
 import { taskRuntime } from './task';
-import { topicReferenceRuntime } from './topicReference';
 import type { ServerRuntimeFactory, ServerRuntimeRegistration } from './types';
 import { userInteractionRuntime } from './userInteraction';
 import { verifyResultRuntime } from './verifyResult';
@@ -72,6 +76,7 @@ const registerRuntimes = (runtimes: ServerRuntimeRegistration[]) => {
 
 // Register all server runtimes
 registerRuntimes([
+  channelRuntime,
   acceptanceEvidenceRuntime,
   auvRuntime,
   agentBuilderRuntime,
@@ -97,9 +102,10 @@ registerRuntimes([
   remoteDeviceRuntime,
   briefRuntime,
   taskRuntime,
-  topicReferenceRuntime,
   userInteractionRuntime,
   credsRuntime,
+  canvasRuntime,
+  dashboardRuntime,
   groupAgentBuilderRuntime,
   groupManagementRuntime,
   goalRuntime,
@@ -119,6 +125,9 @@ registerRuntimes([
   pageAgentRuntime,
   verifyResultRuntime,
 ]);
+
+// Goal calls approved after the rename still name the tool `lobe-goal`.
+serverRuntimeFactories.set(LegacyGoalIdentifier, goalRuntime.factory);
 
 // ==================== Registry API ====================
 

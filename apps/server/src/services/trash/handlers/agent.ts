@@ -1,3 +1,5 @@
+import { agentDisplayName } from '@lobechat/types';
+
 import { AgentModel } from '@/database/models/agent';
 import { MessageModel } from '@/database/models/message';
 import { ResourcePermissionModel } from '@/database/models/resourcePermission';
@@ -23,9 +25,12 @@ export const agentEntry = (agent: AgentItem, childCount: number) => ({
     backgroundColor: agent.backgroundColor,
     childCount,
   },
+  projectId: null,
   resourceId: agent.id,
   resourceType: 'agent' as const,
-  title: agent.title,
+  // Label the entry the way the sidebar does: `name` first, `title` (the
+  // agent's role) only when it has no name.
+  title: agentDisplayName(agent) ?? null,
 });
 
 /**
@@ -71,6 +76,7 @@ export const softDeleteAgent = async (
       ...topics.map((topic) => topicEntry(topic)),
       ...topiclessMessages.map((message) => ({
         meta: { role: message.role },
+        projectId: null,
         resourceId: message.id,
         resourceType: 'message' as const,
         title: message.content?.trim().slice(0, MESSAGE_TITLE_LENGTH) || null,

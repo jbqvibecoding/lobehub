@@ -20,6 +20,7 @@ import {
   PlaceholderVariablesProcessor,
   ReactionFeedbackProcessor,
   StaleToolResultTrimProcessor,
+  SubAgentResultMessageProcessor,
   SupervisorRoleRestoreProcessor,
   TaskCallbackMessageProcessor,
   TaskMessageProcessor,
@@ -59,6 +60,7 @@ import {
   PageEditorContextInjector,
   PageSelectionsInjector,
   PlanInjector,
+  ProjectContextInjector,
   ProjectInstructionsInjector,
   RuntimeAdditionalContextProvider,
   selectActivatedSkills,
@@ -485,13 +487,16 @@ export class MessagesEngine {
               }
             : undefined),
       }),
+      // Project context (members, linked knowledge, open tasks) for a run inside a project
+      new ProjectContextInjector({
+        contextPrompt: initialContext?.projectContext?.contextPrompt,
+        enabled: !!initialContext?.projectContext?.contextPrompt,
+      }),
       // Task Manager page context (inject current tasks list/detail to last user message)
       new TaskManagerContextInjector({
         contextPrompt: initialContext?.taskManager?.contextPrompt,
         enabled: !!initialContext?.taskManager?.contextPrompt,
       }),
-      // Todo list (at end of last user message)
-      new TodoInjector({ enabled: isTodoEnabled, todos: effectiveTodos }),
       // Topic Reference context (referenced topic summaries to last user message)
       new TopicReferenceContextInjector({
         enabled: !!(topicReferences && topicReferences.length > 0),
@@ -520,6 +525,11 @@ export class MessagesEngine {
         enabled: !!onboardingContext?.phaseGuidance,
         onboardingContext,
       }),
+      // Todo list (standalone virtual tail message)
+      new TodoInjector({
+        enabled: isTodoEnabled && planTodo?.injectTodos !== false,
+        todos: effectiveTodos,
+      }),
       new RuntimeAdditionalContextProvider({ additionalContexts }),
 
       // =============================================
@@ -527,6 +537,9 @@ export class MessagesEngine {
       // Flattens group/task messages, applies templates and variables
       // =============================================
 
+      // Background sub-agent results arrive as user messages from the
+      // sub-agent; mark them as its report before any user-text template
+      new SubAgentResultMessageProcessor(),
       // Input template processing
       new InputTemplateProcessor({ inputTemplate }),
       // AgentCouncil message flatten

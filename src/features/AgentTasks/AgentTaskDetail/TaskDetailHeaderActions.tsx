@@ -1,11 +1,28 @@
-import { type DropdownItem, DropdownMenu, Icon } from '@lobehub/ui';
-import { ActionIcon, confirmModal, toast } from '@lobehub/ui/base-ui';
-import { CopyIcon, EyeOffIcon, LinkIcon, MoreHorizontal, Trash, UsersIcon } from 'lucide-react';
+import {
+  ActionIcon,
+  confirmModal,
+  type DropdownItem,
+  DropdownMenu,
+  Icon,
+  toast,
+} from '@lobehub/ui';
+import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
+  CopyIcon,
+  EyeOffIcon,
+  FileTextIcon,
+  LinkIcon,
+  MoreHorizontal,
+  Trash,
+  UsersIcon,
+} from 'lucide-react';
 import { memo, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import { useTaskTransferMenuItem } from '@/business/client/hooks/useTaskTransferMenuItem';
+import { FavoriteButton, useFavoriteMenuItem } from '@/features/Favorites';
 import VisibilityConfirmContent from '@/features/VisibilityConfirmContent';
 import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
 import { usePermission } from '@/hooks/usePermission';
@@ -14,7 +31,10 @@ import { taskDetailSelectors } from '@/store/task/selectors';
 import { useUserStore } from '@/store/user';
 import { userProfileSelectors } from '@/store/user/selectors';
 
+import { getArchiveErrorKey } from '../features/archiveErrorKey';
+import { useTaskArchiveGate } from '../features/useTaskArchiveGate';
 import { useTaskCopyActions } from './useTaskCopyActions';
+import { useTaskFavoriteTarget } from './useTaskFavoriteTarget';
 
 const TaskDetailHeaderActions = memo(() => {
   const { t } = useTranslation(['chat', 'common']);
@@ -22,13 +42,22 @@ const TaskDetailHeaderActions = memo(() => {
   const navigate = useWorkspaceAwareNavigate();
   const activeWorkspaceId = useActiveWorkspaceId();
   const { allowed: canEditTask } = usePermission('create_content');
-  const { copyId, copyLink, taskId } = useTaskCopyActions();
+  const { copyContent, copyId, copyLink, hasContent, taskId } = useTaskCopyActions();
   const visibility = useTaskStore(taskDetailSelectors.activeTaskVisibility);
   const createdByUserId = useTaskStore(taskDetailSelectors.activeTaskCreatedByUserId);
   const currentUserId = useUserStore(userProfileSelectors.userId);
   const deleteTask = useTaskStore((s) => s.deleteTask);
+  const archiveTask = useTaskStore((s) => s.archiveTask);
+  const isArchived = !!useTaskStore(taskDetailSelectors.activeTaskArchivedAt);
+  const isArchiveBlocked = useTaskStore(taskDetailSelectors.isActiveTaskArchiveBlocked);
+  const checkArchive = useTaskArchiveGate();
+  const { allowed: canArchive, reasonKey: archiveDeniedKey } = checkArchive({
+    archiveBlocked: !isArchived && isArchiveBlocked,
+  });
   const updateTaskVisibility = useTaskStore((s) => s.updateTaskVisibility);
   const transferItems = useTaskTransferMenuItem(taskId) as DropdownItem[] | null;
+  const favoriteTarget = useTaskFavoriteTarget();
+  const favoriteMenuItem = useFavoriteMenuItem(favoriteTarget);
 
   const triggerDelete = useCallback(() => {
     if (!canEditTask) return;
@@ -44,6 +73,23 @@ const TaskDetailHeaderActions = memo(() => {
       title: t('taskDetail.deleteConfirm.title'),
     });
   }, [canEditTask, taskId, t, deleteTask, navigate]);
+
+  const toggleArchive = useCallback(async () => {
+    if (!canArchive || !taskId) return;
+    try {
+      await archiveTask(taskId, !isArchived);
+    } catch (error) {
+      toast.error(t(getArchiveErrorKey(error)));
+      return;
+    }
+    toast.success(
+      t(
+        isArchived
+          ? 'taskList.contextMenu.unarchiveSuccess'
+          : 'taskList.contextMenu.archiveSuccess',
+      ),
+    );
+  }, [archiveTask, canArchive, isArchived, t, taskId]);
 
   const triggerPublish = useCallback(() => {
     if (!canEditTask) return;
@@ -108,6 +154,23 @@ const TaskDetailHeaderActions = memo(() => {
         label: t('taskList.contextMenu.copyLink'),
         onClick: copyLink,
       },
+      {
+        disabled: !hasContent,
+        icon: <Icon icon={FileTextIcon} />,
+        key: 'copyContent',
+        label: t('taskList.contextMenu.copyContent'),
+        onClick: copyContent,
+      },
+      { type: 'divider' },
+      ...(favoriteMenuItem ? [favoriteMenuItem, { type: 'divider' as const }] : []),
+      {
+        desc: archiveDeniedKey && t(archiveDeniedKey),
+        disabled: !canArchive,
+        icon: <Icon icon={isArchived ? ArchiveRestoreIcon : ArchiveIcon} />,
+        key: 'archive',
+        label: t(isArchived ? 'taskList.contextMenu.unarchive' : 'taskList.contextMenu.archive'),
+        onClick: toggleArchive,
+      },
       { type: 'divider' },
       {
         danger: true,
@@ -160,17 +223,32 @@ const TaskDetailHeaderActions = memo(() => {
 
     if (transferGroup.length === 0) return baseItems;
 
-    return [...baseItems.slice(0, 3), ...transferGroup, { type: 'divider' }, ...baseItems.slice(3)];
+    // Slot the transfer group right after the copy group's divider.
+    const copyGroupEnd = baseItems.findIndex((item) => item?.type === 'divider') + 1;
+
+    return [
+      ...baseItems.slice(0, copyGroupEnd),
+      ...transferGroup,
+      { type: 'divider' },
+      ...baseItems.slice(copyGroupEnd),
+    ];
   }, [
     taskId,
+    favoriteMenuItem,
     copyId,
     copyLink,
+    copyContent,
+    hasContent,
     activeWorkspaceId,
     visibility,
     createdByUserId,
     currentUserId,
     t,
     triggerDelete,
+    toggleArchive,
+    isArchived,
+    archiveDeniedKey,
+    canArchive,
     triggerPublish,
     triggerMakePrivate,
     canEditTask,
@@ -180,9 +258,12 @@ const TaskDetailHeaderActions = memo(() => {
   if (!taskId) return null;
 
   return (
-    <DropdownMenu items={menuItems}>
-      <ActionIcon icon={MoreHorizontal} size={'small'} />
-    </DropdownMenu>
+    <>
+      {favoriteTarget && <FavoriteButton {...favoriteTarget} />}
+      <DropdownMenu items={menuItems}>
+        <ActionIcon icon={MoreHorizontal} size={'small'} />
+      </DropdownMenu>
+    </>
   );
 });
 

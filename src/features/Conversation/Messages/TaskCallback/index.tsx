@@ -1,8 +1,6 @@
 'use client';
 
-import { Flexbox, Icon, Markdown } from '@lobehub/ui';
-import { Button, Text } from '@lobehub/ui/base-ui';
-import { createStaticStyles, cssVar } from 'antd-style';
+import { Button, createStaticStyles, cssVar, Flexbox, Icon, Markdown, Text } from '@lobehub/ui';
 import isEqual from 'fast-deep-equal';
 import { CircleAlert, CircleCheck, CircleSlash, SquareArrowOutUpRight } from 'lucide-react';
 import { memo } from 'react';
@@ -69,7 +67,7 @@ const TaskCallbackMessage = memo<TaskCallbackMessageProps>(({ id }) => {
   const reason = (callback.reason ?? 'done') as CallbackReason;
   const { color, i18nKey, icon } = reasonMeta[reason] ?? reasonMeta.done;
   const content = typeof item?.content === 'string' ? item.content : '';
-  const openTask = () => openTaskDetail(callback.identifier);
+  const openTask = () => openTaskDetail(callback.taskId ?? callback.identifier);
 
   const viewTaskButton = (
     <Button icon={SquareArrowOutUpRight} size={'small'} type={'text'} onClick={openTask}>

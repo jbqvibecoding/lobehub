@@ -49,11 +49,13 @@ describe('initModelRuntimeFromDB: who pays for the call', () => {
     ]);
   });
 
-  it('still meters a call where the user only set a base URL', async () => {
+  // Upstream's rule: the deployment's key only goes to the deployment's own endpoint, so a base URL
+  // the user set without a key of their own is refused before any call is made
+  it('never sends the platform key to a base URL the user set', async () => {
     mockGetAiProviderById.mockResolvedValue({ keyVaults: { baseURL: 'https://proxy.example' } });
 
-    await initModelRuntimeFromDB({} as any, 'user-1', 'openai');
-
-    expect(mockGetBusinessHooks.mock.calls[0][3]).toEqual({ platformPaid: true });
+    await expect(initModelRuntimeFromDB({} as any, 'user-1', 'openai')).rejects.toMatchObject({
+      errorType: 'InvalidProviderAPIKey',
+    });
   });
 });

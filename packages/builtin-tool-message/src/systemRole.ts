@@ -36,7 +36,7 @@ The send APIs (\`sendMessage\`, \`sendDirectMessage\`, \`replyToThread\`) can de
 0. **The target is the conversation you are in right now** (you're running inside an IM conversation — there is a \`<current_conversation>\` block — and you're sending into it, e.g. delivering a generated file): pass **neither** \`botId\` nor \`messengerInstallationId\`. The runtime sends through the exact connection this conversation arrived on. Skip discovery entirely — another bot on the same platform is a different identity and may have a dead session.
 1. **Call \`listBots\`.** If an entry has \`platform: "<target>"\` and its \`status\` is NOT \`failed\` → use its \`botId\` on the send API. Done. A \`failed\` bot's credentials are broken (e.g. an expired WeChat login accepts text but rejects every file); never auto-pick it — continue to step 2, and mention to the user that the bot needs reconnecting.
 2. **Otherwise call \`listMessengers\`.** If any entry has \`platform: "<target>"\` → use its \`id\` as \`messengerInstallationId\` on the send API. Done.
-3. **Neither has a usable connection for the platform → do NOT pick a different platform.** Tell the user: "I can't reach <platform> for you yet. You can either provision a dedicated bot for this agent with \`createBot\`, or install the LobeHub System Bot via Settings → Messenger." Stop. (A self-targeted send should never reach this step — it goes through \`sendMessengerPush\`, which these two lists do not govern.)
+3. **Neither has a usable connection for the platform → do NOT pick a different platform.** Tell the user: "I can't reach <platform> for you yet. You can either provision a dedicated bot for this agent with \`createBot\`, or install the Biber System Bot via Settings → Messenger." Stop. (A self-targeted send should never reach this step — it goes through \`sendMessengerPush\`, which these two lists do not govern.)
 
 For sends elsewhere, healthy per-agent bots come first because they're purpose-built for the current agent and use identity the user explicitly configured. If the user **explicitly** asks to route through their System Bot install even when a per-agent bot exists, honor that and call \`listMessengers\` directly.
 
@@ -82,7 +82,7 @@ How it differs from the other send APIs:
 Platform semantics:
 - **Telegram / Discord** — always deliverable; the message lands in the user's DM immediately.
 - **Slack** — if the user linked several workspaces and you omit \`tenantId\`, the call returns \`needs_workspace_selection\` with the candidate list. Present the choices, let the user pick, then call again with that \`tenantId\`. Never guess a workspace.
-- **WeChat** — deliverable only inside the send window opened by the user's last inbound message (limited sends per window). Outside the window or with quota exhausted the push returns \`queued\`: the message is NOT lost — it's delivered right after the user next messages the bot. **Always relay this to the user**: "I've queued the message — send anything to the LobeHub WeChat bot and it will arrive."
+- **WeChat** — deliverable only inside the send window opened by the user's last inbound message (limited sends per window). Outside the window or with quota exhausted the push returns \`queued\`: the message is NOT lost — it's delivered right after the user next messages the bot. **Always relay this to the user**: "I've queued the message — send anything to the Biber WeChat bot and it will arrive."
 
 Status handling:
 - \`sent\` — done; for WeChat mention the remaining window quota only if the user asks.
@@ -111,7 +111,7 @@ Typical asks → action:
 
 **groupPolicy** + **groupAllowFrom** — same shape but for group/channel/thread traffic. \`groupAllowFrom\` items are channel/group/thread IDs (e.g. Discord channel IDs from "Copy Channel ID"), not user IDs.
 
-**watchKeywords** — channel-side keyword triggers, format \`[{ keyword, instruction? }]\`. When a non-mention message in a subscribed channel contains a \`keyword\` (case-insensitive whole-word for ASCII, substring for CJK), the bot wakes without an @mention; the optional \`instruction\` is prepended to that user message as a prompt prefix before the agent is invoked.
+**watchKeywords** — channel-side keyword triggers, format \`[{ keyword, instruction?, asName? }]\`. When a non-mention message in a subscribed channel contains a \`keyword\` (case-insensitive whole-word for ASCII, substring for CJK), the bot wakes without an @mention; the optional \`instruction\` is prepended to that user message as a prompt prefix before the agent is invoked. \`asName: true\` makes the keyword one of the bot's names ("people also call you canis / 倏昱"): saying it calls the bot like its display name, so it is answered at once. Use it only for names and nicknames, never for topic words like "bug".
 
 **The \`instruction\` is a future prompt for your future self — NOT a task to execute now.** When the user says "if X appears in channel, do Y", the right action is: read existing \`settings.watchKeywords\`, upsert \`{ keyword: X, instruction: Y }\`, write the array back. **Do NOT pre-resolve any references the directive mentions** — team names, user handles, channel names, project IDs, status labels, etc. The future-self runs when the keyword fires, in the same channel context with the same tools you have today, and will look those up against fresh data at trigger time. Pre-resolving now bakes IDs that may go stale and turns a 1-tool-call save into a long lookup chain.
 
@@ -119,6 +119,7 @@ Transcribe the user's directive into \`instruction\` faithfully (preserve origin
 
 Typical asks → action:
 - "when 'bug' appears in the channel, create an issue in our tracker and assign it to me" → \`getBotDetail\` → append \`{ keyword: 'bug', instruction: '<verbatim user directive in original language>' }\` → \`updateBot({ settings: { watchKeywords: [...newArray] } })\` → acknowledge. **Stop there.** Do not list teams, users, statuses, channels, or any other reference now.
+- "people also call you canis" → \`getBotDetail\` → append \`{ keyword: 'canis', asName: true }\` → \`updateBot\` with the whole array.
 - "stop watching 'bug'" → \`getBotDetail\` → \`filter\` out the entry → \`updateBot\` with the trimmed array.
 - "show me the watch keywords" → \`getBotDetail\` → render \`settings.watchKeywords\` (or treat missing as "none configured").
 
@@ -130,7 +131,13 @@ All three arrays are written as a whole — passing \`{ allowFrom: [{ id: 'X' }]
 
 Skipping step 1 will silently wipe other entries.
 
+**botWakeDuties** — the bot's duties (职责边界): free text, one duty per line, describing what the bot is responsible for in its channels. With bot-wake on, a message from anyone that nobody addressed to the bot but that falls within these duties may wake it; empty turns this off. \`botWakeDutiesThreshold\` (0..1, default 0.65) is how sure it must be. Only change the duties when the bot's owner asks. The text is written as a whole: \`getBotDetail\` → edit \`settings.botWakeDuties\` (keep every duty you did not mean to touch, in the owner's language) → \`updateBot({ settings: { botWakeDuties: '<full text>' } })\`.
+
+**replyStyle / channelReplyStyles / replyEmojis** — how the bot talks, not what it does. \`replyStyle\` is free text for every channel (tone, length, formatting, emoji use); \`channelReplyStyles\` (\`[{ channelId, style }]\`) replaces it in one channel or thread; \`replyEmojis\` (\`[{ emoji, usage? }]\`) lists the emoji and stickers it may use, each pasted as is (\`<:name:id>\` on Discord, \`:name:\` on Slack, or a Unicode emoji) with when it fits. To find a Discord custom emoji's code, ask the owner to send it with a backslash in front (\`\\:name:\`). Only change them when the bot's owner asks; same read-modify-write as the arrays above.
+
 **Validation behaviour:** the server validates settings before persisting and returns \`updateBot error: <field>: <reason>\` when something fails (e.g. \`userId: Pairing policy requires the owner's Platform User ID.\`). Surface that message to the user and ask for the missing value rather than retrying blindly.
+
+**Owner only:** inside a bot conversation (Discord, Slack, …) only the bot's owner may change a bot or messenger connection (\`updateBot\`, \`toggleBot\`, \`deleteBot\`, \`connectBot\`, \`createBot\`, and the messenger unlink / uninstall / active-agent calls). When anyone else asks, the call fails with "Only the bot's owner can change its settings"; tell them to ask the owner instead of retrying or looking for another way to make the change.
 </access_policies>
 
 <messaging_capabilities>

@@ -3,7 +3,7 @@ import { AcceptanceEvidenceIdentifier } from '@lobechat/builtin-tool-acceptance-
 import { BriefIdentifier } from '@lobechat/builtin-tool-brief';
 import { INBOX_SESSION_ID } from '@lobechat/const';
 import type { ExecAgentResult, TaskItem, TaskRunTrigger } from '@lobechat/types';
-import { readTaskExecutionConfig } from '@lobechat/types';
+import { getHeterogeneousTaskModelProvider, readTaskExecutionConfig } from '@lobechat/types';
 import { TRPCError } from '@trpc/server';
 import debug from 'debug';
 
@@ -16,11 +16,12 @@ import { TopicModel } from '@/database/models/topic';
 import type { LobeChatDatabase } from '@/database/type';
 import { AiAgentService } from '@/server/services/aiAgent';
 import { resolveFailedRunStatus } from '@/server/services/goal/recoveryPolicy';
-import { TaskLifecycleService } from '@/server/services/taskLifecycle';
+import { resolveMissingTaskModelConfig } from '@/server/services/task/modelSnapshot';
+import { createTaskRunHooks } from '@/server/services/task/runHooks';
 import { backgroundInterventionConfig } from '@/server/services/toolApproval/background';
+import { readTaskSkillIds } from '@/server/services/userSkill';
 
 import { buildTaskPrompt } from './buildTaskPrompt';
-import { taskCompletionHook } from './completionHook';
 import {
   resolveRunDeviceId,
   resolveTaskRunExecution,
@@ -33,9 +34,13 @@ export interface RunTaskParams {
   /** Extra builtin tools this run mounts beside the Task skill, e.g. the Goal report tool. */
   additionalPluginIds?: string[];
   continueTopicId?: string;
+  /** Explicit device target for this run only. The Task itself does not retain the binding. */
+  deviceId?: string;
   extraPrompt?: string;
   /** Optional per-operation cap. Omitted means the agent runtime remains uncapped. */
   maxSteps?: number;
+  /** Persist the dispatch owner's operation link before any execution starts. */
+  onOperationCreated?: (operationId: string) => Promise<void>;
   taskId: string;
   /**
    * What triggered this run. Defaults to `'manual'` — the ad-hoc "run now"
@@ -62,7 +67,6 @@ export class TaskRunnerService {
   private agentModel: AgentModel;
   private briefModel: BriefModel;
   private db: LobeChatDatabase;
-  private taskLifecycle: TaskLifecycleService;
   private taskModel: TaskModel;
   private taskTopicModel: TaskTopicModel;
   private topicModel: TopicModel;
@@ -79,7 +83,6 @@ export class TaskRunnerService {
     this.taskTopicModel = new TaskTopicModel(db, userId, workspaceId);
     this.topicModel = new TopicModel(db, userId, workspaceId);
     this.briefModel = new BriefModel(db, userId, workspaceId);
-    this.taskLifecycle = new TaskLifecycleService(db, userId, workspaceId);
   }
 
   /**
@@ -107,16 +110,26 @@ export class TaskRunnerService {
   async runTask(params: RunTaskParams): Promise<RunTaskResult> {
     const {
       additionalPluginIds,
-      taskId: idOrIdentifier,
+      taskId,
       continueTopicId,
+      deviceId,
       extraPrompt,
       maxSteps,
+      onOperationCreated,
       trigger = 'manual',
     } = params;
 
-    const task = await this.taskModel.resolve(idOrIdentifier);
+    const task = await this.taskModel.findById(taskId);
     if (!task) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
+    }
+    // Archived tasks are hidden from every list, so a run would go unseen.
+    // Every execution path (manual, tick, dependency unlock, goal) lands here.
+    if (task.archivedAt) {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: 'Restore this archived task before running it',
+      });
     }
 
     // Track whether *this* invocation transitioned the task to 'running'. The
@@ -207,6 +220,17 @@ export class TaskRunnerService {
             message: 'The task changed or was deleted before its run could start.',
           });
         }
+        // An archive that committed between the read above and this write is
+        // visible on the returned row: hand the status back and refuse the run.
+        if (started.archivedAt) {
+          await this.taskModel.updateStatusIfCurrent(task.id, 'running', task.status, {
+            error: task.error ?? null,
+          });
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'Restore this archived task before running it',
+          });
+        }
         weSetRunning = true;
       } else if (task.error) {
         await this.taskModel.update(task.id, { error: null });
@@ -218,10 +242,7 @@ export class TaskRunnerService {
       const aiAgentService = new AiAgentService(this.db, this.userId, {
         workspaceId: this.workspaceId,
       });
-      const taskId = task.id;
       const taskIdentifier = task.identifier;
-      const taskLifecycle = this.taskLifecycle;
-      const userId = this.userId;
 
       const checkpoint = this.taskModel.getCheckpointConfig(task);
       const reviewConfig = this.taskModel.getReviewConfig(task);
@@ -248,16 +269,25 @@ export class TaskRunnerService {
       if (additionalPluginIds) pluginIds.push(...additionalPluginIds);
 
       const taskConfig = (task.config ?? {}) as Record<string, unknown>;
+      // Skills the task itself names for every run — a goal batch's units name
+      // the batch's plan skill — so a re-run or a manual run loads them too.
+      pluginIds.push(...readTaskSkillIds(taskConfig));
 
       // Backfill model snapshot for tasks created before the snapshot logic
       // landed, or whose assignee was set after creation. Once written, the
       // task is pinned to this model regardless of later agent default changes.
+      // Only missing fields are filled: a legacy model-only override keeps its model.
       if (typeof taskConfig.model !== 'string' || typeof taskConfig.provider !== 'string') {
         const snapshot = await this.agentModel.getAgentModelConfig(agentRef);
         if (snapshot) {
-          await this.taskModel.updateTaskConfig(task.id, snapshot);
-          taskConfig.model = snapshot.model;
-          taskConfig.provider = snapshot.provider;
+          const agencyConfig = await this.agentModel.getAgentAgencyConfig(agentRef);
+          const missing = resolveMissingTaskModelConfig(
+            taskConfig,
+            snapshot,
+            getHeterogeneousTaskModelProvider(agencyConfig?.heterogeneousProvider),
+          );
+          await this.taskModel.updateTaskConfig(task.id, missing);
+          Object.assign(taskConfig, missing);
         }
       }
 
@@ -289,19 +319,20 @@ export class TaskRunnerService {
       log('runTask: %s (continue=%s)', taskIdentifier, continueTopicId);
 
       const result = await aiAgentService.execAgent({
+        ...(onOperationCreated ? { onOperationCreated } : {}),
         ...(isSlug ? { slug: agentRef } : { agentId: agentRef }),
         additionalPluginIds: pluginIds,
+        ...(deviceId && { deviceId }),
         ...(typeof taskConfig.model === 'string' && { model: taskConfig.model }),
         ...(typeof taskConfig.provider === 'string' && { provider: taskConfig.provider }),
-        hooks: [
-          taskCompletionHook({
-            runTrigger: trigger,
-            taskId,
-            taskIdentifier,
-            taskLifecycle,
-            userId,
-          }),
-        ],
+        hooks: createTaskRunHooks({
+          db: this.db,
+          taskId: task.id,
+          taskIdentifier: task.identifier,
+          trigger,
+          userId: this.userId,
+          workspaceId: this.workspaceId,
+        }),
         ...(attachmentFileIds.length > 0 ? { fileIds: attachmentFileIds } : {}),
         ...(maxSteps ? { maxSteps } : {}),
         prompt,
@@ -310,7 +341,7 @@ export class TaskRunnerService {
         trigger: TopicTrigger.RunTask,
         // With a phone registered, a tool that asks for approval pauses the run and the phone is
         // asked; the answer resumes it (toolApproval), and the topic stays running meanwhile
-        userInterventionConfig: await backgroundInterventionConfig(this.db, userId),
+        userInterventionConfig: await backgroundInterventionConfig(this.db, this.userId),
         // The task's own pin, when it has one. `deviceId` forces device routing
         // unless the agent's selection policy is `fixed` (author-controlled
         // targets stay authoritative — same rule the chat picker follows), and
@@ -422,7 +453,7 @@ export class TaskRunnerService {
     } catch (error) {
       if (weSetRunning) {
         try {
-          const failedTask = await this.taskModel.resolve(idOrIdentifier);
+          const failedTask = await this.taskModel.findById(taskId);
           if (failedTask && failedTask.status === 'running') {
             const errorText = error instanceof Error ? error.message : 'Unknown error';
             // A failed kickoff must not kill an automation task's schedule: the
@@ -452,7 +483,7 @@ export class TaskRunnerService {
    * payload shape unchanged.
    */
   static cascadeEmpty(): CascadeResult {
-    return { failed: [], paused: [], started: [] };
+    return { failed: [], paused: [], started: [], pausedTasks: [], startedTasks: [] };
   }
 
   /**
@@ -481,19 +512,25 @@ export class TaskRunnerService {
     const unlocked = await this.taskModel.getUnlockedTasksForMany(completedTaskIds);
     if (unlocked.length === 0) return TaskRunnerService.cascadeEmpty();
 
-    const result: CascadeResult = { failed: [], paused: [], started: [] };
+    const result: CascadeResult = TaskRunnerService.cascadeEmpty();
 
     for (const task of unlocked) {
+      // An archived dependent stays idle; restoring it leaves it ready to run.
+      if (task.archivedAt) continue;
       if (await this.shouldHoldForCheckpoint(task)) {
         await this.taskModel.updateStatus(task.id, 'paused');
         result.paused.push(task.identifier);
+        result.pausedTasks!.push({ id: task.id, identifier: task.identifier });
         continue;
       }
 
       try {
         await this.runTask({ taskId: task.id });
         result.started.push(task.identifier);
+        result.startedTasks!.push({ id: task.id, identifier: task.identifier });
       } catch (error) {
+        // Archived after discovery: the runner refused it, nothing failed.
+        if (error instanceof TRPCError && error.code === 'PRECONDITION_FAILED') continue;
         const message = error instanceof Error ? error.message : 'Failed to start task';
         log('cascadeOnCompletion: runTask failed for %s: %s', task.identifier, message);
         // Best-effort: mark as paused so the user can see why it didn't run.
@@ -502,7 +539,7 @@ export class TaskRunnerService {
         } catch {
           /* ignore — surfaced via failed list */
         }
-        result.failed.push({ error: message, identifier: task.identifier });
+        result.failed.push({ error: message, id: task.id, identifier: task.identifier });
       }
     }
 
@@ -513,15 +550,17 @@ export class TaskRunnerService {
     if (!task.parentTaskId) return false;
     const parent = await this.taskModel.findById(task.parentTaskId);
     if (!parent) return false;
-    return this.taskModel.shouldPauseBeforeStart(parent, task.identifier);
+    return this.taskModel.shouldPauseBeforeStart(parent, task);
   }
 }
 
 export interface CascadeResult {
   /** Tasks where kickoff threw and were marked paused with an error. */
-  failed: { error: string; identifier: string }[];
+  failed: { error: string; id?: string; identifier: string }[];
   /** Tasks held back by a parent's `beforeIds` checkpoint. */
   paused: string[];
+  pausedTasks?: { id: string; identifier: string }[];
   /** Tasks that were successfully kicked off (topic created). */
   started: string[];
+  startedTasks?: { id: string; identifier: string }[];
 }

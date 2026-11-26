@@ -1,6 +1,7 @@
 'use client';
 
-import { createStaticStyles, cx } from 'antd-style';
+import { cssVar } from '@lobehub/ui/stylex/cssVar.stylex';
+import * as stylex from '@stylexjs/stylex';
 import type { KeyboardEvent, MouseEvent, WheelEvent } from 'react';
 import { memo, useRef } from 'react';
 
@@ -11,33 +12,30 @@ import { keyAction, pagePoint } from './input';
 /** Wheel movement is gathered for this long and sent as one scroll. */
 const SCROLL_BATCH_MS = 150;
 
-const styles = createStaticStyles(({ css, cssVar }) => ({
-  driving: css`
-    cursor: crosshair;
-    outline: 2px solid ${cssVar.colorPrimary};
-    outline-offset: 2px;
-  `,
-  frame: css`
-    overflow: hidden;
-
-    width: 100%;
-    border: 1px solid ${cssVar.colorBorderSecondary};
-    border-radius: 8px;
-
-    background: ${cssVar.colorFillQuaternary};
-
-    &:focus-visible {
-      outline: 2px solid ${cssVar.colorPrimary};
-      outline-offset: 2px;
-    }
-  `,
-  image: css`
-    user-select: none;
-    display: block;
-    width: 100%;
-    height: auto;
-  `,
-}));
+const styles = stylex.create({
+  driving: {
+    cursor: 'crosshair',
+    outlineWidth: '2px',
+    outlineStyle: 'solid',
+    outlineColor: cssVar.colorPrimary,
+    outlineOffset: '2px',
+  },
+  frame: {
+    overflow: 'hidden',
+    width: '100%',
+    borderWidth: '1px',
+    borderStyle: 'solid',
+    borderColor: cssVar.colorBorderSecondary,
+    borderRadius: '8px',
+    backgroundColor: cssVar.colorFillQuaternary,
+    backgroundImage: 'none',
+    outlineWidth: { 'default': null, ':focus-visible': '2px' },
+    outlineStyle: { 'default': null, ':focus-visible': 'solid' },
+    outlineColor: { 'default': null, ':focus-visible': cssVar.colorPrimary },
+    outlineOffset: { 'default': null, ':focus-visible': '2px' },
+  },
+  image: { userSelect: 'none', display: 'block', width: '100%', height: 'auto' },
+});
 
 interface ScreenProps {
   /** The person holds the browser: clicks, scrolls and keys go to the page. */
@@ -82,7 +80,7 @@ const Screen = memo<ScreenProps>(({ canDrive, label, onAction, screen }) => {
   return (
     <div
       aria-label={label}
-      className={cx(styles.frame, canDrive && styles.driving)}
+      {...stylex.props(styles.frame, canDrive && styles.driving)}
       role={'application'}
       tabIndex={0}
       onClick={click}
@@ -91,7 +89,7 @@ const Screen = memo<ScreenProps>(({ canDrive, label, onAction, screen }) => {
     >
       <img
         alt={label}
-        className={styles.image}
+        {...stylex.props(styles.image)}
         draggable={false}
         height={screen.height}
         ref={image}

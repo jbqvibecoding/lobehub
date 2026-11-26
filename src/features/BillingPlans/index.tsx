@@ -8,9 +8,9 @@ import {
   type PrepaidProvider,
 } from '@lobechat/billing';
 import { Plans } from '@lobechat/types';
-import { Block, Flexbox } from '@lobehub/ui';
-import { Alert, Button, Progress, Segmented, Spin } from '@lobehub/ui/base-ui';
-import { createStaticStyles } from 'antd-style';
+import { Alert, Block, Button, Flexbox, Progress, Segmented, Spin } from '@lobehub/ui';
+import { cssVar } from '@lobehub/ui/stylex/cssVar.stylex';
+import * as stylex from '@stylexjs/stylex';
 import { memo, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
@@ -26,7 +26,11 @@ const PAID_PLANS = [Plans.Starter, Plans.Premium, Plans.Ultimate] as const;
 const PLAN_TITLE_KEYS = {
   [Plans.Free]: 'plans.plan.free.title',
   [Plans.Hobby]: 'plans.plan.hobby.title',
+  // LobeHub Cloud's plans: Biber never assigns them, named only to cover the enum
+  [Plans.Max]: 'plans.plan.max.title',
+  [Plans.Plus]: 'plans.plan.plus.title',
   [Plans.Premium]: 'plans.plan.premium.title',
+  [Plans.Pro]: 'plans.plan.pro.title',
   [Plans.Starter]: 'plans.plan.starter.title',
   [Plans.Ultimate]: 'plans.plan.ultimate.title',
 } as const satisfies Record<Plans, string>;
@@ -34,24 +38,12 @@ const PLAN_TITLE_KEYS = {
 const STATUS_KEY = 'billing:status';
 const PRICES_KEY = 'billing:prices';
 
-const styles = createStaticStyles(({ css, cssVar }) => ({
-  card: css`
-    flex: 1 1 220px;
-    min-width: 220px;
-  `,
-  muted: css`
-    font-size: 13px;
-    color: ${cssVar.colorTextSecondary};
-  `,
-  planName: css`
-    font-size: 20px;
-    font-weight: 600;
-  `,
-  price: css`
-    font-size: 18px;
-    font-weight: 600;
-  `,
-}));
+const styles = stylex.create({
+  card: { flexGrow: 1, flexShrink: 1, flexBasis: '220px', minWidth: '220px' },
+  muted: { fontSize: '13px', color: cssVar.colorTextSecondary },
+  planName: { fontSize: '20px', fontWeight: 600 },
+  price: { fontSize: '18px', fontWeight: 600 },
+});
 
 /** The signed-in user's plan, this month's credits, and the plans they can buy or switch to. */
 const BillingPlans = memo(() => {
@@ -153,10 +145,10 @@ const BillingPlans = memo(() => {
       <Block gap={12} padding={16} variant={'filled'}>
         <Flexbox horizontal align={'center'} gap={8} justify={'space-between'} wrap={'wrap'}>
           <Flexbox gap={4}>
-            <span className={styles.muted}>{t('currentPlan.title')}</span>
-            <span className={styles.planName}>{t(PLAN_TITLE_KEYS[status.plan])}</span>
+            <span {...stylex.props(styles.muted)}>{t('currentPlan.title')}</span>
+            <span {...stylex.props(styles.planName)}>{t(PLAN_TITLE_KEYS[status.plan])}</span>
             {subscription && (
-              <span className={styles.muted}>
+              <span {...stylex.props(styles.muted)}>
                 {prepaid
                   ? t('planPage.paidThrough', { date: formatDate(subscription.currentPeriodEnd) })
                   : subscription.cancelAtPeriodEnd
@@ -179,11 +171,11 @@ const BillingPlans = memo(() => {
               used: formatCredits(credits.used),
             })}
           </span>
-          <span className={styles.muted}>
+          <span {...stylex.props(styles.muted)}>
             {t('planPage.creditsReset', { date: formatDate(credits.periodEnd) })}
           </span>
         </Flexbox>
-        <span className={styles.muted}>{t('planPage.ownKeyNote')}</span>
+        <span {...stylex.props(styles.muted)}>{t('planPage.ownKeyNote')}</span>
       </Block>
 
       {(status.stripe.available || sellsPrepaid) && (
@@ -202,16 +194,22 @@ const BillingPlans = memo(() => {
               const isCurrent = status.plan === plan;
 
               return (
-                <Block className={styles.card} gap={8} key={plan} padding={16} variant={'outlined'}>
-                  <span className={styles.planName}>{t(PLAN_TITLE_KEYS[plan])}</span>
+                <Block
+                  className={stylex.props(styles.card).className}
+                  gap={8}
+                  key={plan}
+                  padding={16}
+                  variant={'outlined'}
+                >
+                  <span {...stylex.props(styles.planName)}>{t(PLAN_TITLE_KEYS[plan])}</span>
                   {price && (
-                    <span className={styles.price}>
+                    <span {...stylex.props(styles.price)}>
                       {t(interval === 'monthly' ? 'planPage.perMonth' : 'planPage.perYear', {
                         price,
                       })}
                     </span>
                   )}
-                  <span className={styles.muted}>
+                  <span {...stylex.props(styles.muted)}>
                     {t('planPage.monthlyCredits', {
                       credits: formatCredits(monthlyCreditsFor(plan)),
                     })}

@@ -1,13 +1,16 @@
-import { Block, Center, Empty, Flexbox } from '@lobehub/ui';
 import {
   AccordionHeader,
   AccordionItem,
   AccordionRoot,
   AccordionTrigger,
+  Block,
+  Center,
+  cssVar,
   Divider,
+  Empty,
+  Flexbox,
   Text,
-} from '@lobehub/ui/base-ui';
-import { cssVar } from 'antd-style';
+} from '@lobehub/ui';
 import { ClipboardCheckIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { memo, useCallback, useMemo, useState } from 'react';
@@ -29,7 +32,7 @@ import {
   collapseSubTasks,
   compareTaskItems,
   groupTaskItems,
-  HIDDEN_WHEN_COMPLETED_STATUSES,
+  isTaskHiddenByCompletedFilter,
 } from './listViewOptions';
 import TaskGroupLabel from './TaskGroupLabel';
 import TaskItemSkeleton from './TaskItemSkeleton';
@@ -45,6 +48,8 @@ interface TaskListProps {
    * so it never disagrees with the empty signal.
    */
   data?: unknown;
+  /** Call to action under the empty state, e.g. creating the collection's first task. */
+  emptyAction?: ReactNode;
   emptyDescription?: string;
   /** Thrown error from the list SWR — surfaced as a failure state, not a skeleton. */
   error?: unknown;
@@ -59,8 +64,6 @@ interface TaskListProps {
   queryKey?: string;
   routeScope?: TaskItemRouteScope;
 }
-
-const HIDDEN_COMPLETED_STATUS_SET = new Set<string>(HIDDEN_WHEN_COMPLETED_STATUSES);
 
 /** Row height the window sizes itself by before it has measured real rows. */
 const DEFAULT_ROW_HEIGHT = 52;
@@ -157,13 +160,13 @@ const TaskList = memo<TaskListProps>((props) => {
   const effectiveSubGroupBy = groupBy === 'none' ? 'none' : subGroupBy;
   const unfinishedTasks = useMemo(
     () =>
-      options.hideCompleted
-        ? tasks.filter((task) => !HIDDEN_COMPLETED_STATUS_SET.has(task.status))
-        : tasks,
-    [tasks, options.hideCompleted],
+      options.completedTasks === 'all'
+        ? tasks
+        : tasks.filter((task) => !isTaskHiddenByCompletedFilter(task, options.completedTasks)),
+    [tasks, options.completedTasks],
   );
   // Only the completed/canceled cut feeds the "hidden by display options"
-  // footer — its "Show" action clears `hideCompleted`, so folding the sub-task
+  // footer — its "Show" action resets `completedTasks` to 'all', so folding the sub-task
   // count in would promise a reveal that toggle doesn't deliver.
   const hiddenCount = tasks.length - unfinishedTasks.length;
   const visibleTasks = useMemo(
@@ -265,6 +268,7 @@ const TaskList = memo<TaskListProps>((props) => {
   const emptyState = (
     <Center height={'80vh'} width={'100%'}>
       <Empty
+        action={props.emptyAction}
         description={props.emptyDescription ?? t('taskList.empty')}
         icon={ClipboardCheckIcon}
       />

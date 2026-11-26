@@ -20,6 +20,7 @@ import { configRouter } from '../lambda/config';
 import { deviceRouter } from '../lambda/device';
 import { documentRouter } from '../lambda/document';
 import { fileRouter } from '../lambda/file';
+import { goalRouter } from '../lambda/goal';
 import { homeRouter } from '../lambda/home';
 import { knowledgeBaseRouter } from '../lambda/knowledgeBase';
 import { marketRouter } from '../lambda/market';
@@ -69,6 +70,7 @@ export const mobileRouter = router({
   document: documentRouter,
   experts: expertsRouter,
   file: fileRouter,
+  goal: goalRouter,
   healthcheck: publicProcedure.query(() => "i'm live!"),
   home: homeRouter,
   knowledgeBase: knowledgeBaseRouter,

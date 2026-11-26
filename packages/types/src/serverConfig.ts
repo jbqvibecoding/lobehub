@@ -19,14 +19,24 @@ import type {
  */
 export type IFeatureFlagsState = {
   enableAgentOnboarding: boolean | undefined;
-  enableAgentSelfIteration: boolean | undefined;
   /**
    * Agent Share capability: may this user publish an Agent as a shared link AND
    * open/chat on an already-live shared agent. One allowlist gates both sides.
    */
   enableAgentShare: boolean | undefined;
   enableAuthCaptcha: boolean | undefined;
+  /**
+   * Multi-agent Channels (`channel`). Off by default: the sidebar section and Channel pages are
+   * hidden and the Channel APIs answer FORBIDDEN.
+   */
+  enableChannels: boolean | undefined;
   enableCheckUpdates: boolean | undefined;
+  /**
+   * Dashboards and the `lobe-dashboard` agent tool (`dashboard`). Off by
+   * default: the pages, Portal view, in-chat previews and the tool are hidden
+   * and the widget / dashboard APIs answer FORBIDDEN.
+   */
+  enableDashboard: boolean | undefined;
   enableDevDock: boolean | undefined;
   /**
    * Rollout gate for the multiplexed gateway socket. Necessary but not
@@ -34,6 +44,16 @@ export type IFeatureFlagsState = {
    * `GlobalServerConfig.agentGatewayProtocol === 2`.
    */
   enableGatewayMux: boolean | undefined;
+  /**
+   * LobeHub Mobile rollout gate for the multiplexed gateway socket and
+   * protocol-v2 payloads; independent from `enableGatewayMux`.
+   */
+  enableGatewayMuxMobile: boolean | undefined;
+  /**
+   * Rollout gate for the bot-wake pipeline (`bot_wake`), evaluated for the bot's owner. Read only
+   * by the server; it is part of the state because the two flag types must not drift apart.
+   */
+  enableBotWake: boolean | undefined;
   enableKnowledgeBase: boolean | undefined;
   /**
    * Rollout gate for relaying LLM calls of device-only model providers to the
@@ -45,6 +65,8 @@ export type IFeatureFlagsState = {
   enableRAGEval: boolean | undefined;
   enableSTT: boolean | undefined;
   enableStorageOverage: boolean | undefined;
+  /** Hover previews of a topic's final answer (`topic_preview`). */
+  enableTopicPreview: boolean | undefined;
   enableVoiceDictation: boolean | undefined;
   enableWorkspace: boolean | undefined;
   hideDocs: boolean | undefined;
@@ -122,6 +144,13 @@ export interface GlobalServerConfig {
   agentGatewayUrl?: string;
   aiProvider: ServerLanguageModel;
   defaultAgent?: PartialDeep<UserDefaultAgent>;
+  /** Whether the server has DEVICE_GATEWAY_URL configured, independent of its public URL. */
+  deviceGatewayConfigured?: boolean;
+  /**
+   * Public Device Gateway base URL (`DEVICE_GATEWAY_PUBLIC_URL`). Absent when not
+   * configured; clients then keep the address they manage themselves.
+   */
+  deviceGatewayUrl?: string;
   disableEmailPassword?: boolean;
   /**
    * Whether plans can be bought on this deployment (a payment provider is configured for its
@@ -149,9 +178,21 @@ export interface GlobalServerConfig {
   enablePhoneSignIn?: boolean;
   enableUploadFileToServer?: boolean;
   image?: PartialDeep<UserImageConfig>;
+  /**
+   * Whether the server can relay an LLM call to a browser tab (Agent Gateway
+   * with its service token + Redis). The one-shot relay is used only then.
+   */
+  llmRelayAvailable?: boolean;
   memory?: GlobalMemoryConfig;
   multimodalUnderstanding?: MultimodalUnderstandingConfig;
   oAuthSSOProviders?: string[];
+  /**
+   * Public issuer of the built-in OIDC provider (`APP_URL` + `/oidc`) — the
+   * exact value the provider signs into tokens and discovery. Clients show
+   * this to developers instead of their own origin, which differs behind a
+   * reverse proxy or on desktop.
+   */
+  oidcIssuer?: string;
   /**
    * Which edition this deployment serves. Outside the Global edition the web app keeps user
    * content away from services abroad, so it treats a missing value the same way.

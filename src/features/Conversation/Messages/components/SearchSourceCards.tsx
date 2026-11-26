@@ -1,18 +1,12 @@
-import { A, Block, ScrollShadow } from '@lobehub/ui';
-import { Text } from '@lobehub/ui/base-ui';
-import { createStaticStyles } from 'antd-style';
+import { A, Block, ScrollShadow, Text } from '@lobehub/ui';
+import * as stylex from '@stylexjs/stylex';
 import { memo } from 'react';
 
 import { type GroundingSearch } from '@/types/search';
 
-const styles = createStaticStyles(({ css }) => ({
-  card: css`
-    min-width: 160px;
-    max-width: 160px;
-    height: 100%;
-    font-size: 12px;
-  `,
-}));
+const styles = stylex.create({
+  card: { minWidth: '160px', maxWidth: '160px', height: '100%', fontSize: '12px' },
+});
 
 const domainOf = (url: string) => {
   try {
@@ -40,7 +34,7 @@ const SearchSourceCards = memo<{ citations: NonNullable<GroundingSearch['citatio
         <A href={citation.url} key={citation.url} rel="noreferrer" target="_blank">
           <Block
             clickable
-            className={styles.card}
+            className={stylex.props(styles.card).className}
             gap={2}
             justify={'space-between'}
             paddingBlock={6}

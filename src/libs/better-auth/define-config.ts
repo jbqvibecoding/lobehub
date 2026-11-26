@@ -20,7 +20,9 @@ import {
   getVerificationEmailTemplate,
   getVerificationOTPEmailTemplate,
 } from '@/libs/better-auth/email-templates';
+import { deferredSessionRefresh } from '@/libs/better-auth/plugins/deferred-session-refresh';
 import { emailWhitelist } from '@/libs/better-auth/plugins/email-whitelist';
+import { sessionOptions } from '@/libs/better-auth/session-options';
 import { initBetterAuthSSOProviders } from '@/libs/better-auth/sso';
 import {
   createSecondaryStorage,
@@ -235,14 +237,7 @@ export function defineConfig(customOptions: CustomBetterAuthOptions) {
     onAPIError: {
       errorURL: '/auth-error',
     },
-    session: {
-      cookieCache: {
-        enabled: true,
-        maxAge: 2 * 60, // Cache duration in seconds
-      },
-      // Keep a DB-backed fallback when Redis secondary storage entries are unexpectedly missing.
-      storeSessionInDatabase: true,
-    },
+    session: sessionOptions,
     database: drizzleAdapter(serverDB, {
       provider: 'pg',
       // experimental joins feature needs schema to pass full relation
@@ -343,6 +338,7 @@ export function defineConfig(customOptions: CustomBetterAuthOptions) {
     },
     plugins: [
       ...customOptions.plugins,
+      deferredSessionRefresh(),
       emailWhitelist(),
       expo(),
       admin(),

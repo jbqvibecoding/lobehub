@@ -2,11 +2,19 @@
 
 import { BRANDING_NAME } from '@lobechat/business-const';
 import { type IconProps } from '@lobehub/ui';
-import { Block, Flexbox, Icon } from '@lobehub/ui';
+import {
+  Block,
+  Button,
+  createStaticStyles,
+  cssVar,
+  Flexbox,
+  Icon,
+  Steps,
+  Switch,
+  Text,
+} from '@lobehub/ui';
 import { TypewriterEffect } from '@lobehub/ui/awesome';
-import { Button, Steps, Switch, Text } from '@lobehub/ui/base-ui';
 import { LoadingDots } from '@lobehub/ui/chat';
-import { createStaticStyles, cssVar } from 'antd-style';
 import { BrainIcon, HeartHandshakeIcon, PencilRulerIcon, ShieldCheck } from 'lucide-react';
 import { memo, useCallback, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
@@ -165,6 +173,7 @@ const TelemetryStep = memo<TelemetryStepProps>(({ onNext }) => {
             style={{ color: cssVar.colorSuccess, flexShrink: 0 }}
           />
           <Text fontSize={12} type="secondary">
+            {/* New window: Desktop hands it to the system browser, Web keeps onboarding progress */}
             <Trans
               i18nKey={'telemetry.agreement'}
               ns={'onboarding'}
@@ -172,7 +181,9 @@ const TelemetryStep = memo<TelemetryStepProps>(({ onNext }) => {
                 privacy: (
                   <a
                     href={PRIVACY_URL}
+                    rel="noopener noreferrer"
                     style={{ color: 'inherit', cursor: 'pointer', textDecoration: 'underline' }}
+                    target="_blank"
                   >
                     {t('telemetry.terms')}
                   </a>
@@ -180,7 +191,9 @@ const TelemetryStep = memo<TelemetryStepProps>(({ onNext }) => {
                 terms: (
                   <a
                     href={TERMS_URL}
+                    rel="noopener noreferrer"
                     style={{ color: 'inherit', cursor: 'pointer', textDecoration: 'underline' }}
+                    target="_blank"
                   >
                     {t('telemetry.privacy')}
                   </a>

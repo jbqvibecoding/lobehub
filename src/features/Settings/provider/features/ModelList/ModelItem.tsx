@@ -1,6 +1,15 @@
-import { copyToClipboard, Flexbox } from '@lobehub/ui';
-import { ActionIcon, confirmModal, Switch, Tag, Text, toast } from '@lobehub/ui/base-ui';
-import { createStaticStyles, cssVar } from 'antd-style';
+import {
+  ActionIcon,
+  confirmModal,
+  copyToClipboard,
+  createStaticStyles,
+  cssVar,
+  Flexbox,
+  Switch,
+  Tag,
+  Text,
+  toast,
+} from '@lobehub/ui';
 import { LucidePencil, TrashIcon } from 'lucide-react';
 import { type AiProviderModelListItem } from 'model-bank';
 import { AiModelSourceEnum } from 'model-bank/aiModel';
@@ -10,6 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { ModelIcon } from '@/components/LobeIcons';
 import { ModelInfoTags } from '@/components/ModelSelect';
 import NewModelBadge from '@/components/ModelSelect/NewModelBadge';
+import RoutingBadge from '@/components/ModelSelect/RoutingBadge';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePermission } from '@/hooks/usePermission';
 import { aiModelSelectors, useAiInfraStore } from '@/store/aiInfra';
@@ -112,6 +122,8 @@ const ModelItem = memo<ModelItemProps>(
               }),
           ].filter(Boolean) as string[];
         }
+        // Decision models bill input tokens only.
+        case 'decision':
         case 'embedding': {
           const inputRate = getTextInputUnitRate(pricing);
           return [
@@ -244,6 +256,7 @@ const ModelItem = memo<ModelItemProps>(
           <Flexbox flex={1} gap={4} style={{ minWidth: 0 }}>
             <Flexbox horizontal align={'center'} gap={8}>
               {displayName || id}
+              <RoutingBadge id={id} provider={activeAiProvider} />
               <Flexbox horizontal align={'center'} gap={8}>
                 <ModelInfoTags
                   placement={'top'}
@@ -278,6 +291,7 @@ const ModelItem = memo<ModelItemProps>(
           <Flexbox flex={1} gap={2} style={{ minWidth: 0 }}>
             <Flexbox horizontal align={'center'} gap={8}>
               {displayName || id}
+              <RoutingBadge id={id} provider={activeAiProvider} />
               {ModelIdTag}
               {NewTag}
               {Actions && Actions()}

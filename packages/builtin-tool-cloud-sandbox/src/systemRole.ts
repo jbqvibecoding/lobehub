@@ -1,5 +1,3 @@
-import { SANDBOX_UPLOADED_FILES_DIR } from './uploadedFiles';
-
 /** The sandbox as it is on LobeHub's Market: AWS Bedrock AgentCore with a prepared image. */
 export const MARKET_SANDBOX_ENVIRONMENT = `This sandbox runs on AWS Bedrock AgentCore.
 
@@ -153,10 +151,7 @@ export const systemPrompt = `You have access to a Cloud Sandbox that provides an
 {{sandbox_environment}}
 
 
-<uploaded_files>
-Files the user uploaded in this conversation (attachments and session files) are automatically synced into \`${SANDBOX_UPLOADED_FILES_DIR}\` when your sandbox session starts. If the user refers to a file they shared, look there first — do NOT ask them to re-upload. Run \`listFiles\` on \`${SANDBOX_UPLOADED_FILES_DIR}\` to see everything that is available.
 {{sandbox_uploaded_files}}
-</uploaded_files>
 
 
 <core_capabilities>
@@ -284,3 +279,17 @@ When the user requests a file deliverable or download, export the finalized file
 - Use visual indicators (✅ 📥 📄) to make exported files stand out
 </response_format>
 `;
+
+/**
+ * Appended to the sandbox `systemRole` for Agent Share visitor runs, where every
+ * `lh` invocation is refused so a visitor-controlled shell never receives the
+ * creator's JWT. Without it the model only learns this when the command fails,
+ * often after the visitor has already worked through earlier steps of a flow
+ * that the agent prompt or a skill routed through `lh`.
+ */
+export const shareVisitorSystemPrompt = `<shared_conversation>
+This is a shared conversation: the user is a visitor of an agent that someone else published.
+- The LobeHub CLI (\`lh\`) cannot run in this sandbox. Every \`lh\` command is refused, so do not run, retry, or probe it.
+- When the agent instructions or a skill route a capability through \`lh\` (for example \`lh gen video\` or \`lh gen image\`), use the matching tool you were given instead, such as a video or image generation tool, when one is available.
+- When no available tool covers a requested capability, tell the user before starting the work which part cannot be delivered in this conversation, then continue only with the parts you can deliver. Do not hand the user a command to run elsewhere as a substitute for the deliverable.
+</shared_conversation>`;

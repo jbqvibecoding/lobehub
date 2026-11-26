@@ -14,9 +14,12 @@ import { AuvManifest } from '@lobechat/builtin-tool-auv';
 import { BrowserManifest } from '@lobechat/builtin-tool-browser';
 import { CalculatorManifest } from '@lobechat/builtin-tool-calculator/manifest';
 import { CalendarManifest } from '@lobechat/builtin-tool-calendar';
+import { CanvasManifest } from '@lobechat/builtin-tool-canvas';
+import { ChannelManifest } from '@lobechat/builtin-tool-channel';
 import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { ComputerManifest } from '@lobechat/builtin-tool-computer';
 import { CredsManifest } from '@lobechat/builtin-tool-creds';
+import { DashboardManifest } from '@lobechat/builtin-tool-dashboard';
 import {
   GoalManifest,
   GoalReportManifest,
@@ -37,7 +40,6 @@ import { RemindersManifest } from '@lobechat/builtin-tool-reminders';
 import { selfFeedbackIntentManifest } from '@lobechat/builtin-tool-self-iteration';
 import { SkillStoreManifest } from '@lobechat/builtin-tool-skill-store';
 import { SkillsManifest } from '@lobechat/builtin-tool-skills';
-import { TopicReferenceManifest } from '@lobechat/builtin-tool-topic-reference';
 import { UserInteractionManifest } from '@lobechat/builtin-tool-user-interaction';
 import { VerifyToolManifest } from '@lobechat/builtin-tool-verify';
 import { VideoGenerationManifest } from '@lobechat/builtin-tool-video-generation';
@@ -45,6 +47,7 @@ import { WebBrowsingManifest } from '@lobechat/builtin-tool-web-browsing';
 import { WebOnboardingManifest } from '@lobechat/builtin-tool-web-onboarding';
 
 export const builtinToolIdentifiers: string[] = [
+  ChannelManifest.identifier,
   AcceptanceEvidenceManifest.identifier,
   AgentBuilderManifest.identifier,
   AgentDocumentsManifest.identifier,
@@ -52,8 +55,10 @@ export const builtinToolIdentifiers: string[] = [
   AttachmentsManifest.identifier,
   AuvManifest.identifier,
   CalculatorManifest.identifier,
+  CanvasManifest.identifier,
   CloudSandboxManifest.identifier,
   CredsManifest.identifier,
+  DashboardManifest.identifier,
   GroupAgentBuilderManifest.identifier,
   GroupManagementManifest.identifier,
   GoalManifest.identifier,
@@ -79,7 +84,6 @@ export const builtinToolIdentifiers: string[] = [
   agentSignalSkillManagementManifest.identifier,
   SkillsManifest.identifier,
   SkillStoreManifest.identifier,
-  TopicReferenceManifest.identifier,
   LobeActivatorManifest.identifier,
   WebBrowsingManifest.identifier,
   UserInteractionManifest.identifier,

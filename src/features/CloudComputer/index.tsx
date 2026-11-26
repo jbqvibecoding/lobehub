@@ -1,8 +1,8 @@
 'use client';
 
-import { Flexbox } from '@lobehub/ui';
-import { Alert, Button, Input, Spin, Text } from '@lobehub/ui/base-ui';
-import { createStaticStyles } from 'antd-style';
+import { Alert, Button, Flexbox, Input, Spin, Text } from '@lobehub/ui';
+import { cssVar } from '@lobehub/ui/stylex/cssVar.stylex';
+import * as stylex from '@stylexjs/stylex';
 import { memo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import useSWR from 'swr';
@@ -23,35 +23,24 @@ const refreshIntervalFor = (view?: CloudComputerView) =>
 
 type Busy = 'handBack' | 'start' | 'takeOver';
 
-const styles = createStaticStyles(({ css, cssVar }) => ({
-  content: css`
-    width: min(100%, 1120px);
-    margin-block: 0;
-    margin-inline: auto;
-    padding-block: 32px 96px;
-    padding-inline: 24px;
-
-    @media (width <= 760px) {
-      padding-block-start: 16px;
-      padding-inline: 16px;
-    }
-  `,
-  muted: css`
-    font-size: 13px;
-    color: ${cssVar.colorTextSecondary};
-    overflow-wrap: anywhere;
-  `,
-  page: css`
-    overflow-y: auto;
-    height: 100%;
-    background: ${cssVar.colorBgLayout};
-  `,
-  title: css`
-    margin: 0;
-    font-size: 30px;
-    line-height: 1.2;
-  `,
-}));
+const styles = stylex.create({
+  content: {
+    width: 'min(100%, 1120px)',
+    marginBlock: '0',
+    marginInline: 'auto',
+    paddingBlockStart: { 'default': '32px', '@media (width <= 760px)': '16px' },
+    paddingBlockEnd: '96px',
+    paddingInline: { 'default': '24px', '@media (width <= 760px)': '16px' },
+  },
+  muted: { fontSize: '13px', color: cssVar.colorTextSecondary, overflowWrap: 'anywhere' },
+  page: {
+    overflowY: 'auto',
+    height: '100%',
+    backgroundColor: cssVar.colorBgLayout,
+    backgroundImage: 'none',
+  },
+  title: { margin: '0', fontSize: '30px', lineHeight: 1.2 },
+});
 
 /**
  * The cloud computer page: the browser the assistant uses, watched about once a second, which the
@@ -66,7 +55,8 @@ const CloudComputer = memo(() => {
   const [busy, setBusy] = useState<Busy>();
   const [actionError, setActionError] = useState<string>();
   const [text, setText] = useState('');
-  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  // The last input still on its way; inputs wait for it so typed characters arrive in order
+  const queue = useRef<Promise<unknown>>(undefined);
 
   const run = async (kind: Busy, call: () => Promise<unknown>) => {
     setBusy(kind);
@@ -83,7 +73,7 @@ const CloudComputer = memo(() => {
 
   /** Inputs go one after another, so typed characters arrive in order. */
   const send = (action: CloudComputerAction) => {
-    queue.current = queue.current
+    queue.current = (queue.current ?? Promise.resolve())
       .then(() => cloudComputerService.input(action))
       .then(() => mutate())
       .catch((failure) => setActionError((failure as Error).message));
@@ -175,7 +165,7 @@ const CloudComputer = memo(() => {
             </Button>
           )}
           {data.screen?.url && (
-            <span className={styles.muted}>
+            <span {...stylex.props(styles.muted)}>
               {t('cloudComputer.currentPage')}: {data.screen.url}
             </span>
           )}
@@ -210,7 +200,7 @@ const CloudComputer = memo(() => {
             </Button>
           </Flexbox>
         )}
-        <span className={styles.muted}>
+        <span {...stylex.props(styles.muted)}>
           {t(driving ? 'cloudComputer.hint.human' : 'cloudComputer.hint.bot')}{' '}
           {t('cloudComputer.masked')}
         </span>
@@ -219,14 +209,14 @@ const CloudComputer = memo(() => {
   };
 
   return (
-    <div className={styles.page}>
-      <main className={styles.content}>
+    <div {...stylex.props(styles.page)}>
+      <main {...stylex.props(styles.content)}>
         <Flexbox gap={16}>
           <Flexbox gap={6}>
-            <Text as={'h1'} className={styles.title} weight={700}>
+            <Text as={'h1'} className={stylex.props(styles.title).className} weight={700}>
               {t('cloudComputer.title')}
             </Text>
-            <span className={styles.muted}>{t('cloudComputer.description')}</span>
+            <span {...stylex.props(styles.muted)}>{t('cloudComputer.description')}</span>
           </Flexbox>
           {actionError && (
             <Alert

@@ -17,11 +17,6 @@ export const getSandboxConfig = () => {
       OPENBOT_SUPERVISOR_TOKEN: process.env.OPENBOT_SUPERVISOR_TOKEN,
       OPENBOT_SUPERVISOR_URL: process.env.OPENBOT_SUPERVISOR_URL,
       SANDBOX_PROVIDER: process.env.SANDBOX_PROVIDER,
-      WIDGET_SANDBOX_NETWORK_FORMAT: process.env.WIDGET_SANDBOX_NETWORK_FORMAT,
-      WIDGET_SANDBOX_PROVIDER: process.env.WIDGET_SANDBOX_PROVIDER,
-      // `DASHBOARD_SANDBOX_*` is the pre-rename name, still read as a fallback.
-      WIDGET_SANDBOX_TOKEN: process.env.WIDGET_SANDBOX_TOKEN || process.env.DASHBOARD_SANDBOX_TOKEN,
-      WIDGET_SANDBOX_URL: process.env.WIDGET_SANDBOX_URL || process.env.DASHBOARD_SANDBOX_URL,
     },
     server: {
       ONLYBOXES_BASE_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
@@ -53,26 +48,6 @@ export const getSandboxConfig = () => {
         emptyStringToUndefined,
         z.enum(['market', 'onlyboxes', 'openbot']).optional(),
       ),
-      /**
-       * How the widget sandbox request encodes the manifest's network
-       * allowlist: `boolean` (default) sends `network: allow.length > 0`, which is
-       * all the deployed Worker understands today (it rejects an object with 400);
-       * `allowlist` sends `network: { allow: [...] }` for a Worker that enforces
-       * per-run hosts.
-       */
-      WIDGET_SANDBOX_NETWORK_FORMAT: z.preprocess(
-        emptyStringToUndefined,
-        z.enum(['allowlist', 'boolean']).optional(),
-      ),
-      /** Widget script executor; only the Cloudflare Worker exists today. */
-      WIDGET_SANDBOX_PROVIDER: z.preprocess(
-        emptyStringToUndefined,
-        z.enum(['cloudflare-worker']).optional(),
-      ),
-      /** Bearer token for the widget sandbox (`POST /run`). Falls back to `DASHBOARD_SANDBOX_TOKEN`. */
-      WIDGET_SANDBOX_TOKEN: z.preprocess(emptyStringToUndefined, z.string().optional()),
-      /** Base URL of the widget sandbox. Falls back to `DASHBOARD_SANDBOX_URL`. */
-      WIDGET_SANDBOX_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
     },
   });
 };

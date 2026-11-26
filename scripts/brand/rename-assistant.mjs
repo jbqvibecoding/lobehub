@@ -38,7 +38,11 @@ const RULES = [
   [/(?<![\w./-])LobeAI(?![\w-])/g, NAME],
 ];
 
-const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' })
+const files = execFileSync('git', ['ls-files', '-z'], {
+  cwd: root,
+  encoding: 'utf8',
+  maxBuffer: 256 * 1024 * 1024,
+})
   .split('\0')
   .filter((file) => TEXT_FILE.test(file) && !SKIPPED.some((pattern) => pattern.test(file)));
 

@@ -14,16 +14,6 @@ describe('getSandboxConfig', () => {
     delete process.env.OPENBOT_COMPUTER_TOKEN;
     delete process.env.OPENBOT_SUPERVISOR_TOKEN;
     delete process.env.OPENBOT_SUPERVISOR_URL;
-    for (const key of [
-      'WIDGET_SANDBOX_URL',
-      'WIDGET_SANDBOX_TOKEN',
-      'WIDGET_SANDBOX_PROVIDER',
-      'WIDGET_SANDBOX_NETWORK_FORMAT',
-      'DASHBOARD_SANDBOX_URL',
-      'DASHBOARD_SANDBOX_TOKEN',
-    ]) {
-      delete process.env[key];
-    }
   });
 
   it('should treat docker empty string defaults as unset optional values', async () => {
@@ -79,34 +69,5 @@ describe('getSandboxConfig', () => {
     expect(config.OPENBOT_SUPERVISOR_TOKEN).toBe('supervisor-token');
     expect(config.OPENBOT_COMPUTER_TOKEN).toBe('computer-token');
     expect(config.OPENBOT_COMPUTER_SCOPE).toBe('topic');
-  });
-
-  it('reads the widget sandbox from WIDGET_SANDBOX_*', async () => {
-    process.env.WIDGET_SANDBOX_URL = 'https://widget.example.dev';
-    process.env.WIDGET_SANDBOX_TOKEN = 'widget-token';
-    process.env.WIDGET_SANDBOX_PROVIDER = 'cloudflare-worker';
-    process.env.WIDGET_SANDBOX_NETWORK_FORMAT = 'boolean';
-    process.env.DASHBOARD_SANDBOX_URL = 'https://legacy.example.dev';
-    process.env.DASHBOARD_SANDBOX_TOKEN = 'legacy-token';
-
-    const { getSandboxConfig } = await import('../sandbox');
-    const config = getSandboxConfig();
-
-    expect(config.WIDGET_SANDBOX_URL).toBe('https://widget.example.dev');
-    expect(config.WIDGET_SANDBOX_TOKEN).toBe('widget-token');
-    expect(config.WIDGET_SANDBOX_PROVIDER).toBe('cloudflare-worker');
-    expect(config.WIDGET_SANDBOX_NETWORK_FORMAT).toBe('boolean');
-  });
-
-  it('falls back to the legacy DASHBOARD_SANDBOX_* names', async () => {
-    process.env.DASHBOARD_SANDBOX_URL = 'https://legacy.example.dev';
-    process.env.DASHBOARD_SANDBOX_TOKEN = 'legacy-token';
-
-    const { getSandboxConfig } = await import('../sandbox');
-    const config = getSandboxConfig();
-
-    expect(config.WIDGET_SANDBOX_URL).toBe('https://legacy.example.dev');
-    expect(config.WIDGET_SANDBOX_TOKEN).toBe('legacy-token');
-    expect(config.WIDGET_SANDBOX_PROVIDER).toBeUndefined();
   });
 });

@@ -1520,7 +1520,7 @@ describe('messageRuntime', () => {
 
       expect(result.success).toBe(true);
       expect(result.state.status).toBe('queued');
-      expect(result.content).toContain('send any message to the LobeHub WeChat bot');
+      expect(result.content).toContain('send any message to the Biber WeChat bot');
     });
 
     it('directs the user to Settings → Messenger when the platform is unlinked', async () => {

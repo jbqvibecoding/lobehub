@@ -1,8 +1,7 @@
 import { AGENT_CHAT_TOPIC_URL } from '@lobechat/const';
 import type { ChatTopicStatus } from '@lobechat/types';
-import type { MenuProps } from '@lobehub/ui';
-import { Icon } from '@lobehub/ui';
-import { toast } from '@lobehub/ui/base-ui';
+import type { DropdownItem } from '@lobehub/ui';
+import { Icon, toast } from '@lobehub/ui';
 import {
   Archive,
   ArchiveRestore,
@@ -12,8 +11,9 @@ import {
   LucideCopy,
   PanelTop,
   PencilLine,
+  Pin,
+  PinOff,
   Share2,
-  Star,
   Trash,
   Wand2,
 } from 'lucide-react';
@@ -51,7 +51,7 @@ export const useDropdownMenu = ({
   status,
   topicId,
   topicTitle,
-}: UseDropdownMenuProps): (() => MenuProps['items']) => {
+}: UseDropdownMenuProps): (() => DropdownItem[]) => {
   const { t } = useTranslation(['common', 'topic']);
 
   const appOrigin = useAppOrigin();
@@ -110,15 +110,13 @@ export const useDropdownMenu = ({
         },
         {
           disabled: !canEditTopic,
-          icon: <Icon icon={Star} />,
+          icon: <Icon icon={fav ? PinOff : Pin} />,
           key: 'favorite',
-          label: fav
-            ? t('actions.unfavorite', { ns: 'topic' })
-            : t('actions.favorite', { ns: 'topic' }),
+          label: fav ? t('actions.unpin', { ns: 'topic' }) : t('actions.pin', { ns: 'topic' }),
           onClick: () => {
             favoriteTopic(topicId, !fav);
           },
-          sfSymbol: fav ? 'star.slash' : 'star',
+          sfSymbol: fav ? 'pin.slash' : 'pin',
         },
         {
           type: 'divider' as const,
@@ -203,7 +201,10 @@ export const useDropdownMenu = ({
           label: t('actions.copyLink', { ns: 'topic' }),
           onClick: () => {
             if (!agentId) return;
-            const url = `${appOrigin}${AGENT_CHAT_TOPIC_URL(agentId, topicId)}`;
+            const url = `${appOrigin}${buildWorkspaceAwarePath(
+              AGENT_CHAT_TOPIC_URL(agentId, topicId),
+              activeWorkspaceSlug,
+            )}`;
             void navigator.clipboard.writeText(url);
             toast.success(t('actions.copyLinkSuccess', { ns: 'topic' }));
           },
@@ -249,7 +250,7 @@ export const useDropdownMenu = ({
           },
           sfSymbol: 'trash',
         },
-      ].filter(Boolean) as MenuProps['items'],
+      ].filter(Boolean) as DropdownItem[],
     [
       addTab,
       activeWorkspaceSlug,

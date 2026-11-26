@@ -18,8 +18,7 @@ import {
   PUSH_CHANGES_API_NAME,
   sendHeteroAnswer,
 } from '@/server/services/heterogeneousAgent/interventions';
-import { TaskLifecycleService } from '@/server/services/taskLifecycle';
-import { taskCompletionHook } from '@/server/services/taskRunner/completionHook';
+import { createTaskRunHooks } from '@/server/services/task/runHooks';
 
 import { backgroundInterventionConfig } from './background';
 
@@ -169,16 +168,16 @@ export const answerToolApproval = async (
           }),
         })
       : []),
+    // A run resumed after an approval settles the task too: the run that paused ended without it
     ...(task
-      ? [
-          taskCompletionHook({
-            runTrigger: taskTopic?.trigger ?? 'manual',
-            taskId: task.id,
-            taskIdentifier: task.identifier,
-            taskLifecycle: new TaskLifecycleService(db, userId, workspaceId),
-            userId,
-          }),
-        ]
+      ? createTaskRunHooks({
+          db,
+          taskId: task.id,
+          taskIdentifier: task.identifier,
+          trigger: taskTopic?.trigger ?? 'manual',
+          userId,
+          workspaceId,
+        })
       : []),
   ];
 

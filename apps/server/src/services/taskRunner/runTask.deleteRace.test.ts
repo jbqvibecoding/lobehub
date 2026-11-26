@@ -24,6 +24,10 @@ vi.mock('@/server/services/aiAgent', () => ({
   }),
 }));
 vi.mock('@/server/services/taskLifecycle', () => ({ TaskLifecycleService: vi.fn() }));
+// No phone registered: a background run approves headlessly (Biber's phone approvals)
+vi.mock('@/server/services/toolApproval/background', () => ({
+  backgroundInterventionConfig: vi.fn(async () => ({ approvalMode: 'headless' })),
+}));
 vi.mock('./buildTaskPrompt', () => ({
   buildTaskPrompt: vi.fn().mockResolvedValue({
     acceptanceEnabled: false,
@@ -59,9 +63,11 @@ describe('TaskRunnerService.runTask vs. a concurrent delete', () => {
       getCheckpointConfig: vi.fn().mockReturnValue({}),
       getReviewConfig: vi.fn().mockReturnValue(undefined),
       incrementTopicCount: vi.fn(),
-      findById: vi.fn().mockResolvedValue({ ...task, status: 'running' }),
+      findById: vi
+        .fn()
+        .mockResolvedValueOnce({ ...task })
+        .mockResolvedValue({ ...task, status: 'running' }),
       lockForUpdate: vi.fn().mockResolvedValue(true),
-      resolve: vi.fn().mockResolvedValue({ ...task }),
       update: vi.fn(),
       updateCurrentTopic: vi.fn(),
       updateHeartbeat: vi.fn(),

@@ -1,6 +1,6 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { afterEach, describe, expect, it } from 'vitest';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 
 import { AskUserBridge } from '../askUser/AskUserBridge';
 import {
@@ -17,6 +17,63 @@ afterEach(async () => {
 });
 
 describe('LobeBuiltinMcpServer', () => {
+  it('routes extra tools to the operation selected by the session URL', async () => {
+    const handler = vi.fn(async (operationId: string, args: Record<string, unknown>) => ({
+      content: [{ type: 'text' as const, text: `${operationId}:${args.value}` }],
+    }));
+    server = new LobeBuiltinMcpServer({
+      extraTools: [
+        {
+          name: 'echo_operation',
+          description: 'echo',
+          inputSchema: { value: z.string() },
+          handler,
+        },
+      ],
+    });
+    await server.start();
+    server.registerOperation('op-extra');
+    const client = await connectClient(server.urlForOperation('op-extra'));
+    try {
+      expect(
+        await client.callTool({ name: 'echo_operation', arguments: { value: 'hello' } }),
+      ).toMatchObject({ content: [{ text: 'op-extra:hello' }] });
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("hands an extra tool Claude Code's own tool call id", async () => {
+    const handler = vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'done' }] }));
+    server = new LobeBuiltinMcpServer({
+      extraTools: [{ description: 'deliver', handler, inputSchema: {}, name: 'deliver_file' }],
+    });
+    await server.start();
+    server.registerOperation('op-coder');
+    const client = await connectClient(server.urlForOperation('op-coder'));
+    try {
+      await client.callTool({
+        _meta: { 'claudecode/toolUseId': 'tu_9' },
+        arguments: {},
+        name: 'deliver_file',
+      });
+      expect(handler).toHaveBeenCalledWith(
+        'op-coder',
+        {},
+        expect.objectContaining({ toolCallId: 'tu_9' }),
+      );
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('rejects a request without a session or initialize with HTTP 400', async () => {
+    server = new LobeBuiltinMcpServer();
+    await server.start();
+    const response = await fetch(server.url);
+    expect(response.status).toBe(400);
+  });
+
   describe('lifecycle', () => {
     it('starts on port=0 (auto-assigned), exposes a localhost URL, stops cleanly', async () => {
       server = new LobeBuiltinMcpServer();
@@ -108,7 +165,7 @@ describe('LobeBuiltinMcpServer', () => {
 
   describe('end-to-end tool call', () => {
     it('routes a tools/call to the right per-op bridge and returns the user answer', async () => {
-      server = new LobeBuiltinMcpServer({ pendingTimeoutMs: 30_000, progressIntervalMs: 1000 });
+      server = new LobeBuiltinMcpServer({ pendingTimeoutMs: 30_000, progressIntervalMs: 5 });
       await server.start();
       const bridge = server.registerOperation('op-A');
 
@@ -119,6 +176,7 @@ describe('LobeBuiltinMcpServer', () => {
         for await (const e of bridge.events()) {
           if (e.type === 'agent_intervention_request') {
             interventionRequestSeen = e;
+            await new Promise((resolve) => setTimeout(resolve, 30));
             bridge.resolve(e.data.toolCallId, {
               result: { 'What color do you want?': 'Red' },
             });
@@ -133,22 +191,28 @@ describe('LobeBuiltinMcpServer', () => {
         const list = await client.listTools();
         expect(list.tools[0].name).toBe(ASK_USER_TOOL_NAME);
 
-        const callResult = (await client.callTool({
-          arguments: {
-            questions: [
-              {
-                header: 'Color',
-                options: [
-                  { description: 'Red color', label: 'Red' },
-                  { description: 'Blue color', label: 'Blue' },
-                ],
-                question: 'What color do you want?',
-              },
-            ],
+        const onprogress = vi.fn();
+        const callResult = (await client.callTool(
+          {
+            _meta: { 'claudecode/toolUseId': 'tu_1', 'progressToken': 1 },
+            arguments: {
+              questions: [
+                {
+                  header: 'Color',
+                  options: [
+                    { description: 'Red color', label: 'Red' },
+                    { description: 'Blue color', label: 'Blue' },
+                  ],
+                  question: 'What color do you want?',
+                },
+              ],
+            },
+            name: ASK_USER_TOOL_NAME,
           },
-          name: ASK_USER_TOOL_NAME,
-        })) as { content: Array<{ text: string; type: string }>; isError?: boolean };
+          { onprogress },
+        )) as { content: Array<{ text: string; type: string }>; isError?: boolean };
 
+        expect.soft(onprogress).toHaveBeenCalled();
         expect(callResult.isError).toBeFalsy();
         expect(callResult.content[0].text).toContain('User answers');
         expect(callResult.content[0].text).toContain('What color do you want?: Red');
@@ -161,6 +225,7 @@ describe('LobeBuiltinMcpServer', () => {
       expect(interventionRequestSeen.operationId).toBe('op-A');
       expect(interventionRequestSeen.data.identifier).toBe('claude-code');
       expect(interventionRequestSeen.data.apiName).toBe('askUserQuestion');
+      expect(interventionRequestSeen.data.toolCallId).toBe('tu_1');
     });
 
     it('returns an isError tool result when the user cancels', async () => {
@@ -204,7 +269,7 @@ describe('LobeBuiltinMcpServer', () => {
     });
 
     /**
-     * Regression: a single shared `StreamableHTTPServerTransport` rejects the
+     * Regression: a single shared `NodeStreamableHTTPServerTransport` rejects the
      * second `initialize` with `Server already initialized`, breaking every
      * op after the first. Ensures we mint one transport+McpServer per session.
      */

@@ -1,3 +1,4 @@
+import type * as LobeUI from '@lobehub/ui';
 import { render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
@@ -15,7 +16,8 @@ vi.mock('./useSignIn', () => ({
 }));
 vi.mock('./SignInEmailStep', () => ({ SignInEmailStep: () => <div>email step</div> }));
 vi.mock('./SignInPhoneStep', () => ({ SignInPhoneStep: () => <div>phone step</div> }));
-vi.mock('@lobehub/ui/base-ui', () => ({
+vi.mock('@lobehub/ui', async (importOriginal) => ({
+  ...(await importOriginal<typeof LobeUI>()),
   Text: ({ children }: { children: ReactNode }) => <p>{children}</p>,
 }));
 

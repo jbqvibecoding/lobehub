@@ -28,6 +28,11 @@ describe('plan catalog', () => {
   it('does not sell the free or the legacy plan, and knows no other price', () => {
     expect(stripeLookupKeyFor(Plans.Free, 'monthly')).toBeUndefined();
     expect(stripeLookupKeyFor(Plans.Hobby, 'yearly')).toBeUndefined();
+    // LobeHub Cloud's plans share the enum but are never Biber's
+    for (const plan of [Plans.Plus, Plans.Pro, Plans.Max]) {
+      expect(stripeLookupKeyFor(plan, 'monthly')).toBeUndefined();
+      expect(PLAN_CATALOG[plan].monthlyCredits).toBe(0);
+    }
     expect(planForStripeLookupKey('someone_elses_price')).toBeUndefined();
     expect(planForStripeLookupKey(null)).toBeUndefined();
   });

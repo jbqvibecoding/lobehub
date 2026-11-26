@@ -40,6 +40,7 @@ export { OnboardingSyntheticStateInjector } from './OnboardingSyntheticStateInje
 export { PageEditorContextInjector } from './PageEditorContextInjector';
 export { PageSelectionsInjector } from './PageSelectionsInjector';
 export { PlanInjector } from './PlanInjector';
+export { ProjectContextInjector } from './ProjectContextInjector';
 export { ProjectInstructionsInjector } from './ProjectInstructionsInjector';
 export { RuntimeAdditionalContextProvider } from './RuntimeAdditionalContextProvider';
 export {
@@ -132,6 +133,7 @@ export type {
 export type { PageEditorContextInjectorConfig } from './PageEditorContextInjector';
 export type { PageSelectionsInjectorConfig } from './PageSelectionsInjector';
 export type { Plan, PlanInjectorConfig } from './PlanInjector';
+export type { ProjectContextInjectorConfig } from './ProjectContextInjector';
 export type {
   ProjectInstructionFile,
   ProjectInstructionsInjectorConfig,

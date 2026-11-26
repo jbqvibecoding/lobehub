@@ -1,8 +1,7 @@
 'use client';
 
-import { Flexbox } from '@lobehub/ui';
-import { Text } from '@lobehub/ui/base-ui';
-import { createStaticStyles, cssVar } from 'antd-style';
+import type { OperationGoal } from '@lobechat/builtin-tools/operationArtifacts';
+import { createStaticStyles, cssVar, Flexbox, Text } from '@lobehub/ui';
 import { ChevronRightIcon } from 'lucide-react';
 import { memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -12,7 +11,6 @@ import GoalStatusGlyph from '@/features/AgentGoals/GoalStatusGlyph';
 import RunningGlyph from '@/features/Home/components/RunningGlyph';
 import { useChatStore } from '@/store/chat';
 
-import type { OperationGoal } from './deriveOperationGoals';
 import { buildGoalCardModel } from './goalCardModel';
 import GoalElapsedTime from './GoalElapsedTime';
 import type { GoalTaskPhase } from './goalTaskProgress';

@@ -18,6 +18,7 @@ import {
 import { LayersEnum, MemorySourceType } from '@/types/userMemory';
 
 import { MemoryExtractionExecutor } from '../extract';
+import { keepUndoRecord } from '../extract/extractTopic';
 
 let testDB: LobeChatDatabase;
 vi.mock('@/database/core/db-adaptor', () => ({
@@ -140,7 +141,7 @@ describe('memory extraction undo', () => {
 
     // The conversation is gone, so the record's reference to it fails
     await expect(
-      (createExecutor() as any).keepUndoRecord(testDB, userId, 'no-such-topic', ['m-1'], []),
+      keepUndoRecord(testDB, userId, 'no-such-topic', ['m-1'], []),
     ).resolves.toBeUndefined();
     expect(
       await testDB
@@ -156,13 +157,7 @@ describe('memory extraction undo', () => {
       title: 'Going to Kyoto',
       userId,
     });
-    await (createExecutor() as any).keepUndoRecord(
-      testDB,
-      userId,
-      topic.id,
-      [`m-trip-${userId}`],
-      [],
-    );
+    await keepUndoRecord(testDB, userId, topic.id, [`m-trip-${userId}`], []);
     expect(await new UserMemoryExtractionModel(testDB, userId).list()).toEqual([
       expect.objectContaining({ added: 1, topicTitle: 'Trip' }),
     ]);

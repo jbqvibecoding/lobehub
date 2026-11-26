@@ -1,21 +1,32 @@
 import { TRPCError } from '@trpc/server';
 
-import { isRunTokenPurpose } from '@/libs/oidc-provider/jwt';
-
 import { trpc } from '../init';
+import { authorizeHeteroOperationEvidence } from './heteroOperationEvidence';
 
 export const oidcAuth = trpc.middleware(async (opts) => {
-  const { ctx, next } = opts;
+  const { ctx, next, path } = opts;
 
   // Check OIDC authentication
   if (ctx.oidcAuth) {
-    // Run tokens (hetero-operation, hetero-run) are long-lived (4h) and scoped exclusively to
-    // the endpoints a run streams back through. Reject them here so a leaked sandbox JWT
-    // cannot be replayed against any other authed route.
-    if (isRunTokenPurpose(ctx.oidcAuth.purpose)) {
+    // hetero-operation tokens are long-lived (4h) and scoped to heteroIngest /
+    // heteroFinish, plus a Task run's own acceptance evidence. Reject them on
+    // every other route so a leaked sandbox JWT cannot be replayed against it.
+    if (ctx.oidcAuth.purpose === 'hetero-operation') {
+      const scope = await authorizeHeteroOperationEvidence({
+        oidcAuth: ctx.oidcAuth,
+        path,
+        workspaceId: ctx.workspaceId,
+      });
+
+      return next({ ctx: { ...scope, oidcAuth: ctx.oidcAuth } });
+    }
+
+    // A cloud run's own token (hetero-run) only reaches the endpoints that run streams back
+    // through, which check it themselves; every other authed route refuses it.
+    if (ctx.oidcAuth.purpose === 'hetero-run') {
       throw new TRPCError({
         code: 'UNAUTHORIZED',
-        message: `${ctx.oidcAuth.purpose} tokens are not accepted on this endpoint`,
+        message: 'hetero-run tokens are not accepted on this endpoint',
       });
     }
 

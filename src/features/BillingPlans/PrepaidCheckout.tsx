@@ -1,9 +1,9 @@
 'use client';
 
 import type { BillingInterval, PrepaidProvider } from '@lobechat/billing';
-import { Flexbox } from '@lobehub/ui';
-import { Alert, Button, Modal, QRCode, Segmented, Spin } from '@lobehub/ui/base-ui';
-import { createStaticStyles } from 'antd-style';
+import { Alert, Button, Flexbox, Modal, QRCode, Segmented, Spin } from '@lobehub/ui';
+import { cssVar } from '@lobehub/ui/stylex/cssVar.stylex';
+import * as stylex from '@stylexjs/stylex';
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import useSWR from 'swr';
@@ -14,17 +14,10 @@ const POLL_MS = 2000;
 
 type PaidPlan = Parameters<typeof subscriptionService.createPrepaidOrder>[0]['plan'];
 
-const styles = createStaticStyles(({ css, cssVar }) => ({
-  muted: css`
-    font-size: 13px;
-    color: ${cssVar.colorTextSecondary};
-    text-align: center;
-  `,
-  price: css`
-    font-size: 24px;
-    font-weight: 600;
-  `,
-}));
+const styles = stylex.create({
+  muted: { fontSize: '13px', color: cssVar.colorTextSecondary, textAlign: 'center' },
+  price: { fontSize: '24px', fontWeight: 600 },
+});
 
 /** Follows an order until its provider confirms the payment. */
 export const usePaidOrder = (orderId: string | undefined) =>
@@ -93,7 +86,7 @@ const PrepaidCheckout = memo<PrepaidCheckoutProps>(
         onCancel={close}
       >
         <Flexbox align={'center'} gap={16} paddingBlock={8}>
-          <span className={styles.price}>{price}</span>
+          <span {...stylex.props(styles.price)}>{price}</span>
 
           {paid ? (
             <>
@@ -105,10 +98,10 @@ const PrepaidCheckout = memo<PrepaidCheckoutProps>(
           ) : wechat ? (
             <>
               <QRCode bordered={false} size={200} value={wechat.codeUrl} />
-              <span className={styles.muted}>{t('planPage.pay.scan')}</span>
+              <span {...stylex.props(styles.muted)}>{t('planPage.pay.scan')}</span>
               <Flexbox horizontal align={'center'} gap={8}>
                 <Spin size={'small'} />
-                <span className={styles.muted}>{t('planPage.pay.waiting')}</span>
+                <span {...stylex.props(styles.muted)}>{t('planPage.pay.waiting')}</span>
               </Flexbox>
             </>
           ) : (
@@ -128,7 +121,7 @@ const PrepaidCheckout = memo<PrepaidCheckoutProps>(
               <Button block loading={busy} size={'large'} type={'primary'} onClick={pay}>
                 {t(method === 'wechat' ? 'planPage.pay.withWechat' : 'planPage.pay.withAlipay')}
               </Button>
-              <span className={styles.muted}>{t('planPage.pay.prepaidNote')}</span>
+              <span {...stylex.props(styles.muted)}>{t('planPage.pay.prepaidNote')}</span>
             </>
           )}
         </Flexbox>

@@ -64,7 +64,7 @@ export const MessageApiName = {
   // ==================== System Bot Messenger Management ====================
   // Operates on `messenger_installations` (workspace-scoped OAuth installs)
   // and `messenger_account_links` (per-user routing decisions). Mirrors the
-  // per-agent bot CRUD surface but for the LobeHub System Bot, which can't
+  // per-agent bot CRUD surface but for the Biber System Bot, which can't
   // be created via tool calls (OAuth requires browser flow).
   /** List the current user's System Bot installations across workspaces. */
   listMessengers: 'listMessengers',
@@ -72,7 +72,7 @@ export const MessageApiName = {
   getMessengerDetail: 'getMessengerDetail',
   /** Revoke a workspace install (cascades to all users in that workspace). */
   uninstallMessenger: 'uninstallMessenger',
-  /** List the platforms where the user can install the LobeHub System Bot. */
+  /** List the platforms where the user can install the Biber System Bot. */
   listMessengerPlatforms: 'listMessengerPlatforms',
   /** List the user's account links — one row per (platform, tenant). */
   listMessengerLinks: 'listMessengerLinks',
@@ -283,8 +283,17 @@ export interface ReadMessagesState {
   totalFetched?: number;
 }
 
+export interface MessageItemAttachment {
+  /** MIME type when the platform reports it (Discord `content_type`). */
+  contentType?: string;
+  name: string;
+  /** Bytes, when the platform reports it. */
+  size?: number;
+  url: string;
+}
+
 export interface MessageItem {
-  attachments?: { name: string; url: string }[];
+  attachments?: MessageItemAttachment[];
   author: { id: string; name: string };
   content: string;
   id: string;
@@ -825,7 +834,7 @@ export type MessengerPushPlatformType =
   (typeof MessengerPushPlatform)[keyof typeof MessengerPushPlatform];
 
 export interface SendMessengerPushParams {
-  /** Message content to deliver into the user's DM with the LobeHub System Bot. */
+  /** Message content to deliver into the user's DM with the Biber System Bot. */
   content: string;
   platform: MessengerPushPlatformType;
   /**
