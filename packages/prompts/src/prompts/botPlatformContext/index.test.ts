@@ -22,6 +22,21 @@ describe('formatBotPlatformContext', () => {
     expect(result).toMatchSnapshot();
   });
 
+  it('group that delivers only addressed messages: says so instead of hunting for history', () => {
+    const result = formatBotPlatformContext({
+      canReadHistory: false,
+      platformName: 'WeCom',
+      seesOnlyAddressedMessages: true,
+      supportsMarkdown: true,
+    });
+
+    expect(result).toContain('In this group you only receive messages that @-mention you');
+    expect(result).toContain('cannot be fetched by any tool or command — do not try');
+    // The DM guidance ("do NOT claim you can't read history") would contradict it here.
+    expect(result).not.toContain('do NOT claim you "can\'t read history"');
+    expect(result).not.toContain('readMessages` IMMEDIATELY');
+  });
+
   it('renders the current conversation identifiers for the message tool', () => {
     const result = formatBotPlatformContext({
       currentChannel: { id: 'oc_84983ff6516d731e', platformId: 'lark' },
@@ -223,6 +238,23 @@ describe('formatBotPlatformContext', () => {
     expect(formatBotPlatformContext({ ...base, wakeKind: 'mention', followup: {} })).not.toContain(
       'one participant among several',
     );
+  });
+
+  it('tells an agent woken to settle an open question to answer it concretely or stay silent', () => {
+    const helpful = formatBotPlatformContext({
+      duty: { helpful: true },
+      platformName: 'Discord',
+      supportsMarkdown: true,
+      wakeKind: 'followup',
+    });
+
+    expect(helpful).toContain(
+      'the message is not one of your duties, but it leaves something open',
+    );
+    expect(helpful).toContain('Speak only if you can give that concrete answer');
+    expect(helpful).toContain('NO_REPLY:already_handled');
+    expect(helpful).toContain('NO_REPLY:not_addressed');
+    expect(helpful).not.toContain('falls within the duties your owner gave you');
   });
 
   it('tells an agent woken by its duties which duty, and to act on it or stay silent', () => {

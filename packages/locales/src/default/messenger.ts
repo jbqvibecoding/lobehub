@@ -61,8 +61,8 @@ export default {
   'messenger.slack.connections.disconnectSuccess': 'Workspace disconnected.',
   'messenger.slack.connections.disconnectTitle': 'Disconnect workspace',
   'messenger.slack.installBlocked.dismiss': 'Got it',
-  'messenger.slack.installBlocked.suggestion':
-    "DM @Biber on Slack to link your personal account — you don't need to install again. Or ask the original installer to disconnect this workspace first if you want to take over ownership.",
+  'messenger.slack.installBlocked.nextSteps':
+    "DM @LobeHub on Slack to link your personal account — you don't need to install again. Or ask the original installer to disconnect this workspace first if you want to take over ownership.",
   'messenger.slack.installBlocked.title': 'Workspace already connected',
   'messenger.slack.installBlocked.withName':
     '"{{workspace}}" is already connected to Biber by another user.',
@@ -94,8 +94,8 @@ export default {
   'messenger.discord.connections.disconnectSuccess': 'Server removed.',
   'messenger.discord.connections.disconnectTitle': 'Remove server',
   'messenger.discord.installBlocked.dismiss': 'Got it',
-  'messenger.discord.installBlocked.suggestion':
-    "DM the Biber bot on Discord to link your personal account — you don't need to add the bot again. Or ask the original installer to remove this server in Biber Settings → Messenger before re-adding it.",
+  'messenger.discord.installBlocked.nextSteps':
+    "DM the Biber bot on Discord to link your personal account — you don't need to add the bot again. Or ask the original installer to remove this server in Biber Plugins → Apps before re-adding it.",
   'messenger.discord.installBlocked.title': 'Server already connected',
   'messenger.discord.installBlocked.withName':
     '"{{workspace}}" is already connected to Biber by another user.',
@@ -260,17 +260,17 @@ export default {
   'verify.confirm.conflict.title': 'This account is already linked',
   'verify.confirm.cta': 'Confirm linking',
   'verify.confirm.defaultAgent': 'Default agent',
-  'verify.confirm.defaultAgentHint':
-    'Your messages will be routed here first. You can switch any time via /agents in the bot or from Settings → Messenger.',
+  'verify.confirm.defaultAgentMarketplaceHint':
+    'Your messages will be routed here first. You can switch any time via /agents in the bot or from Plugins → Apps.',
   'verify.confirm.defaultAgentPlaceholder': 'Select an agent',
   'verify.confirm.fields.lobeHubAccount': 'Biber account',
   'verify.confirm.fields.platformAccount': '{{platform}} account',
   'verify.confirm.fields.workspace': 'Workspace',
   'verify.confirm.noAgents':
     "You don't have any agents yet. Create one in Biber, then come back to finish linking.",
-  'verify.confirm.relink.description':
-    'This Biber account is already linked to {{platform}} account {{account}}. To link a different {{platform}} account, disconnect the current one first in Settings → Messenger.',
-  'verify.confirm.relink.manage': 'Open Messenger settings',
+  'verify.confirm.relink.disconnectInMarketplace':
+    'This Biber account is already linked to {{platform}} account {{account}}. To link a different {{platform}} account, disconnect the current one first in Plugins → Apps.',
+  'verify.confirm.relink.openApp': 'Open app',
   'verify.confirm.relink.title': 'Another {{platform}} account is already linked',
   'verify.awaitingCode.codeLabel': 'Code to send',
   'verify.awaitingCode.description':
@@ -293,7 +293,7 @@ export default {
   'verify.error.missingToken': 'Invalid link. Open this page from the bot.',
   'verify.error.title': 'Unable to confirm link',
   'verify.error.unlinkBeforeRelink':
-    'This Biber account is already linked to another account on this platform. Disconnect it in Settings → Messenger before linking a new one.',
+    'This Biber account is already linked to another account on this platform. Disconnect it in Plugins → Apps before linking a new one.',
   'verify.signInCta': 'Sign in to continue',
   'verify.signInRequired': 'Please sign in to Biber to confirm the link.',
   'verify.success.backToLobeHub': 'Back to Biber',

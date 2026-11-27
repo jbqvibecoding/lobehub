@@ -22,6 +22,9 @@ interface MockGlobalConfigOptions {
   appRegion?: string;
   appUrl?: string;
   enableAgentGateway?: boolean;
+  enablePageCollab?: boolean;
+  enableWorkspacePageCollab?: boolean;
+  filesConfigEnv?: string;
   toolNameMaxLengthEnv?: string;
 }
 
@@ -52,6 +55,9 @@ const mockGlobalConfigDependencies = (
       ...(options.enableAgentGateway === undefined
         ? {}
         : { ENABLE_AGENT_GATEWAY: options.enableAgentGateway }),
+      AGENT_GATEWAY_SERVICE_TOKEN: 'token',
+      ENABLE_PAGE_COLLAB: options.enablePageCollab,
+      ENABLE_WORKSPACE_PAGE_COLLAB: options.enableWorkspacePageCollab,
     },
     getAppConfig: vi.fn(() => ({
       DEFAULT_AGENT_CONFIG: '',
@@ -79,7 +85,7 @@ const mockGlobalConfigDependencies = (
 
   vi.doMock('@/envs/knowledge', () => ({
     knowledgeEnv: {
-      DEFAULT_FILES_CONFIG: undefined,
+      DEFAULT_FILES_CONFIG: options.filesConfigEnv,
     },
   }));
 
@@ -118,7 +124,10 @@ const mockGlobalConfigDependencies = (
   }));
 
   vi.doMock('./parseFilesConfig', () => ({
-    parseFilesConfig: vi.fn(() => ({})),
+    parseFilesConfig: vi.fn((envString?: string) => {
+      if (envString === 'invalid') throw new Error('Invalid environment variable format.');
+      return envString ? { embeddingModel: { model: envString, provider: 'ollama' } } : {};
+    }),
   }));
 
   vi.doMock('./parseMemoryExtractionConfig', () => ({
@@ -162,7 +171,6 @@ describe('getServerGlobalConfig', () => {
     const providerConfig = await loadCapturedProviderConfig(true);
 
     expect(providerConfig[ModelProvider.LobeHub].enabled).toBe(true);
-    expect(providerConfig[ModelProvider.DeepSeek].enabled).toBe(false);
     expect(providerConfig[ModelProvider.Ollama].fetchOnClient).toBe(true);
 
     for (const provider of Object.values(ModelProvider)) {
@@ -223,6 +231,17 @@ describe('getServerGlobalConfig', () => {
     await expect(loadServerConfig(false, { appRegion: 'dev' })).resolves.toMatchObject({
       region: 'cn',
     });
+  });
+
+  it('should tell clients which page collaboration flag is on', async () => {
+    const gateway = { agentGatewayUrl: 'https://gateway.test.com' };
+
+    await expect(
+      loadServerConfig(true, { ...gateway, enableWorkspacePageCollab: true }),
+    ).resolves.toMatchObject({ enablePageCollab: false, enableWorkspacePageCollab: true });
+    await expect(
+      loadServerConfig(true, { ...gateway, enablePageCollab: true }),
+    ).resolves.toMatchObject({ enablePageCollab: true, enableWorkspacePageCollab: false });
   });
 
   it('should declare gateway protocol 2 only where the v2 socket exists', async () => {
@@ -319,7 +338,47 @@ describe('getServerGlobalConfig', () => {
     expect(config.deviceGatewayUrl).toBeUndefined();
   });
 
+  it('should show the DEFAULT_FILES_CONFIG embedding model as the file embedding default', async () => {
+    const config = await loadServerConfig(false, { filesConfigEnv: 'bge-m3' });
+
+    expect(config.systemAgent?.fileEmbedding).toEqual({ model: 'bge-m3', provider: 'ollama' });
+  });
+
+  it('should not fail the client config on an invalid DEFAULT_FILES_CONFIG', async () => {
+    const config = await loadServerConfig(false, { filesConfigEnv: 'invalid' });
+
+    expect(config.systemAgent?.fileEmbedding).toBeUndefined();
+  });
+
   it('should omit the OIDC issuer when APP_URL is not configured', async () => {
     await expect(loadServerConfig(false)).resolves.not.toHaveProperty('oidcIssuer');
+  });
+
+  it('should only advertise Agent Mail when it has a receive path', async () => {
+    vi.stubEnv('LINQ_API_KEY', undefined);
+    vi.stubEnv('AGENT_MAIL_API_KEY', 'am_test');
+    vi.stubEnv('AGENT_MAIL_WEBHOOK_URL', undefined);
+    vi.stubEnv('AGENT_MAIL_WEBHOOK_SECRET', undefined);
+
+    // A mailbox that can be opened but never receives is not an offer.
+    await expect(loadServerConfig(false)).resolves.toHaveProperty('agentIdentityProviders', []);
+
+    // The shared signing secret is enough: deliveries are verified against it
+    // when the account carries no webhook of its own.
+    vi.stubEnv('AGENT_MAIL_WEBHOOK_SECRET', 'whsec_mail');
+    await expect(loadServerConfig(false)).resolves.toHaveProperty('agentIdentityProviders', [
+      'agent-mail',
+    ]);
+  });
+
+  it('should advertise Agent Mail when provisioning registers its own webhook', async () => {
+    vi.stubEnv('LINQ_API_KEY', undefined);
+    vi.stubEnv('AGENT_MAIL_API_KEY', 'am_test');
+    vi.stubEnv('AGENT_MAIL_WEBHOOK_SECRET', undefined);
+    vi.stubEnv('AGENT_MAIL_WEBHOOK_URL', 'https://chat.example.com/accounts/webhooks/agent-mail');
+
+    await expect(loadServerConfig(false)).resolves.toHaveProperty('agentIdentityProviders', [
+      'agent-mail',
+    ]);
   });
 });

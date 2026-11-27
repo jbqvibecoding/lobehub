@@ -1,12 +1,15 @@
 'use client';
 
+import { DEFAULT_INBOX_TITLE } from '@lobechat/const';
 import type { PropsWithChildren } from 'react';
 import React, { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import AgentAvatar from '@/components/AgentAvatar';
 import { DEFAULT_INBOX_AVATAR } from '@/const/meta';
+import { useAgentAvatarActivity } from '@/features/AgentAvatarActivity/useAgentAvatarActivity';
 import { SkeletonItem } from '@/features/NavPanel/components/SkeletonList';
+import { useNavItemMetrics } from '@/features/NavPanel/density';
 import { SidebarHeaderSelectTrigger } from '@/features/NavPanel/SidebarHeaderSelect';
 import { useAgentStore } from '@/store/agent';
 import { agentSelectors, builtinAgentSelectors } from '@/store/agent/selectors';
@@ -15,6 +18,7 @@ import SwitchPanel from './SwitchPanel';
 
 const Agent = memo<PropsWithChildren>(() => {
   const { t } = useTranslation(['chat', 'common']);
+  const { headerAvatarSize } = useNavItemMetrics();
 
   const [agentId, isLoading, isInbox, title, avatar, backgroundColor] = useAgentStore((s) => [
     s.activeAgentId,
@@ -25,9 +29,13 @@ const Agent = memo<PropsWithChildren>(() => {
     agentSelectors.currentAgentBackgroundColor(s),
   ]);
 
-  const displayTitle = isInbox ? title || 'Biber' : title || t('defaultSession', { ns: 'common' });
+  const activity = useAgentAvatarActivity(agentId);
 
-  if (isLoading) return <SkeletonItem height={32} padding={0} />;
+  const displayTitle = isInbox
+    ? title || DEFAULT_INBOX_TITLE
+    : title || t('defaultSession', { ns: 'common' });
+
+  if (isLoading) return <SkeletonItem height={headerAvatarSize + 4} padding={0} />;
 
   return (
     <SwitchPanel>
@@ -36,11 +44,13 @@ const Agent = memo<PropsWithChildren>(() => {
         title={displayTitle}
         avatarNode={
           <AgentAvatar
+            {...activity.avatar}
+            {...activity.hover}
             agentId={agentId}
             avatar={isInbox ? avatar || DEFAULT_INBOX_AVATAR : avatar}
             background={backgroundColor || undefined}
             name={displayTitle}
-            size={28}
+            size={headerAvatarSize}
           />
         }
       />

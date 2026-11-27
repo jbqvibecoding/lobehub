@@ -20,6 +20,7 @@ import { useSelfReviewBriefView } from '@/features/DailyBrief/useSelfReviewBrief
 import { homeType } from '@/features/Home/components/homeType';
 import Time from '@/features/Home/components/Time';
 import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
+import { useDensity } from '@/styles/density';
 
 import StatusGlyph from './StatusGlyph';
 
@@ -51,6 +52,7 @@ interface InboxBriefCardProps {
  */
 const InboxBriefCard = memo<InboxBriefCardProps>(({ bare, brief }) => {
   const { t } = useTranslation('common');
+  const { compact } = useDensity();
   const navigate = useWorkspaceAwareNavigate();
 
   const agent = brief.agent;
@@ -140,7 +142,7 @@ const InboxBriefCard = memo<InboxBriefCardProps>(({ bare, brief }) => {
             avatar={isInbox ? agent.avatar || DEFAULT_INBOX_AVATAR : agent.avatar}
             background={agent.backgroundColor || cssVar.colorBgContainer}
             shape={'circle'}
-            size={28}
+            size={compact ? 24 : 28}
             style={{ flex: 'none' }}
             title={agentName}
           />
@@ -171,18 +173,6 @@ const InboxBriefCard = memo<InboxBriefCardProps>(({ bare, brief }) => {
         </Flexbox>
       </Flexbox>
 
-      {/* A held batch release is decided in its report, opened right here. */}
-      {goal?.reviewAcceptanceId && !brief.resolvedAction && (
-        <Flexbox horizontal justify={'flex-end'}>
-          <Button
-            size={'small'}
-            type={'primary'}
-            onClick={() => openGateReportModal({ acceptanceId: goal.reviewAcceptanceId! })}
-          >
-            {t('goalProcess.gate.openReview', { ns: 'chat' })}
-          </Button>
-        </Flexbox>
-      )}
       <BriefCardActions
         actions={brief.actions}
         agentId={brief.agentId ?? brief.agent?.id}
@@ -196,6 +186,17 @@ const InboxBriefCard = memo<InboxBriefCardProps>(({ bare, brief }) => {
         taskStatus={brief.taskStatus}
         topicId={brief.topicId}
         topicTitle={brief.taskName}
+        trailingAction={
+          // A held batch release is decided in its report, opened right here.
+          goal?.reviewAcceptanceId && (
+            <Button
+              type={'primary'}
+              onClick={() => openGateReportModal({ acceptanceId: goal.reviewAcceptanceId! })}
+            >
+              {t('goalProcess.gate.openReview', { ns: 'chat' })}
+            </Button>
+          )
+        }
       />
     </>
   );

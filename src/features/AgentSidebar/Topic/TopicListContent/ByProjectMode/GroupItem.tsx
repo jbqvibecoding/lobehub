@@ -13,6 +13,7 @@ import {
   DropdownMenu,
   Flexbox,
   Icon,
+  Tag,
   Text,
   toast,
 } from '@lobehub/ui';
@@ -21,6 +22,7 @@ import {
   Archive,
   FolderClosedIcon,
   FolderOpenIcon,
+  LaptopIcon,
   ListFilter,
   LucideCheck,
   PlusIcon,
@@ -32,6 +34,7 @@ import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspace
 import { useActiveWorkspaceSlug } from '@/business/client/hooks/useActiveWorkspaceSlug';
 import TailMarquee from '@/components/TailMarquee';
 import { useCommitWorkingDirectory } from '@/features/ChatInput/ControlBar/useCommitWorkingDirectory';
+import { useNavItemMetrics } from '@/features/NavPanel/density';
 import ProjectAvatar from '@/features/Projects/ProjectAvatar';
 import { AgentDirectoryActions } from '@/features/Projects/WorkingDirectories/AgentDirectoryActions';
 import { canStageDraftOn } from '@/features/Projects/WorkingDirectories/startProjectTopicDraft';
@@ -46,6 +49,7 @@ import { usePermission } from '@/hooks/usePermission';
 import { useQueryRoute } from '@/hooks/useQueryRoute';
 import { useAgentStore } from '@/store/agent';
 import { useChatStore } from '@/store/chat';
+import { deviceSelectors, useDeviceStore } from '@/store/device';
 import { useElectronStore } from '@/store/electron';
 import { useGlobalStore } from '@/store/global';
 import { type ProjectTopicSubGroupMode } from '@/store/global/initialState';
@@ -59,17 +63,24 @@ import { buildPrefixedAgentRoutePath, parseAgentPathname } from '../../../utils/
 import { useTopicListScope } from '../../TopicListScope';
 import { getMergedPullRequestTopics } from '../../utils/mergedPullRequestTopics';
 import { type GroupItemComponentProps } from '../GroupedAccordion';
+import { useStartTopicInDirectory } from '../useStartTopicInDirectory';
 import { indicatorStyles, useCollapsedIndicators } from './CollapsedIndicators';
+import { deviceCategoryKey, deviceDisplayName } from './deviceIdentity';
 import ProjectTopicList from './ProjectTopicList';
 
 const PROJECT_GROUP_PREFIX = 'project:';
 const PROJECT_ID_GROUP_PREFIX = 'project-id:';
 const SUB_GROUP_MODES: ProjectTopicSubGroupMode[] = ['none', 'byDevice', 'byTime', 'byStatus'];
-// A plain folder lives on one machine, so sectioning it by device says nothing.
+// One directory lives on one device, so sectioning it by device would only
+// nest the device under its own folder — devices lead in the sidebar's own
+// "by device" grouping instead. A project spans directories on several
+// machines, and a folder can merge one machine's personal and workspace
+// identities; only those section by device.
 const FOLDER_SUB_GROUP_MODES = SUB_GROUP_MODES.filter((mode) => mode !== 'byDevice');
 
 const GroupItem = memo<GroupItemComponentProps>(({ group, expanded }) => {
-  const { id, title, children } = group;
+  const { id, title, children, deviceId: groupDeviceId } = group;
+  const metrics = useNavItemMetrics();
   const scope = useTopicListScope();
   const navigate = useWorkspaceAwareNavigate();
   // `project-id:` groups merge every directory of one project — resolve the
@@ -187,28 +198,29 @@ const GroupItem = memo<GroupItemComponentProps>(({ group, expanded }) => {
     activeWorkspaceSlug,
   ]);
 
-  // Start on one specific project directory — the device sub-group "+". The
-  // directory pins the device, so nothing is committed to the agent default.
-  const handleStartInDirectory = useCallback(
-    (projectWorkingDirectoryId: string) => {
-      if (!targetAgentId) return;
-      useChatStore.getState().switchTopic(null, { skipRefreshMessage: true });
-      useChatStore
-        .getState()
-        .setPendingNewTopicDirectory({ agentId: targetAgentId, projectWorkingDirectoryId });
-      router.push(
-        buildPrefixedAgentRoutePath(AGENT_CHAT_URL(targetAgentId), agentRoute, activeWorkspaceSlug),
-      );
-    },
-    [targetAgentId, router, agentRoute, activeWorkspaceSlug],
-  );
+  // Start on one specific project directory — the device sub-group "+".
+  const { startInDirectory: handleStartInDirectory } = useStartTopicInDirectory();
 
   const canAddTopic = !scope && !!currentAgentId && !!workingDirectory;
   const needsPlainStart = !!projectId && projectDirectories.length > 1;
   const { t: tProject } = useTranslation('project');
 
   const isProjectGroup = !!projectId || !!children[0]?.projectWorkingDirectoryId;
-  const subGroupModes = isProjectGroup ? SUB_GROUP_MODES : FOLDER_SUB_GROUP_MODES;
+  const spansDevices =
+    new Set(children.map((topic) => topic.metadata?.boundDeviceId).filter(Boolean)).size > 1;
+  const subGroupModes = projectId || spansDevices ? SUB_GROUP_MODES : FOLDER_SUB_GROUP_MODES;
+
+  // The same folder on another machine is its own group with the same name:
+  // name the device, and its category for one machine's several identities.
+  useDeviceStore((s) => s.useFetchDevices)(!!groupDeviceId);
+  const devices = useDeviceStore(deviceSelectors.deviceList);
+  const { t: tChat } = useTranslation('chat');
+  const deviceLabel = useMemo(() => {
+    if (!groupDeviceId) return;
+    const name = deviceDisplayName(groupDeviceId, devices);
+    const categoryKey = deviceCategoryKey(groupDeviceId, devices, currentDeviceId);
+    return categoryKey ? `${name} · ${tChat(categoryKey)}` : name;
+  }, [groupDeviceId, devices, currentDeviceId, tChat]);
   const storedSubGroupMode = useGlobalStore(systemStatusSelectors.projectTopicSubGroupMode(id));
   const subGroupMode = subGroupModes.includes(storedSubGroupMode) ? storedSubGroupMode : 'none';
   const updateSystemStatus = useGlobalStore((s) => s.updateSystemStatus);
@@ -326,11 +338,18 @@ const GroupItem = memo<GroupItemComponentProps>(({ group, expanded }) => {
     <AccordionItem value={id}>
       <AccordionHeader className={'accordion-header'}>
         <AccordionTrigger style={{ paddingBlock: 4, paddingInline: 4 }}>
-          <Flexbox horizontal align="center" gap={8} height={24} style={{ overflow: 'hidden' }}>
-            <Center flex="none" height={24} width={28}>
+          <Flexbox
+            horizontal
+            align="center"
+            gap={metrics.gap}
+            height={24}
+            style={{ overflow: 'hidden' }}
+          >
+            <Center flex="none" height={24} width={metrics.iconBox}>
               {project ? (
                 <ProjectAvatar
                   avatar={project.projectAvatar}
+                  id={project.projectId}
                   name={project.projectName}
                   size={18}
                 />
@@ -343,7 +362,11 @@ const GroupItem = memo<GroupItemComponentProps>(({ group, expanded }) => {
               )}
             </Center>
             {project ? (
-              <Text ellipsis fontSize={14} style={{ color: cssVar.colorText, flex: 1 }}>
+              <Text
+                ellipsis
+                fontSize={metrics.fontSize}
+                style={{ color: cssVar.colorText, flex: 1 }}
+              >
                 {scope ? (
                   title
                 ) : (
@@ -376,9 +399,39 @@ const GroupItem = memo<GroupItemComponentProps>(({ group, expanded }) => {
             ) : (
               // A bare path reads from its end: keep the tail in view and
               // scroll to the head on hover.
-              <TailMarquee style={{ color: cssVar.colorTextSecondary, fontSize: 14 }}>
+              <TailMarquee
+                style={{
+                  color: cssVar.colorTextSecondary,
+                  fontSize: metrics.fontSize,
+                  // Beside a device tag, hug the name instead of filling the row,
+                  // so it stays next to its icon and the tag follows it.
+                  ...(deviceLabel && { flex: '0 1 auto' }),
+                }}
+              >
                 {title}
               </TailMarquee>
+            )}
+            {deviceLabel && (
+              // The folder name stays readable: the device tag takes nearly all
+              // the shrinking when the row is tight; an overflowing label reads
+              // from its category end and scrolls to the device name on hover,
+              // like the folder path beside it.
+              <Tag
+                size={'small'}
+                style={{
+                  color: cssVar.colorTextDescription,
+                  flex: '0 100 auto',
+                  fontSize: 10,
+                  // A long path title still leaves the icon and a few letters.
+                  minWidth: 48,
+                  overflow: 'hidden',
+                }}
+              >
+                <Flexbox horizontal align={'center'} gap={3} style={{ minWidth: 0 }}>
+                  <Icon icon={LaptopIcon} size={{ size: 10 }} style={{ flex: 'none' }} />
+                  <TailMarquee>{deviceLabel}</TailMarquee>
+                </Flexbox>
+              </Tag>
             )}
           </Flexbox>
         </AccordionTrigger>

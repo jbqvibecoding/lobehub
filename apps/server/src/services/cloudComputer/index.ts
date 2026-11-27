@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import debug from 'debug';
 
-import { getSandboxProviderKind } from '@/server/services/sandbox/factory';
+import { getSandboxProviderKind } from '@/server/services/sandbox/deployment';
 import {
   OpenBotComputer,
   OpenBotRequestError,

@@ -1,4 +1,4 @@
-import type { TaskDetailActivityAuthor, TaskDetailData, TaskDetailSubtask } from '@lobechat/types';
+import type { TaskDetailActivity, TaskDetailActivityAuthor, TaskDetailData } from '@lobechat/types';
 import {
   clearTaskReposSelection,
   readTaskExecutionConfig,
@@ -24,6 +24,7 @@ import { isTrpcErrorCode } from '@/utils/trpcError';
 
 import type { TaskStore } from '../../store';
 import { useTaskStore } from '../../store';
+import { hasInFlightActivity, TASK_DETAIL_POLL_INTERVAL } from './inFlight';
 import {
   appendOptimisticPropertyActivity,
   buildOptimisticAssignmentActivities,
@@ -31,6 +32,7 @@ import {
   buildOptimisticPropertyActivity,
 } from './optimisticActivity';
 import { taskDetailResource } from './projection';
+import { projectMoveRefusalTitle } from './projectMoveRefusal';
 import type { TaskDetailDispatch } from './reducer';
 import { findSubtaskParentId, taskDetailReducer } from './reducer';
 
@@ -51,6 +53,8 @@ export interface TaskUpdatePayload {
   name?: string;
   parentTaskId?: string | null;
   priority?: number;
+  /** `null` takes the task out of its project. */
+  projectId?: string | null;
 }
 
 export interface TaskUpdateOptions {
@@ -81,31 +85,6 @@ export interface TaskUpdateOptions {
   source?: 'editor' | 'external';
 }
 
-const TASK_DETAIL_POLL_INTERVAL = 10_000;
-
-const hasInFlightSubtask = (subtasks: TaskDetailSubtask[] | undefined): boolean =>
-  subtasks?.some(
-    (subtask) =>
-      Boolean(subtask.runningTopic) ||
-      subtask.status === 'running' ||
-      subtask.status === 'pending' ||
-      hasInFlightSubtask(subtask.children),
-  ) ?? false;
-
-// Poll while the task itself or any topic activity is still in flight, so the
-// UI picks up status transitions (running → completed/failed) without needing
-// a manual refresh. Returns false once everything settles so SWR stops polling.
-const hasInFlightActivity = (detail: TaskDetailData | undefined): boolean => {
-  if (!detail) return false;
-  if (detail.status === 'running' || detail.status === 'pending') return true;
-  if (hasInFlightSubtask(detail.subtasks)) return true;
-  return (
-    detail.activities?.some(
-      (a) => a.type === 'topic' && (a.status === 'running' || a.status === 'pending'),
-    ) ?? false
-  );
-};
-
 const hasInstructionSnapshotChanged = (
   current: TaskDetailData | undefined,
   next: TaskDetailData | undefined,
@@ -129,6 +108,8 @@ export class TaskDetailSliceActionImpl {
   readonly #detail;
   readonly #reconciliations = new WeakMap<TaskDetailData, Promise<void>>();
   readonly #previous = new WeakMap<TaskDetailData, TaskDetailData | undefined>();
+  /** Mounted task-detail surfaces, oldest first — see `claimActiveTask`. */
+  readonly #activeTaskClaims: { ref: string }[] = [];
 
   constructor(set: Setter, get: () => TaskStore, _api?: unknown) {
     void _api;
@@ -349,6 +330,7 @@ export class TaskDetailSliceActionImpl {
     editorData?: unknown;
     /** Bind a goal entity (`goals` row) to the created task. */
     instruction: string;
+    labelIds?: string[];
     name?: string;
     parentTaskId?: string;
     priority?: number;
@@ -419,6 +401,32 @@ export class TaskDetailSliceActionImpl {
     await this.internal_refreshTaskDetail(taskId);
   };
 
+  /**
+   * Make `taskRef` the active task for as long as the caller stays mounted.
+   *
+   * Several surfaces can show a task detail at once — the `/task` page and a
+   * task opened beside it in the Portal — and every detail section reads the
+   * one global `activeTaskId`. Claims stack: the newest wins, and releasing the
+   * top claim hands the task back to the claim below instead of clearing it,
+   * so closing the Portal leaves the page under it on its own task. Releasing
+   * a claim that is not on top changes nothing.
+   *
+   * Returns the release function; call it on unmount.
+   */
+  claimActiveTask = (taskRef: string): (() => void) => {
+    const claim = { ref: taskRef };
+    this.#activeTaskClaims.push(claim);
+    this.setActiveTaskId(taskRef);
+
+    return () => {
+      const index = this.#activeTaskClaims.indexOf(claim);
+      if (index === -1) return;
+      const wasTop = index === this.#activeTaskClaims.length - 1;
+      this.#activeTaskClaims.splice(index, 1);
+      if (wasTop) this.setActiveTaskId(this.#activeTaskClaims.at(-1)?.ref);
+    };
+  };
+
   setActiveTaskId = (taskId?: string): void => {
     if (this.#get().activeTaskRef === taskId) return;
     this.#set(
@@ -427,6 +435,7 @@ export class TaskDetailSliceActionImpl {
         activeTaskId: cachedTaskId(taskId, this.#get().taskRefIndex),
         activeTopicDrawerAgentId: undefined,
         activeTopicDrawerFocusRequest: undefined,
+        activeTopicDrawerRunningOperation: undefined,
         activeTopicDrawerTitle: undefined,
         activeTopicDrawerTopicId: undefined,
       },
@@ -445,7 +454,12 @@ export class TaskDetailSliceActionImpl {
    */
   openTopicDrawer = (
     topicId: string,
-    topic?: { agentId?: string; autoFocus?: boolean; title?: string },
+    topic?: {
+      agentId?: string;
+      autoFocus?: boolean;
+      runningOperation?: TaskDetailActivity['runningOperation'];
+      title?: string;
+    },
   ): void => {
     const current = this.#get();
     if (current.activeTopicDrawerTopicId === topicId && !topic?.autoFocus) return;
@@ -455,6 +469,7 @@ export class TaskDetailSliceActionImpl {
         activeTopicDrawerFocusRequest: topic?.autoFocus
           ? (current.activeTopicDrawerFocusRequest ?? 0) + 1
           : undefined,
+        activeTopicDrawerRunningOperation: topic?.runningOperation,
         activeTopicDrawerTitle: topic?.title,
         activeTopicDrawerTopicId: topicId,
       },
@@ -469,6 +484,7 @@ export class TaskDetailSliceActionImpl {
       {
         activeTopicDrawerAgentId: undefined,
         activeTopicDrawerFocusRequest: undefined,
+        activeTopicDrawerRunningOperation: undefined,
         activeTopicDrawerTitle: undefined,
         activeTopicDrawerTopicId: undefined,
       },
@@ -489,10 +505,15 @@ export class TaskDetailSliceActionImpl {
     }
   };
 
-  updateTaskVisibility = async (id: string, visibility: 'private' | 'public'): Promise<void> => {
+  updateTaskVisibility = async (
+    id: string,
+    visibility: 'private' | 'public',
+    options?: { takeOwnership?: boolean },
+  ): Promise<void> => {
     try {
-      await taskService.updateVisibility(id, visibility);
-      await Promise.all([this.#get().refreshTaskList(), this.internal_refreshTaskDetail(id)]);
+      await (options
+        ? taskService.updateVisibility(id, visibility, options)
+        : taskService.updateVisibility(id, visibility));
     } catch (error) {
       // Surfaces a specific actionable error when the task's assignee is a
       // private agent. The generic "failed" toast hides what the user must
@@ -500,6 +521,11 @@ export class TaskDetailSliceActionImpl {
       // or publish the agent first.
       const raw = (error as { message?: string })?.message ?? '';
       const isPrivateAgentBlock = /public task cannot be assigned to a private agent/i.test(raw);
+      const isOtherCreatorsBlock = /subtasks created by other members/i.test(raw);
+      const isRunningBlock = /cannot take over this task while it or a subtask is running/i.test(
+        raw,
+      );
+      const isHiddenSubtasksBlock = /private subtasks you cannot see/i.test(raw);
       toast.error(
         isPrivateAgentBlock
           ? t('taskDetail.publishToWorkspace.errorPrivateAgent', {
@@ -507,12 +533,38 @@ export class TaskDetailSliceActionImpl {
                 'This task is assigned to a private agent. Reassign to a workspace agent, or publish the agent first.',
               ns: 'chat',
             })
-          : t('createTask.visibility.changeFailed', {
-              defaultValue: 'Failed to change task visibility',
-              ns: 'chat',
-            }),
+          : isOtherCreatorsBlock
+            ? t('taskDetail.makePrivate.errorOtherCreators', {
+                defaultValue:
+                  'This task has subtasks created by other members. Move or remove them before making it private.',
+                ns: 'chat',
+              })
+            : isRunningBlock
+              ? t('taskDetail.takeOver.errorRunning', {
+                  defaultValue:
+                    'This task or one of its subtasks is running. Take it over once the run finishes.',
+                  ns: 'chat',
+                })
+              : isHiddenSubtasksBlock
+                ? t('taskDetail.takeOver.errorHiddenSubtasks', {
+                    defaultValue:
+                      'This task has private subtasks its creator kept to themselves, so it cannot be taken over.',
+                    ns: 'chat',
+                  })
+                : t('createTask.visibility.changeFailed', {
+                    defaultValue: 'Failed to change task visibility',
+                    ns: 'chat',
+                  }),
       );
       throw error;
+    }
+
+    // The write is committed; a failed refresh must not read as a failed
+    // change, or a caller chaining on it (assigning a private agent) would stop.
+    try {
+      await Promise.all([this.#get().refreshTaskList(), this.internal_refreshTaskDetail(id)]);
+    } catch (error) {
+      console.error('[task:updateTaskVisibility] refresh failed', error);
     }
   };
 
@@ -616,6 +668,7 @@ export class TaskDetailSliceActionImpl {
       ...task,
       ...(data.name !== undefined ? { name: data.name } : {}),
       ...(data.priority !== undefined ? { priority: data.priority } : {}),
+      ...(data.projectId !== undefined ? { projectId: data.projectId } : {}),
       ...(data.assigneeAgentId !== undefined ? { assigneeAgentId: data.assigneeAgentId } : {}),
       ...(data.assigneeUserId !== undefined ? { assigneeUserId: data.assigneeUserId } : {}),
     }));
@@ -645,6 +698,15 @@ export class TaskDetailSliceActionImpl {
               ...options,
               source: 'external',
             }));
+        // A refused project move has nothing unsaved: the rollback refetch above
+        // already shows the server's value, so the header must not stay on
+        // "failed". The toast names what blocks the move, with no retry.
+        const refusal = data.projectId !== undefined ? projectMoveRefusalTitle(error) : undefined;
+        if (refusal) {
+          saveToast(error, { hideCause: true, title: refusal });
+          this.#get().internal_setTaskSaveStatus(id, 'idle');
+          return;
+        }
         saveToast(error, { retry });
       },
       setStatus: (status) => this.#get().internal_setTaskSaveStatus(id, status),
@@ -661,7 +723,10 @@ export class TaskDetailSliceActionImpl {
       assigneeAgentId !== undefined ||
       assigneeUserId !== undefined ||
       data.parentTaskId !== undefined ||
-      data.priority !== undefined
+      data.priority !== undefined ||
+      // The optimistic patch drops the row from its old project's lists; only a
+      // refetch can add it to the lists of the project it moved into.
+      data.projectId !== undefined
     ) {
       await Promise.all([
         this.#get().refreshTaskList(),
@@ -673,6 +738,43 @@ export class TaskDetailSliceActionImpl {
         assigneeAgentId !== undefined ? revalidateReplica(goalGraphResource) : undefined,
       ]).catch(() => {});
     }
+  };
+
+  /**
+   * File a task without a project, together with all its subtasks, under
+   * `projectId`. `updateTask` moves one row, which the server refuses for a task
+   * with subtasks; this moves the whole tree in one write. No optimistic patch:
+   * the subtasks are spread over lists and cached details, so a refetch shows
+   * the result instead.
+   */
+  moveTaskTreeToProject = async (id: string, projectId: string): Promise<boolean> => {
+    id = this.#get().taskRefIndex[id] ?? id;
+    const moved = await runMutation(this.#set, this.#get, {
+      mutate: async () => {
+        await taskService.moveTreeToProject(id, projectId);
+        return true;
+      },
+      name: 'moveTaskTreeToProject',
+      onError: (error) => {
+        const refusal = projectMoveRefusalTitle(error);
+        if (refusal) {
+          saveToast(error, { hideCause: true, title: refusal });
+          this.#get().internal_setTaskSaveStatus(id, 'idle');
+          return;
+        }
+        saveToast(error, {
+          retry: () => void this.#get().moveTaskTreeToProject(id, projectId),
+        });
+      },
+      rethrow: false,
+      setStatus: (status) => this.#get().internal_setTaskSaveStatus(id, status),
+    });
+    if (!moved) return false;
+
+    await Promise.all([this.#get().refreshTaskList(), this.internal_refreshTaskDetail(id)]).catch(
+      () => {},
+    );
+    return true;
   };
 
   useFetchTaskDetail = (taskRef?: string) => {

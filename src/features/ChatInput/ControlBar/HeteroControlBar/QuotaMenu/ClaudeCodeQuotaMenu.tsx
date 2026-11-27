@@ -11,7 +11,9 @@ import { agentQuotaService } from '@/services/agentQuota';
 import { heterogeneousAgentService } from '@/services/electron/heterogeneousAgent';
 import { fetchClaudeCodeQuotaSnapshot } from '@/services/heteroAgentQuota';
 import { getAgentQuotaStoreState } from '@/store/agentQuota';
+import { getElectronStoreState } from '@/store/electron';
 
+import { useSelectedHeteroModel } from '../../HeteroModel/useEffectiveHeteroProvider';
 import QuotaAccountSwitcher from './QuotaAccountSwitcher';
 import type { FetchQuotaOptions, QuotaWindowItem } from './QuotaMenu';
 import QuotaMenu, { createQuotaSourceKey } from './QuotaMenu';
@@ -19,6 +21,7 @@ import {
   buildClaudePanelSnapshot,
   hasRenderableWindow,
   isQuotaStale,
+  isScopedQuotaModel,
   newestCapturedAt,
 } from './quotaViewModel';
 
@@ -93,6 +96,7 @@ interface ClaudeCodeQuotaMenuProps {
 const ClaudeCodeQuotaMenu = memo<ClaudeCodeQuotaMenuProps>(({ deviceId, env }) => {
   const { t } = useTranslation('chat');
   const agentId = useAgentId();
+  const selectedModel = useSelectedHeteroModel();
   const sourceKey = createQuotaSourceKey('claude-code', agentId, deviceId ?? 'local', env);
   // A persisted account becomes eligible for a device only after this mounted
   // menu has observed that device return the same external account identity.
@@ -115,14 +119,29 @@ const ClaudeCodeQuotaMenu = memo<ClaudeCodeQuotaMenuProps>(({ deviceId, env }) =
       const force = !!options?.force;
       const quotaStore = getAgentQuotaStoreState();
 
-      // 1) Resolve the account to display — pinned for this agent, else the first.
-      const [initialAccounts, bindings] = await Promise.all([
+      // 1) Resolve the account to display — pinned for this agent on this
+      // desktop (its own pick, else the agent-wide pin), else the first.
+      const localDeviceId =
+        isDesktop && !deviceId && agentId
+          ? await getElectronStoreState().resolveGatewayDeviceId()
+          : undefined;
+      const [initialAccounts, bindings, deviceAccount] = await Promise.all([
         quotaStore.readQuotaAccounts().catch(() => []),
         agentId ? quotaStore.readQuotaBindings(agentId).catch(() => []) : [],
+        agentId && localDeviceId
+          ? quotaStore.readQuotaDeviceAccount(agentId, localDeviceId).catch(() => null)
+          : null,
       ]);
       let accounts = initialAccounts;
       let claude = accounts.filter((a) => a.provider === 'claude-code');
-      const pinnedId = bindings.find((b) => b.role === 'pinned')?.accountId;
+      // A pick whose account has since left the agent's rotation no longer
+      // routes runs (as at spawn), so it is not what this panel shows either.
+      const devicePickId = bindings.some(
+        (b) => b.accountId === deviceAccount?.accountId && b.enabled && b.role !== 'disabled',
+      )
+        ? deviceAccount?.accountId
+        : undefined;
+      const pinnedId = devicePickId ?? bindings.find((b) => b.role === 'pinned')?.accountId;
       const trustedExternalAccountId = deviceId ? trustedDeviceAccounts.get(deviceId) : undefined;
       let account = deviceId
         ? claude.find((a) => a.externalAccountId === trustedExternalAccountId)
@@ -241,6 +260,8 @@ const ClaudeCodeQuotaMenu = memo<ClaudeCodeQuotaMenuProps>(({ deviceId, env }) =
             {
               compactGroup: 'scopedWeekly',
               compactLabel: quota.scopedWeekly.modelName,
+              // A model's own weekly limit only bounds runs on that model.
+              hideInCompact: !isScopedQuotaModel(selectedModel, quota.scopedWeekly.modelName),
               key: 'scopedWeekly',
               label: t('heteroAgent.claudeQuota.scopedWeekly', {
                 model: quota.scopedWeekly.modelName,
@@ -250,7 +271,7 @@ const ClaudeCodeQuotaMenu = memo<ClaudeCodeQuotaMenuProps>(({ deviceId, env }) =
           ]
         : []),
     ],
-    [t],
+    [selectedModel, t],
   );
 
   const getReasonText = useCallback(

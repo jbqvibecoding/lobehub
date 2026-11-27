@@ -1,7 +1,8 @@
 'use client';
 
 import type { DeviceListItem } from '@lobechat/types';
-import { Button, createStaticStyles, Icon } from '@lobehub/ui';
+import { Button, Icon } from '@lobehub/ui';
+import * as stylex from '@stylexjs/stylex';
 import { RefreshCwIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -10,23 +11,25 @@ import { ExecutionTargetDeviceStatus, ExecutionTargetIcon } from '@/features/Exe
 import { isDevicePresenceUnknown } from '@/store/device';
 
 import DeviceDetailPopover from './DeviceDetailPopover';
+import { getDeviceOptionState } from './deviceOptionState';
 import { handleDeviceRowKeyDown } from './deviceRowKeyDown';
 import OptionRow from './OptionRow';
 
-const styles = createStaticStyles(({ css }) => ({
-  reconnectButton: css`
-    min-height: 18px;
-    padding-block: 0;
-    padding-inline: 2px;
-    font-size: 11px;
-  `,
-}));
+const styles = stylex.create({
+  reconnectButton: { minHeight: '18px', paddingBlock: '0', paddingInline: '2px', fontSize: '11px' },
+});
 
 interface DeviceOptionRowProps {
   active: boolean;
+  /**
+   * Why this device cannot be picked for the current agent. The row is
+   * disabled and the reason replaces its status line, so the user learns why
+   * before trying instead of meeting a generic save error after.
+   */
+  blockedReason?: string;
   device: DeviceListItem;
-  /** This app's own machine: described as the local process instead of by status. */
-  isCurrentMachine: boolean;
+  /** Replaces the machine name, e.g. "This computer" for this desktop's own row. */
+  label?: string;
   onReconnect: () => void;
   onSelect: () => void;
   reconnecting: boolean;
@@ -39,8 +42,9 @@ interface DeviceOptionRowProps {
  */
 const DeviceOptionRow = ({
   active,
+  blockedReason,
   device,
-  isCurrentMachine,
+  label,
   onReconnect,
   onSelect,
   reconnecting,
@@ -49,26 +53,29 @@ const DeviceOptionRow = ({
   const { t } = useTranslation('chat');
   // A row restored from the persisted list is neither online nor offline yet.
   const presenceUnknown = isDevicePresenceUnknown(device);
+  const { offlineLabelKey, reconnectLabelKey, selectable, showReconnect } = getDeviceOptionState(
+    device,
+    { blocked: !!blockedReason, presenceUnknown },
+  );
 
   return (
     <DeviceDetailPopover device={device}>
       <div
         data-testid={`device-option-${device.deviceId}`}
-        onKeyDown={(event) => handleDeviceRowKeyDown(event, { disabled: !device.online, onSelect })}
+        onKeyDown={(event) => handleDeviceRowKeyDown(event, { disabled: !selectable, onSelect })}
       >
         <OptionRow
+          compact
           active={active}
-          disabled={!device.online}
+          disabled={!selectable}
           icon={<ExecutionTargetIcon devicePlatform={device.platform} target={'device'} />}
-          label={device.friendlyName || device.hostname || device.deviceId}
+          label={label ?? (device.friendlyName || device.hostname || device.deviceId)}
           tags={tags}
           desc={
-            <>
-              {isCurrentMachine ? (
-                t('heteroAgent.executionTarget.gatewayDesc')
-              ) : (
+            blockedReason || (
+              <>
                 <ExecutionTargetDeviceStatus
-                  offlineLabel={t('heteroAgent.executionTarget.offline')}
+                  offlineLabel={t(offlineLabelKey)}
                   online={device.online}
                   unknown={presenceUnknown}
                   unknownLabel={t('heteroAgent.executionTarget.presenceChecking')}
@@ -76,23 +83,23 @@ const DeviceOptionRow = ({
                     count: device.channels.length,
                   })}
                 />
-              )}
-              {device.online || presenceUnknown ? null : (
-                <Button
-                  className={styles.reconnectButton}
-                  icon={<Icon icon={RefreshCwIcon} size={10} />}
-                  loading={reconnecting}
-                  size={'small'}
-                  type={'text'}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onReconnect();
-                  }}
-                >
-                  {t('heteroAgent.executionTarget.reconnect')}
-                </Button>
-              )}
-            </>
+                {showReconnect ? (
+                  <Button
+                    className={stylex.props(styles.reconnectButton).className}
+                    icon={<Icon icon={RefreshCwIcon} size={10} />}
+                    loading={reconnecting}
+                    size={'small'}
+                    type={'text'}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onReconnect();
+                    }}
+                  >
+                    {t(reconnectLabelKey)}
+                  </Button>
+                ) : null}
+              </>
+            )
           }
           onClick={onSelect}
         />

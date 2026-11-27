@@ -1,13 +1,11 @@
 import { readFile } from 'node:fs/promises';
 
 import type {
-  GoalEdgeKind,
   GoalEventEntityType,
   GoalEventType,
   GoalGraphDecision,
   GoalGraphEvent,
   GoalGraphSnapshot,
-  GoalNodeKind,
   GoalPlanContext,
   GoalTickResult,
 } from '@lobechat/types';
@@ -19,13 +17,24 @@ import { getTrpcClient } from '../../api/client';
 import { confirm, outputJson, printTable, truncate } from '../../utils/format';
 import { log } from '../../utils/logger';
 import { resolveAppUrlBuilder } from '../task/url';
+import { registerGoalAccessCommands } from './access';
+import { registerGoalArchiveCommands } from './archive';
+import {
+  ensureCreatedGoalTaskModel,
+  parseGoalModelConfig,
+  registerGoalAssignmentCommands,
+} from './assignment';
+import { registerGoalConfigurationCommands } from './configuration';
 import { registerGoalGraphEditCommands } from './graphEdit';
+import { inverseEdgeLabel, nodeIcon } from './graphGlyphs';
+import { registerGoalMarkCommands } from './mark';
 import {
   type GoalMetricState,
   printMetricState,
   readMetricState,
   registerGoalMetricCommands,
 } from './metric';
+import { registerGoalObjectiveCommands } from './objective';
 import { goalReads, hasOperationToken } from './reads';
 import { registerGoalReportCommand } from './report';
 import { missingSeedDependencies, parseTaskFile } from './seedTasks';
@@ -44,33 +53,6 @@ const parseVariant = (raw: string) => {
     .filter(Boolean);
   if (!axis || !values.length) throw new Error(`--variant expects axis=value1,value2; got ${raw}`);
   return { axis, values };
-};
-
-const nodeIcon: Record<GoalNodeKind, string> = {
-  batch: '▦',
-  decision: '◆',
-  experiment: '⚗',
-  finding: '●',
-  problem: '◇',
-  task: '▣',
-};
-/**
- * Every edge kind reads `source <kind> target`, so a row listing its INCOMING
- * edges by kind states the relationship backwards: an incoming `depends_on`
- * means the other node depends on THIS one, not the reverse. Render the inverse
- * verb instead, so each entry is a true sentence about the row it sits on.
- */
-const inverseEdgeLabel: Record<GoalEdgeKind, string> = {
-  answers: 'answered by',
-  contains: 'inside',
-  contradicts: 'contradicted by',
-  decomposes: 'part of',
-  depends_on: 'blocks',
-  derived_from: 'ancestor of',
-  investigates: 'investigated by',
-  leads_to: 'follows',
-  produces: 'produced by',
-  supports: 'supported by',
 };
 
 const terminalOutcomes = new Set(['achieved', 'waiting_human', 'no_progress', 'failed']);
@@ -159,6 +141,9 @@ function printGraph(graph: GoalGraphSnapshot, metrics?: GoalMetricState) {
       goal.config?.pausedBy ? ` · paused by ${goal.config.pausedBy}` : ''
     }]`,
   );
+  // Older servers do not send it; personal goals are private whatever the column says.
+  if (goal.workspaceId && goal.visibility)
+    console.log(`${pc.dim('Visibility:')} ${goal.visibility}`);
   if (goal.subjectType)
     console.log(`${pc.dim('Subject:')} ${`${goal.subjectType} ${goal.subjectId ?? ''}`.trim()}`);
   if (goal.requirement) console.log(`${pc.dim('Requirement:')} ${goal.requirement}`);
@@ -486,9 +471,9 @@ export function registerGoalCommand(program: Command) {
         'When the work applies one recipe to many units (migrate N stores to one mechanism, give N resources',
         'the same caching, update N callers), declare a batch instead of listing every unit: add "rollout" with',
         '"recipe" (the procedure every unit follows), "units" (every unit beyond the probes, as a title or',
-        '{"title","description"}) and optional "variants" ([{"axis","values"}]); "tasks" then hold 2-5',
-        'representative probes. The probes run first; once they ran through without a person the owner approves',
-        'the first wave, and each later wave is handed to this agent to release or escalate; a rejected',
+        '{"title","description"}), optional "skillName" (kebab-case, what the recipe does) and "variants"',
+        '([{"axis","values"}]); "tasks" then hold 2-5 representative probes. The probes run first; once they',
+        'ran through without a person the owner approves the first wave, and each later wave is handed to this agent to release or escalate; a rejected',
         'release comes back to this agent to rewrite the plan for review. Units that differ',
         'only in names, files or details are still one mould; work whose steps differ per task is not.',
       ].join('\n'),
@@ -587,7 +572,13 @@ export function registerGoalCommand(program: Command) {
       '--task-agent <id>',
       "Dedicated executor for the goal's tasks (defaults to the goal agent)",
     )
+    .option('--task-model <model>', "Model the goal's tasks run on (needs --task-provider)")
+    .option('--task-provider <provider>', 'Provider of --task-model')
     .option('--project <id>', 'Project ID')
+    .option(
+      '--visibility <visibility>',
+      'Workspace visibility: private (only you) or public (every member). Defaults to private when the goal or task agent is private, else public',
+    )
     .option('--explore <instruction>', 'Explore alternatives using completed experiment results')
     .option('--max-experiments <n>', 'Maximum experiment nodes (requires --explore, default 10)')
     .option(
@@ -628,10 +619,17 @@ export function registerGoalCommand(program: Command) {
       if (options.rollout && !['canary', 'full', 'off'].includes(options.rollout)) {
         throw new Error('--rollout must be one of: canary, full, off');
       }
+      if (options.visibility && !['private', 'public'].includes(options.visibility)) {
+        throw new Error('--visibility must be one of: private, public');
+      }
       const seedTasks = [
         ...((options.task as string[] | undefined) ?? []),
         ...(options.taskFile ? parseTaskFile(await readFile(options.taskFile, 'utf8')) : []),
       ];
+      const taskModel = parseGoalModelConfig(
+        { model: options.taskModel, provider: options.taskProvider },
+        { model: '--task-model', provider: '--task-provider' },
+      );
       const seedProblem = goalSeedDependencyProblem(seedTasks);
       if (seedProblem) throw new Error(`--task-file: ${seedProblem}`);
       const operationId = process.env.LOBEHUB_OPERATION_ID;
@@ -700,7 +698,9 @@ export function registerGoalCommand(program: Command) {
         projectId: options.project,
         requirement: options.requirement,
         title,
+        taskModelConfig: taskModel ?? undefined,
         tasks: seedTasks.length ? seedTasks : undefined,
+        visibility: options.visibility,
       };
       // A topic goal takes its agent and topic from the running
       // operation on the server; the CLI only names the run. Device and gateway
@@ -732,6 +732,7 @@ export function registerGoalCommand(program: Command) {
           `The server did not draw these dependsOn edges (it may predate dependsOn); add them with \`lh goal add-edge\`: ${undrawn.join('; ')}`,
         );
       const turnToken = 'turnToken' in result ? result.turnToken : undefined;
+      await ensureCreatedGoalTaskModel(client, result.data!.goal, taskModel, turnToken);
       // `goal.create` returns the whole graph snapshot, so the id is on its
       // goal — `result.data.id` is undefined, and the CLI cannot resolve the
       // router's types to catch that, which is how it reached a printed URL.
@@ -838,6 +839,7 @@ export function registerGoalCommand(program: Command) {
     .option('--agent <id>', 'Filter by responsible agent')
     .option('--project <id>', 'Filter by project')
     .option('--status <status...>', 'Filter by lifecycle status')
+    .option('--archived', 'List only archived goals (hidden otherwise)')
     .option('--limit <n>', 'Maximum rows', '50')
     .option('--json [fields]', 'Output JSON')
     .action(async (options) => {
@@ -845,6 +847,7 @@ export function registerGoalCommand(program: Command) {
         await getTrpcClient()
       ).goal.list.query({
         agentId: options.agent,
+        archived: options.archived || undefined,
         limit: Number.parseInt(options.limit, 10),
         projectId: options.project,
         statuses: options.status,
@@ -1099,95 +1102,10 @@ export function registerGoalCommand(program: Command) {
       log.info(result.message);
     });
 
-  goal
-    .command('set-budget <id>')
-    .description('Update limits; pass "none" to remove a limit')
-    .option('--max-rounds <n>')
-    .option('--max-cost <usd>')
-    .option('--max-experiments <n>', 'Exploration experiment cap (1–200)')
-    .option(
-      '--max-manager-turns <n>',
-      'Main Agent turn cap (1–100); raising it resumes a goal it paused',
-    )
-    .option(
-      '--max-concurrent-tasks <n>',
-      'Tasks allowed to run at once (1–10; "none" restores the default)',
-    )
-    .option('--max-attempts-per-task <n>', 'Attempts per Task before opening a decision gate')
-    .option('--max-steps-per-run <n>', 'Agent step cap per Task run ("none" removes it)')
-    .action(
-      async (
-        id: string,
-        options: {
-          maxAttemptsPerTask?: string;
-          maxConcurrentTasks?: string;
-          maxCost?: string;
-          maxExperiments?: string;
-          maxManagerTurns?: string;
-          maxRounds?: string;
-          maxStepsPerRun?: string;
-        },
-      ) => {
-        const parseLimit = (value: string | undefined, integer = false) =>
-          value === undefined
-            ? undefined
-            : value === 'none'
-              ? null
-              : integer
-                ? Number.parseInt(value, 10)
-                : Number.parseFloat(value);
-        const result = await (
-          await getTrpcClient()
-        ).goal.setBudget.mutate({
-          id,
-          maxAttemptsPerTask:
-            options.maxAttemptsPerTask === undefined
-              ? undefined
-              : Number.parseInt(options.maxAttemptsPerTask, 10),
-          maxConcurrentTasks: parseLimit(options.maxConcurrentTasks, true),
-          maxExperiments:
-            options.maxExperiments === undefined ? undefined : Number(options.maxExperiments),
-          maxManagerTurns:
-            options.maxManagerTurns === undefined
-              ? undefined
-              : Number.parseInt(options.maxManagerTurns, 10),
-          maxRounds: parseLimit(options.maxRounds, true),
-          maxStepsPerRun: parseLimit(options.maxStepsPerRun, true),
-          maxTotalCost: parseLimit(options.maxCost),
-        });
-        log.info(result.message);
-      },
-    );
-
-  goal
-    .command('set-agent <id> <agent>')
-    .description(
-      'Hand the goal to a different supervising agent (its unfinished tasks follow unless the goal has a task agent)',
-    )
-    .option('--goal-only', 'Only change the goal-level agent; leave existing tasks as assigned')
-    .action(async (id: string, agentId: string, options: { goalOnly?: boolean }) => {
-      const result = await (
-        await getTrpcClient()
-      ).goal.setAgent.mutate({ agentId, goalOnly: options.goalOnly, id });
-      log.info(result.message);
-    });
-
-  goal
-    .command('set-task-agent <id> <agent>')
-    .description(
-      'Route the goal\'s tasks to a dedicated executor; "none" hands them back to the goal agent',
-    )
-    .option('--goal-only', 'Only change future tasks; leave existing tasks as assigned')
-    .action(async (id: string, agent: string, options: { goalOnly?: boolean }) => {
-      const result = await (
-        await getTrpcClient()
-      ).goal.setTaskAgent.mutate({
-        agentId: agent === 'none' ? null : agent,
-        goalOnly: options.goalOnly,
-        id,
-      });
-      log.info(result.message);
-    });
+  registerGoalAccessCommands(goal);
+  registerGoalArchiveCommands(goal);
+  registerGoalAssignmentCommands(goal);
+  registerGoalConfigurationCommands(goal);
 
   goal
     .command('bind-topic <id>')
@@ -1294,5 +1212,7 @@ export function registerGoalCommand(program: Command) {
     });
 
   registerGoalGraphEditCommands(goal);
+  registerGoalMarkCommands(goal);
   registerGoalMetricCommands(goal);
+  registerGoalObjectiveCommands(goal);
 }

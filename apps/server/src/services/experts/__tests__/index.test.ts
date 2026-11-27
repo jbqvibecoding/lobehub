@@ -11,7 +11,7 @@ import { ExpertService } from '../index';
 
 vi.mock('@/database/server', () => ({ serverDB: {} }));
 const sandbox = vi.hoisted(() => ({ kind: 'market' }));
-vi.mock('@/server/services/sandbox/factory', () => ({
+vi.mock('@/server/services/sandbox/deployment', () => ({
   getSandboxProviderKind: () => sandbox.kind,
 }));
 

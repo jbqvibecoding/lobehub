@@ -30,6 +30,17 @@ const cloudComputer = vi.hoisted(() => ({ available: true }));
 vi.mock('@/server/services/computerTools', () => ({
   isCloudComputerAvailable: () => cloudComputer.available,
 }));
+const serverToolInput = (toolIds: string[]) => ({
+  toolIds,
+  model: 'gpt-4',
+  provider: 'openai',
+});
+
+const deepseekToolInput = () => ({
+  model: 'deepseek-chat',
+  provider: 'deepseek',
+  toolIds: [],
+});
 
 // Mock installed plugins
 const mockInstalledPlugins: InstalledPlugin[] = [
@@ -345,11 +356,7 @@ describe('createServerAgentToolsEngine', () => {
       provider: 'openai',
     });
 
-    const result = engine.generateToolsDetailed({
-      toolIds: [LocalSystemManifest.identifier],
-      model: 'gpt-4',
-      provider: 'openai',
-    });
+    const result = engine.generateToolsDetailed(serverToolInput([LocalSystemManifest.identifier]));
 
     // LocalSystem should be filtered out (disabled) on server
     expect(result.enabledToolIds).not.toContain(LocalSystemManifest.identifier);
@@ -622,74 +629,66 @@ describe('createServerAgentToolsEngine', () => {
     expect(result.enabledToolIds).toContain(LobeAgentManifest.identifier);
   });
 
-  it('should enable lobe-agent by default since it is always-on', () => {
-    const context = createMockContext();
-    const engine = createServerAgentToolsEngine(context, {
-      agentConfig: { plugins: [] },
-      model: 'deepseek-chat',
-      provider: 'deepseek',
-    });
+  it.each(['lobe-agent', 'lobe-skill-store'])(
+    'exposes %s only after activation or pinning',
+    (id) => {
+      const options = {
+        agentConfig: { plugins: [] },
+        model: 'deepseek-chat',
+        provider: 'deepseek',
+      };
+      const input = { ...deepseekToolInput(), toolIds: [id] };
+      const engine = createServerAgentToolsEngine(createMockContext(), options);
 
-    const result = engine.generateToolsDetailed({
-      model: 'deepseek-chat',
-      provider: 'deepseek',
-      toolIds: [],
-    });
+      expect(engine.generateToolsDetailed(deepseekToolInput()).enabledToolIds).not.toContain(id);
+      expect(
+        engine.generateToolsDetailed({
+          ...input,
+          context: { isExplicitActivation: true },
+          skipDefaultTools: true,
+        }).enabledToolIds,
+      ).toEqual([id]);
 
-    // lobe-agent is in alwaysOnToolIds, so its core capabilities are on for every agent-mode turn.
-    expect(result.enabledToolIds).toContain(LobeAgentManifest.identifier);
+      const pinned = createServerAgentToolsEngine(createMockContext(), {
+        ...options,
+        agentConfig: { plugins: [id] },
+      });
+      expect(pinned.generateToolsDetailed(input).enabledToolIds).toContain(id);
 
-    // Without a manifest context, the full static manifest is used — callSubAgent stays.
-    const lobeAgent = result.enabledManifests.find(
-      (m) => m.identifier === LobeAgentManifest.identifier,
-    );
-    expect(lobeAgent?.api.map((a) => a.name)).toContain(LobeAgentApiName.callSubAgent);
-  });
+      const disabled = createServerAgentToolsEngine(createMockContext(), {
+        ...options,
+        disabledPluginIds: [id],
+      });
+      expect(
+        disabled.generateToolsDetailed({
+          ...input,
+          context: { isExplicitActivation: true },
+          skipDefaultTools: true,
+        }).enabledToolIds,
+      ).toEqual([]);
+    },
+  );
 
-  it('should honor an explicit disabled policy for an always-on builtin tool', () => {
-    const context = createMockContext();
-    const engine = createServerAgentToolsEngine(context, {
-      agentConfig: { plugins: [] },
-      disabledPluginIds: [LobeAgentManifest.identifier],
-      model: 'deepseek-chat',
-      provider: 'deepseek',
-    });
-
-    const result = engine.generateToolsDetailed({
-      model: 'deepseek-chat',
-      provider: 'deepseek',
-      toolIds: [],
-    });
-
-    expect(result.enabledToolIds).not.toContain(LobeAgentManifest.identifier);
-    expect(result.enabledManifests).not.toContainEqual(
-      expect.objectContaining({ identifier: LobeAgentManifest.identifier }),
-    );
-  });
-
-  it('hides lobe-agent callSubAgent when manifestContext.isSubAgent is true', () => {
-    const context = createMockContext();
-    const engine = createServerAgentToolsEngine(context, {
-      agentConfig: { plugins: [] },
-      manifestContext: { isSubAgent: true },
-      model: 'deepseek-chat',
-      provider: 'deepseek',
-    });
-
-    const result = engine.generateToolsDetailed({
-      model: 'deepseek-chat',
-      provider: 'deepseek',
-      toolIds: [],
-    });
-
-    // lobe-agent's other capabilities (plan / todo / visual-media) stay on...
-    expect(result.enabledToolIds).toContain(LobeAgentManifest.identifier);
-    const lobeAgent = result.enabledManifests.find(
-      (m) => m.identifier === LobeAgentManifest.identifier,
-    );
-    // ...but callSubAgent is stripped so a nested sub-agent cannot recurse.
-    expect(lobeAgent?.api.map((a) => a.name)).not.toContain(LobeAgentApiName.callSubAgent);
-  });
+  it.each([{ isSubAgent: true }, { scope: 'group' }])(
+    'hides callSubAgent after discovery with %o',
+    (manifestContext) => {
+      const engine = createServerAgentToolsEngine(createMockContext(), {
+        agentConfig: { plugins: [] },
+        manifestContext,
+        model: 'deepseek-chat',
+        provider: 'deepseek',
+      });
+      const { enabledManifests } = engine.generateToolsDetailed({
+        ...deepseekToolInput(),
+        context: { isExplicitActivation: true },
+        skipDefaultTools: true,
+        toolIds: [LobeAgentManifest.identifier],
+      });
+      const names = enabledManifests[0].api.map((api) => api.name);
+      expect(names).toContain(LobeAgentApiName.createPlan);
+      expect(names).not.toContain(LobeAgentApiName.callSubAgent);
+    },
+  );
 
   it('rewrites lobe-skills exec descriptions when manifestContext.executionEnv is device-unrouted', () => {
     const context = createMockContext();
@@ -703,11 +702,7 @@ describe('createServerAgentToolsEngine', () => {
       provider: 'deepseek',
     });
 
-    const result = engine.generateToolsDetailed({
-      model: 'deepseek-chat',
-      provider: 'deepseek',
-      toolIds: [],
-    });
+    const result = engine.generateToolsDetailed(deepseekToolInput());
 
     // lobe-skills is always-on, so the resolved manifest is what the model sees.
     const skills = result.enabledManifests.find((m) => m.identifier === SkillsManifest.identifier);
@@ -717,27 +712,6 @@ describe('createServerAgentToolsEngine', () => {
     expect(
       SkillsManifest.api.find((a) => a.name === SkillsApiName.runCommand)?.description,
     ).not.toContain('offline');
-  });
-
-  it('hides lobe-agent callSubAgent inside a group run (scope=group)', () => {
-    const context = createMockContext();
-    const engine = createServerAgentToolsEngine(context, {
-      agentConfig: { plugins: [] },
-      manifestContext: { scope: 'group' },
-      model: 'deepseek-chat',
-      provider: 'deepseek',
-    });
-
-    const result = engine.generateToolsDetailed({
-      model: 'deepseek-chat',
-      provider: 'deepseek',
-      toolIds: [],
-    });
-
-    const lobeAgent = result.enabledManifests.find(
-      (m) => m.identifier === LobeAgentManifest.identifier,
-    );
-    expect(lobeAgent?.api.map((a) => a.name)).not.toContain(LobeAgentApiName.callSubAgent);
   });
 
   it('should enable KnowledgeBase when hasEnabledKnowledgeBases is true', () => {
@@ -787,11 +761,7 @@ describe('createServerAgentToolsEngine', () => {
       provider: 'openai',
     });
 
-    const result = engine.generateToolsDetailed({
-      toolIds: [],
-      model: 'gpt-4',
-      provider: 'openai',
-    });
+    const result = engine.generateToolsDetailed(serverToolInput([]));
 
     expect(result.enabledToolIds).toContain(GroupManagementManifest.identifier);
     // group-agent-builder has no server runtime, so it is deliberately NOT
@@ -808,11 +778,7 @@ describe('createServerAgentToolsEngine', () => {
       provider: 'openai',
     });
 
-    const result = engine.generateToolsDetailed({
-      toolIds: [],
-      model: 'gpt-4',
-      provider: 'openai',
-    });
+    const result = engine.generateToolsDetailed(serverToolInput([]));
 
     expect(result.enabledToolIds).not.toContain(GroupManagementManifest.identifier);
     expect(result.enabledToolIds).not.toContain(GroupAgentBuilderManifest.identifier);
@@ -860,7 +826,7 @@ describe('createServerAgentToolsEngine', () => {
       toolIds: ['test-plugin', LobeAgentManifest.identifier, WebBrowsingManifest.identifier],
     });
 
-    // Exactly the declared plugin — no always-on lobe-agent, no default web/KB.
+    // Exactly the declared plugin — no default web/KB.
     expect(result.enabledToolIds).toContain('test-plugin');
     expect(result.enabledToolIds).not.toContain(LobeAgentManifest.identifier);
     expect(result.enabledToolIds).not.toContain(WebBrowsingManifest.identifier);
@@ -1049,11 +1015,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [LocalSystemManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([LocalSystemManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).not.toContain(LocalSystemManifest.identifier);
     });
@@ -1068,11 +1032,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [LocalSystemManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([LocalSystemManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).toContain(LocalSystemManifest.identifier);
     });
@@ -1087,11 +1049,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [LocalSystemManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([LocalSystemManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).not.toContain(LocalSystemManifest.identifier);
     });
@@ -1106,11 +1066,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [LocalSystemManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([LocalSystemManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).not.toContain(LocalSystemManifest.identifier);
     });
@@ -1128,11 +1086,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [LocalSystemManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([LocalSystemManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).not.toContain(LocalSystemManifest.identifier);
     });
@@ -1150,11 +1106,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [LocalSystemManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([LocalSystemManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).not.toContain(LocalSystemManifest.identifier);
     });
@@ -1169,11 +1123,7 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(serverToolInput([]));
 
       expect(result.enabledToolIds).toContain(CloudSandboxManifest.identifier);
     });
@@ -1186,11 +1136,7 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(serverToolInput([]));
 
       expect(result.enabledToolIds).not.toContain(CloudSandboxManifest.identifier);
     });
@@ -1205,11 +1151,7 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(serverToolInput([]));
 
       expect(result.enabledToolIds).not.toContain(CloudSandboxManifest.identifier);
     });
@@ -1229,11 +1171,7 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(serverToolInput([]));
 
       expect(result.enabledToolIds).toContain(CloudSandboxManifest.identifier);
     });
@@ -1248,11 +1186,7 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(serverToolInput([]));
 
       expect(result.enabledToolIds).toContain(CloudSandboxManifest.identifier);
     });
@@ -1273,11 +1207,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [RemoteDeviceManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([RemoteDeviceManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).toContain(RemoteDeviceManifest.identifier);
     });
@@ -1292,11 +1224,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [RemoteDeviceManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([RemoteDeviceManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).not.toContain(RemoteDeviceManifest.identifier);
     });
@@ -1314,11 +1244,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [RemoteDeviceManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([RemoteDeviceManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).not.toContain(RemoteDeviceManifest.identifier);
     });
@@ -1336,11 +1264,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [RemoteDeviceManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([RemoteDeviceManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).not.toContain(RemoteDeviceManifest.identifier);
     });
@@ -1355,11 +1281,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [RemoteDeviceManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([RemoteDeviceManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).not.toContain(RemoteDeviceManifest.identifier);
     });
@@ -1381,11 +1305,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [RemoteDeviceManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([RemoteDeviceManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).not.toContain(RemoteDeviceManifest.identifier);
     });
@@ -1408,11 +1330,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [RemoteDeviceManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([RemoteDeviceManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).not.toContain(RemoteDeviceManifest.identifier);
     });
@@ -1433,11 +1353,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [RemoteDeviceManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([RemoteDeviceManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).toContain(RemoteDeviceManifest.identifier);
     });
@@ -1456,11 +1374,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [RemoteDeviceManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([RemoteDeviceManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).not.toContain(RemoteDeviceManifest.identifier);
     });
@@ -1479,11 +1395,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [LocalSystemManifest.identifier, RemoteDeviceManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([LocalSystemManifest.identifier, RemoteDeviceManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).not.toContain(LocalSystemManifest.identifier);
       expect(result.enabledToolIds).toContain(RemoteDeviceManifest.identifier);
@@ -1501,11 +1415,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [LocalSystemManifest.identifier, RemoteDeviceManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([LocalSystemManifest.identifier, RemoteDeviceManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).toContain(LocalSystemManifest.identifier);
       expect(result.enabledToolIds).not.toContain(RemoteDeviceManifest.identifier);
@@ -1525,11 +1437,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [LocalSystemManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([LocalSystemManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).not.toContain(LocalSystemManifest.identifier);
     });
@@ -1544,11 +1454,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [RemoteDeviceManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([RemoteDeviceManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).not.toContain(RemoteDeviceManifest.identifier);
     });
@@ -1566,11 +1474,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [LocalSystemManifest.identifier, RemoteDeviceManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([LocalSystemManifest.identifier, RemoteDeviceManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).not.toContain(LocalSystemManifest.identifier);
       expect(result.enabledToolIds).not.toContain(RemoteDeviceManifest.identifier);
@@ -1667,11 +1573,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [LocalSystemManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([LocalSystemManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).toContain(LocalSystemManifest.identifier);
     });
@@ -1687,11 +1591,9 @@ describe('createServerAgentToolsEngine', () => {
         provider: 'openai',
       });
 
-      const result = engine.generateToolsDetailed({
-        toolIds: [RemoteDeviceManifest.identifier],
-        model: 'gpt-4',
-        provider: 'openai',
-      });
+      const result = engine.generateToolsDetailed(
+        serverToolInput([RemoteDeviceManifest.identifier]),
+      );
 
       expect(result.enabledToolIds).toContain(RemoteDeviceManifest.identifier);
     });

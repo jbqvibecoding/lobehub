@@ -26,6 +26,7 @@ import { useTranslation } from 'react-i18next';
 
 import AgentAvatar from '@/components/AgentAvatar';
 import EmptyNavItem from '@/features/NavPanel/components/EmptyNavItem';
+import { useSectionTriggerStyle } from '@/features/NavPanel/components/SectionTitle';
 import { canStageDraftOn } from '@/features/Projects/WorkingDirectories/startProjectTopicDraft';
 import { useAgentFixedDeviceId } from '@/features/Projects/WorkingDirectories/useAgentFixedDeviceId';
 import { useStartProjectTopic } from '@/features/Projects/WorkingDirectories/useStartProjectTopic';
@@ -66,6 +67,7 @@ interface AgentAttributedRow {
 }
 
 const GroupItem = memo<GroupItemComponentProps>(({ group }) => {
+  const sectionTriggerStyle = useSectionTriggerStyle();
   const { t } = useTranslation('topic');
   const { t: tProject } = useTranslation('project');
   const { id, title, children } = group;
@@ -119,7 +121,7 @@ const GroupItem = memo<GroupItemComponentProps>(({ group }) => {
   // the first directory it can run in when there is one.
   const handleAddTopic = (initialDirectoryId?: string) => {
     if (!scope || !agentId) return;
-    void startTopic({ agentId, directoryId: initialDirectoryId ?? startDirectories?.[0]?.id });
+    startTopic({ agentId, directoryId: initialDirectoryId ?? startDirectories?.[0]?.id });
   };
 
   // The agent bucket already sits inside one project, so its rows skip the
@@ -148,7 +150,7 @@ const GroupItem = memo<GroupItemComponentProps>(({ group }) => {
   return (
     <AccordionItem value={id}>
       <AccordionHeader>
-        <AccordionTrigger style={{ paddingBlock: 4, paddingInline: '8px 4px' }}>
+        <AccordionTrigger style={sectionTriggerStyle}>
           <Flexbox horizontal align="center" gap={8} height={24} style={{ overflow: 'hidden' }}>
             <Center className={styles.avatarWrap} flex={'none'} height={18} width={18}>
               <AgentAvatar

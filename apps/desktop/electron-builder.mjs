@@ -51,8 +51,22 @@ const region = channel
 const arch = os.arch();
 const hasAppleCertificate = Boolean(process.env.CSC_LINK);
 
-// Biber's app id for the region, shared by the bundle and its notification entitlements
-const macAppId = desktopAppId(region);
+/**
+ * Distribution identity. A downstream build (private deployment, white-label)
+ * sets these through env instead of forking this file; unset keeps Biber's
+ * values for the edition (src/common/identity.ts).
+ *
+ * `appId` is not cosmetic: the updater and the OS key the installed app's
+ * identity off it, so a distribution must pick one before its first release and
+ * never change it. The packaged `productName` (which names the per-user data
+ * directory) is stamped into package.json by
+ * `scripts/electronWorkflow/setDesktopVersion.ts` from the same
+ * DESKTOP_PRODUCT_NAME; `brandName` here is the channel-less form for
+ * user-facing strings.
+ */
+const appId = process.env.DESKTOP_APP_ID || desktopAppId(region);
+const brandName = process.env.DESKTOP_PRODUCT_NAME || DESKTOP_PRODUCT_NAME;
+const executableName = process.env.DESKTOP_EXECUTABLE_NAME || DESKTOP_PRODUCT_NAME;
 // Communication notifications need the restricted
 // `com.apple.developer.usernotifications.communication` entitlement, and
 // macOS refuses to launch an app carrying it without a provisioning profile
@@ -78,7 +92,7 @@ if (macCommunicationEntitlements) {
   );
   const communicationKeys = [
     '    <key>com.apple.application-identifier</key>',
-    `    <string>${macTeamId}.${macAppId}</string>`,
+    `    <string>${macTeamId}.${appId}</string>`,
     '    <key>com.apple.developer.team-identifier</key>',
     `    <string>${macTeamId}</string>`,
     '    <key>com.apple.developer.usernotifications.communication</key>',
@@ -143,11 +157,29 @@ if (!hasAppleCertificate) {
   console.info('⚠️ Apple certificate link not found, macOS artifacts will be unsigned.');
 }
 
-// The scheme the app listens on (src/common/identity.ts), per edition and pre-release channel
-const protocolScheme = desktopProtocolScheme(
-  region,
-  isCanary ? 'canary' : isNightly ? 'nightly' : undefined,
-);
+// The scheme the app listens on: a distribution's own, else Biber's for the edition and
+// pre-release channel (src/common/identity.ts)
+const getProtocolScheme = () => {
+  // Schemes are registered OS-wide, so a distribution needs its own: two builds
+  // claiming one scheme on one machine race for the handler, and the loser's
+  // deep links and OAuth handoffs open the other app. Must match the value the
+  // main process is built with (see vite.main.config.ts).
+  const scheme = process.env.DESKTOP_PROTOCOL_SCHEME;
+  if (scheme) {
+    // URL parsing lowercases schemes, so the main process can only ever match a
+    // lowercase one — fail the build rather than ship an app that drops its own
+    // deep links.
+    if (!/^[a-z][\d+.a-z-]*$/.test(scheme)) {
+      throw new Error(
+        `DESKTOP_PROTOCOL_SCHEME "${scheme}" must be a lowercase URL scheme (a-z, then a-z, 0-9, "+", "-", ".")`,
+      );
+    }
+    return scheme;
+  }
+  return desktopProtocolScheme(region, isCanary ? 'canary' : isNightly ? 'nightly' : undefined);
+};
+
+const protocolScheme = getProtocolScheme();
 
 const sparklePublicKey = process.env.SPARKLE_ED_PUBLIC_KEY;
 const { useSparkle } = resolveSparklePackaging({
@@ -304,7 +336,7 @@ const config = {
       }
     }
   },
-  appId: macAppId,
+  appId,
   appImage: {
     artifactName: '${productName}-${version}.${ext}',
   },
@@ -329,6 +361,7 @@ const config = {
   dmg: {
     artifactName: '${productName}-${version}-${arch}.${ext}',
     background: 'resources/dmg.png',
+    format: 'UDBZ',
     contents: [
       { type: 'file', x: 150, y: 240 },
       { type: 'link', path: '/Applications', x: 450, y: 240 },
@@ -371,7 +404,8 @@ const config = {
       'Contents/Resources/app.asar.unpacked/node_modules/font-list/libs/darwin/fontlist',
       'Contents/Resources/bin/auv',
     ],
-    compression: 'maximum',
+    // 'maximum' zips with 15-pass deflate: 7.7x slower for 0.2% smaller, up to 20 min on Intel CI. dmg.format keeps UDBZ separately.
+    compression: 'normal',
     entitlementsInherit: 'build/entitlements.mac.plist',
     ...(macCommunicationEntitlements
       ? {
@@ -390,9 +424,23 @@ const config = {
           }
         : {}),
       CFBundleIconName: 'AppIcon',
+      /**
+       * Claiming `public.folder` is what puts the app in Finder's "Open With"
+       * for a folder. Without it the only ways in are the shell command and a
+       * drop on the Dock icon — which is what a first-time user is least
+       * likely to guess.
+       */
+      CFBundleDocumentTypes: [
+        {
+          CFBundleTypeName: 'Folder',
+          CFBundleTypeRole: 'Viewer',
+          LSHandlerRank: 'Alternate',
+          LSItemContentTypes: ['public.folder'],
+        },
+      ],
       CFBundleURLTypes: [
         {
-          CFBundleURLName: `${DESKTOP_PRODUCT_NAME} Protocol`,
+          CFBundleURLName: `${brandName} Protocol`,
           CFBundleURLSchemes: [protocolScheme],
         },
       ],
@@ -403,8 +451,7 @@ const config = {
         "Application requests access to the user's Documents folder.",
       NSDownloadsFolderUsageDescription:
         "Application requests access to the user's Downloads folder.",
-      NSLocalNetworkUsageDescription:
-        'LobeHub connects to self-hosted servers, model providers, and other services on your local network.',
+      NSLocalNetworkUsageDescription: `${brandName} connects to self-hosted servers, model providers, and other services on your local network.`,
       NSMicrophoneUsageDescription: "Application requests access to the device's microphone.",
       NSScreenCaptureUsageDescription:
         'Application requests access to record and analyze screen content for AI assistance.',
@@ -436,7 +483,7 @@ const config = {
   },
   protocols: [
     {
-      name: `${DESKTOP_PRODUCT_NAME} Protocol`,
+      name: `${brandName} Protocol`,
       schemes: [protocolScheme],
     },
   ],
@@ -499,7 +546,7 @@ const config = {
   ],
 
   win: {
-    executableName: DESKTOP_PRODUCT_NAME,
+    executableName,
   },
 };
 

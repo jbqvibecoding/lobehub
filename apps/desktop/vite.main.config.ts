@@ -76,7 +76,7 @@ export default defineConfig(async (env) => {
           manualChunks(id: string) {
             const normalizedId = id.replaceAll('\\', '/').split('?')[0];
 
-            if (/apps\/desktop\/src\/main\/core\/App\.ts$/.test(normalizedId)) {
+            if (normalizedId.endsWith('apps/desktop/src/main/core/App.ts')) {
               return 'main-app';
             }
 
@@ -119,6 +119,12 @@ export default defineConfig(async (env) => {
       ...processEnvDefine,
       // The edition is fixed per build: it picks the app's URL scheme and default cloud server.
       'process.env.APP_REGION': JSON.stringify(desktopRegion(process.env.APP_REGION)),
+      // Distribution identity. A packaged app has no shell env to inherit, so
+      // these must be baked in; electron-builder.mjs reads the same variables
+      // for the OS-level registration, and a mismatch leaves the app listening
+      // on a scheme the OS never routes to it.
+      'process.env.DESKTOP_APP_ID': JSON.stringify(process.env.DESKTOP_APP_ID),
+      'process.env.DESKTOP_PROTOCOL_SCHEME': JSON.stringify(process.env.DESKTOP_PROTOCOL_SCHEME),
       'process.env.DESKTOP_EXTERNAL_NAVIGATION_HOSTS': JSON.stringify(externalNavigationHosts),
       'process.env.RENDERER_OTA_PUBLIC_KEY': JSON.stringify(process.env.RENDERER_OTA_PUBLIC_KEY),
       'process.env.UPDATE_CHANNEL': JSON.stringify(process.env.UPDATE_CHANNEL),

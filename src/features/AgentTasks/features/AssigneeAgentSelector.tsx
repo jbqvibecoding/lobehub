@@ -1,7 +1,14 @@
-import { DEFAULT_INBOX_AVATAR } from '@lobechat/const';
 import { agentDisplayName } from '@lobechat/types';
-import { createStaticStyles, cssVar, Flexbox, Icon, Popover, Text, Tooltip } from '@lobehub/ui';
-import isEqual from 'fast-deep-equal';
+import {
+  confirmModal,
+  createStaticStyles,
+  cssVar,
+  Flexbox,
+  Icon,
+  Popover,
+  Text,
+  Tooltip,
+} from '@lobehub/ui';
 import { ChevronDown, ChevronRight, UserRoundX } from 'lucide-react';
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -12,23 +19,20 @@ import { type SidebarAgentItem } from '@/database/repositories/home';
 import NavItem from '@/features/NavPanel/components/NavItem';
 import SkeletonList from '@/features/NavPanel/components/SkeletonList';
 import AgentItem from '@/features/PageEditor/Copilot/AgentSelector/AgentItem';
-import { useFetchAgentList } from '@/hooks/useFetchAgentList';
+import VisibilityConfirmContent from '@/features/VisibilityConfirmContent';
 import { usePermission } from '@/hooks/usePermission';
-import { useAgentStore } from '@/store/agent';
-import { agentSelectors, builtinAgentSelectors } from '@/store/agent/selectors';
 import { useGlobalStore } from '@/store/global';
-import { useHomeStore } from '@/store/home';
-import { homeAgentListSelectors } from '@/store/home/selectors';
 import { useTaskStore } from '@/store/task';
+import { useUserStore } from '@/store/user';
+import { userProfileSelectors } from '@/store/user/selectors';
 
 import {
-  type AssigneeAgentSection,
-  buildAssigneeAgentSections,
   filterAssigneeSections,
   matchesAssigneeSearch,
   pickRecentAssignees,
-  pushRecentAssignee,
+  shouldOfferPrivateAgents,
 } from './assigneeAgentSections';
+import { useAssigneeAgentScopes } from './useAssigneeAgentScopes';
 
 interface AssigneeAgentSelectorProps {
   /** Offer the "unassigned" option; off where an owner is required. */
@@ -41,6 +45,11 @@ interface AssigneeAgentSelectorProps {
   /** Why `disabled` holds; defaults to the running-Task explanation. */
   disabledReason?: string;
   onChange?: (agentId: string | null) => void;
+  /**
+   * The task's creator. On a public task, lets its creator pick a private
+   * agent: confirming makes the task private first, then assigns it.
+   */
+  taskCreatorId?: string | null;
   taskIdentifier?: string;
   taskVisibility?: 'private' | 'public' | null;
 }
@@ -60,12 +69,6 @@ type PickerRow =
       kind: 'section';
       title: string;
     };
-
-interface PickerScope {
-  id: string;
-  sections: AssigneeAgentSection[];
-  title?: string;
-}
 
 const RECENT_SECTION_ID = 'recent';
 
@@ -156,6 +159,7 @@ const AssigneeAgentSelector = memo<AssigneeAgentSelectorProps>(
     disabled,
     disabledReason,
     onChange,
+    taskCreatorId,
     taskIdentifier,
     taskVisibility,
   }) => {
@@ -168,97 +172,34 @@ const AssigneeAgentSelector = memo<AssigneeAgentSelectorProps>(
     const keyboardMovedRef = useRef(false);
 
     const updateTask = useTaskStore((s) => s.updateTask);
-    const pinnedAgents = useHomeStore(homeAgentListSelectors.pinnedAgents, isEqual);
-    const agentGroups = useHomeStore(homeAgentListSelectors.agentGroups, isEqual);
-    const ungroupedAgents = useHomeStore(homeAgentListSelectors.ungroupedAgents, isEqual);
-    const privateAgentGroups = useHomeStore(homeAgentListSelectors.privateAgentGroups, isEqual);
-    const privatePinnedAgents = useHomeStore(homeAgentListSelectors.privatePinnedAgents, isEqual);
-    const privateUngroupedAgents = useHomeStore(
-      homeAgentListSelectors.privateUngroupedAgents,
-      isEqual,
-    );
-    const hasPrivateAgents = useHomeStore(homeAgentListSelectors.hasPrivateAgents);
-    const isAgentListInit = useHomeStore(homeAgentListSelectors.isAgentListInit);
-
-    const inboxAgentId = useAgentStore(builtinAgentSelectors.inboxAgentId);
-    const inboxMeta = useAgentStore((s) =>
-      inboxAgentId ? agentSelectors.getAgentMetaById(inboxAgentId)(s) : undefined,
-    );
-
-    useFetchAgentList();
-
-    const workspaceId = useActiveWorkspaceId();
-    const recentKey = workspaceId ?? 'personal';
-    const recentIds = useGlobalStore((s) => s.status.recentAssigneeAgentIds?.[recentKey]);
+    const updateTaskVisibility = useTaskStore((s) => s.updateTaskVisibility);
+    const currentUserId = useUserStore(userProfileSelectors.userId);
     const collapsedGroups = useGlobalStore((s) => s.status.assigneeAgentSelectorCollapsedGroups);
     const updateSystemStatus = useGlobalStore((s) => s.updateSystemStatus);
+    const workspaceId = useActiveWorkspaceId();
 
-    const scopes = useMemo<PickerScope[]>(() => {
-      const labels = {
-        pinned: t('navPanel.pinned', { ns: 'common' }),
-        ungrouped: t('defaultList', { ns: 'chat' }),
-      };
-      const result: PickerScope[] = [];
-
-      if (taskVisibility !== 'public')
-        result.push({
-          id: 'private',
-          sections: buildAssigneeAgentSections({
-            groups: privateAgentGroups,
-            labels,
-            pinned: privatePinnedAgents,
-            scope: 'private',
-            ungrouped: privateUngroupedAgents,
-          }),
-          title: t('taskManager.agentSelector.privateGroup', { ns: 'topic' }),
-        });
-
-      const workspaceSections = buildAssigneeAgentSections({
-        groups: agentGroups,
-        labels,
-        pinned: pinnedAgents,
-        scope: 'workspace',
-        ungrouped: ungroupedAgents,
-      });
-      result.push({
-        id: 'workspace',
-        sections: workspaceSections,
-        title: hasPrivateAgents
-          ? t('taskManager.agentSelector.workspaceGroup', { ns: 'topic' })
-          : undefined,
-      });
-
-      return result;
-    }, [
-      agentGroups,
-      hasPrivateAgents,
-      pinnedAgents,
-      privateAgentGroups,
-      privatePinnedAgents,
-      privateUngroupedAgents,
-      t,
+    const {
+      offer: offerPrivateAgents,
+      privatizes: offerPrivateOnPublic,
+      takesOver,
+    } = shouldOfferPrivateAgents({
+      currentUserId,
+      hasOnChange: !!onChange,
+      taskCreatorId,
+      taskIdentifier,
       taskVisibility,
-      ungroupedAgents,
-    ]);
+      workspaceId,
+    });
 
-    // The sidebar keeps the inbox above every group, so it leads the list here
-    // too, ahead of Recent, where a header-less row would read as a recent pick.
-    const inboxAgent = useMemo<SidebarAgentItem | undefined>(() => {
-      if (!inboxAgentId) return;
-      const listed = scopes.some((scope) =>
-        scope.sections.some((section) => section.agents.some((agent) => agent.id === inboxAgentId)),
-      );
-      if (listed) return;
-      return {
-        avatar: inboxMeta?.avatar || DEFAULT_INBOX_AVATAR,
-        description: null,
-        id: inboxAgentId,
-        pinned: false,
-        title: agentDisplayName(inboxMeta, t('inbox.title', { ns: 'chat' })),
-        type: 'agent' as const,
-        updatedAt: new Date(),
-      };
-    }, [inboxAgentId, inboxMeta, scopes, t]);
+    const { inboxAgent, isAgentListInit, privateAgentIds, recentIds, rememberAssignee, scopes } =
+      useAssigneeAgentScopes({
+        offerPrivate: offerPrivateAgents,
+        privateTitle: takesOver
+          ? t('taskManager.agentSelector.privateGroupTakesOver', { ns: 'topic' })
+          : offerPrivateOnPublic
+            ? t('taskManager.agentSelector.privateGroupMakesPrivate', { ns: 'topic' })
+            : t('taskManager.agentSelector.privateGroup', { ns: 'topic' }),
+      });
 
     const query = search.trim().toLowerCase();
     const recentAgents = useMemo(
@@ -355,49 +296,96 @@ const AssigneeAgentSelector = memo<AssigneeAgentSelectorProps>(
       setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
     }, [currentAgentId, flatOptions, query]);
 
+    const assignAgent = useCallback(
+      (agentId: string | null, agent?: SidebarAgentItem) => {
+        if (agentId) rememberAssignee(agentId);
+        if (onChange) {
+          onChange(agentId);
+          return;
+        }
+        if (!taskIdentifier) return;
+        return updateTask(
+          taskIdentifier,
+          { assigneeAgentId: agentId },
+          // The picker is the one place that already holds the chosen agent's
+          // display metadata, so it hands it over for the optimistic feed row.
+          {
+            optimisticAssignee: agent
+              ? {
+                  // A group agent carries a member-avatar list; the feed row
+                  // only knows how to draw a single image.
+                  avatar: typeof agent.avatar === 'string' ? agent.avatar : null,
+                  id: agent.id,
+                  name: agentDisplayName(agent),
+                  type: 'agent',
+                }
+              : undefined,
+          },
+        );
+      },
+      [onChange, rememberAssignee, taskIdentifier, updateTask],
+    );
+
     const handleAgentChange = useCallback(
       (agentId: string | null, agent?: SidebarAgentItem) => {
         if (!canEditTask || agentId === (currentAgentId ?? null)) return;
         setKey((value) => value + 1);
         setSearch('');
-        if (agentId) {
-          const current = useGlobalStore.getState().status.recentAssigneeAgentIds?.[recentKey];
-          updateSystemStatus({
-            recentAssigneeAgentIds: { [recentKey]: pushRecentAssignee(current, agentId) },
-          });
-        }
-        if (onChange) {
-          onChange(agentId);
+
+        if (!offerPrivateOnPublic || !taskIdentifier || !agentId || !privateAgentIds.has(agentId)) {
+          void assignAgent(agentId, agent);
           return;
         }
-        if (taskIdentifier)
-          void updateTask(
-            taskIdentifier,
-            { assigneeAgentId: agentId },
-            // The picker is the one place that already holds the chosen agent's
-            // display metadata, so it hands it over for the optimistic feed row.
-            {
-              optimisticAssignee: agent
-                ? {
-                    // A group agent carries a member-avatar list; the feed row
-                    // only knows how to draw a single image.
-                    avatar: typeof agent.avatar === 'string' ? agent.avatar : null,
-                    id: agent.id,
-                    name: agentDisplayName(agent),
-                    type: 'agent',
-                  }
-                : undefined,
-            },
-          );
+
+        // The task goes private before the private agent is assigned; if that
+        // fails, the store has already explained why and nothing is assigned.
+        // Someone else's task becomes the picker's own private task.
+        const copy = takesOver
+          ? {
+              hint: t('taskManager.agentSelector.takeOverConfirm.hint', { ns: 'topic' }),
+              ok: t('taskManager.agentSelector.takeOverConfirm.ok', { ns: 'topic' }),
+              title: t('taskManager.agentSelector.takeOverConfirm.title', { ns: 'topic' }),
+            }
+          : {
+              hint: t('taskManager.agentSelector.makePrivateConfirm.hint', { ns: 'topic' }),
+              ok: t('taskManager.agentSelector.makePrivateConfirm.ok', { ns: 'topic' }),
+              title: t('taskManager.agentSelector.makePrivateConfirm.title', { ns: 'topic' }),
+            };
+        confirmModal({
+          cancelText: t('cancel', { ns: 'common' }),
+          content: (
+            <>
+              <VisibilityConfirmContent variant="makePrivate" />
+              <div style={{ marginTop: 8, opacity: 0.7 }}>{copy.hint}</div>
+            </>
+          ),
+          okButtonProps: { danger: true },
+          okText: copy.ok,
+          onOk: async () => {
+            try {
+              await (takesOver
+                ? updateTaskVisibility(taskIdentifier, 'private', { takeOwnership: true })
+                : updateTaskVisibility(taskIdentifier, 'private'));
+            } catch {
+              // The store action already surfaced a targeted toast; swallow so
+              // the confirm modal doesn't bubble a second error to base-ui.
+              return;
+            }
+            await assignAgent(agentId, agent);
+          },
+          title: copy.title,
+        });
       },
       [
+        assignAgent,
         canEditTask,
         currentAgentId,
-        onChange,
-        recentKey,
+        offerPrivateOnPublic,
+        privateAgentIds,
+        t,
+        takesOver,
         taskIdentifier,
-        updateSystemStatus,
-        updateTask,
+        updateTaskVisibility,
       ],
     );
 

@@ -6,6 +6,7 @@ import type { BriefItem, NewBrief } from '../schemas/task';
 import { briefs, tasks } from '../schemas/task';
 import type { LobeChatDatabase } from '../type';
 import { normalizeInboxAgentAvatar, normalizeInboxAgentTitle } from '../utils/inboxAgent';
+import { notTrashed } from '../utils/softDelete';
 import { buildWorkspacePayload } from '../utils/workspace';
 
 export interface UnresolvedBriefRow {
@@ -110,6 +111,9 @@ export class BriefModel {
           this.ownership(),
           isNull(briefs.resolvedAt),
           notInArray(briefs.type, HOME_FEED_EXCLUDED_BRIEF_TYPES),
+          // Briefs hide with their task while it sits in the recycle bin
+          // (a brief without a task joins NULL, which passes).
+          notTrashed(tasks.isDeleted),
         ),
       )
       .orderBy(
@@ -152,6 +156,7 @@ export class BriefModel {
         and(
           this.ownership(),
           inArray(briefs.type, NEWS_BRIEF_TYPES),
+          notTrashed(tasks.isDeleted),
           gte(briefs.createdAt, startAt),
           lt(briefs.createdAt, endAt),
         ),
@@ -277,6 +282,35 @@ export class BriefModel {
       .where(and(...conditions))
       .limit(1);
     return rows.length > 0;
+  }
+
+  /**
+   * Which of `taskIds` have an unresolved urgent brief — the batch form of
+   * {@link hasUnresolvedUrgentByTask}, for lists that mark the tasks whose
+   * automation is held back until the user answers.
+   */
+  async findTaskIdsWithUnresolvedUrgent(
+    taskIds: string[],
+    options?: { excludeTypes?: string[] },
+  ): Promise<Set<string>> {
+    if (taskIds.length === 0) return new Set();
+
+    const excludeTypes = options?.excludeTypes ?? [];
+    const conditions = [
+      this.ownership(),
+      inArray(briefs.taskId, taskIds),
+      eq(briefs.priority, 'urgent'),
+      isNull(briefs.resolvedAt),
+    ];
+    if (excludeTypes.length > 0) {
+      conditions.push(notInArray(briefs.type, excludeTypes));
+    }
+
+    const rows = await this.db
+      .selectDistinct({ taskId: briefs.taskId })
+      .from(briefs)
+      .where(and(...conditions));
+    return new Set(rows.map((row) => row.taskId).filter((id): id is string => !!id));
   }
 
   async findByCronJobId(cronJobId: string): Promise<BriefItem[]> {

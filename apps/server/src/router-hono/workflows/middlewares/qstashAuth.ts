@@ -17,52 +17,40 @@ const hasBearerSecret = (header: string | undefined, secret: string) => {
 };
 
 /**
- * Hono middleware for workflow endpoints that QStash or a scheduler calls.
+ * Hono middleware that verifies the `Upstash-Signature` header on incoming
+ * QStash webhook calls.
  *
- * A call is let through when it carries either credential the deployment has:
- * - `Authorization: Bearer <CRON_SECRET>`, for a scheduler of the operator's own (the mainland
- *   edition has no QStash) and for the hook dispatcher's unsigned fallback;
- * - a valid `Upstash-Signature`, when `QSTASH_CURRENT_SIGNING_KEY` is set.
+ * - `Authorization: Bearer <CRON_SECRET>` is accepted first, for a scheduler of
+ *   the operator's own (the mainland edition has no QStash).
+ * - Without QStash keys, production requires a signed internal callback.
+ *   Development and Electron retain their local execution behavior.
+ * - On signature mismatch, returns `401 Invalid signature` and aborts the
+ *   handler chain.
+ * - Read a clone so both Hono handlers and the Workflow SDK can read the body.
  *
- * With neither configured, production refuses every call: these endpoints run any user's tasks,
- * so an open endpoint lets anyone start them. Development keeps the old open behavior.
- *
- * The body is consumed via `c.req.text()` to compute the HMAC; downstream handlers can still call
- * `c.req.json()` because Hono caches across body formats.
- *
- * Use for one-shot QStash webhook receivers. For Upstash *Workflow* endpoints (multi-step `serve()`
- * integrations) use `@upstash/workflow/hono`'s built-in verification instead.
+ * Use for one-shot QStash webhook receivers. For Upstash *Workflow* endpoints
+ * (multi-step `serve()` integrations) use `@upstash/workflow/hono`'s built-in
+ * verification instead.
  */
 export const qstashAuth = (): MiddlewareHandler => async (c, next) => {
   const cronSecret = process.env.CRON_SECRET;
-  const signingKey = process.env.QSTASH_CURRENT_SIGNING_KEY;
+  const hasCronSecret = !!cronSecret && hasBearerSecret(c.req.header('authorization'), cronSecret);
+  if (hasCronSecret) log('Accepted CRON_SECRET on %s', c.req.path);
 
-  if (cronSecret && hasBearerSecret(c.req.header('authorization'), cronSecret)) {
-    log('Accepted CRON_SECRET on %s', c.req.path);
-  } else if (signingKey) {
-    const rawBody = await c.req.text();
+  const ok =
+    hasCronSecret || (await verifyQStashSignature(c.req.raw, await c.req.raw.clone().text()));
+  if (!ok) {
+    log('Rejected: invalid QStash signature on %s', c.req.path);
+    recordUpstashWorkflowEvent({
+      errorType: 'InvalidSignature',
+      interface: 'qstash',
+      operation: 'serve',
+      path: c.req.path,
+      status: 'error',
+    });
 
-    const ok = await verifyQStashSignature(c.req.raw, rawBody);
-    if (!ok) {
-      log('Rejected: invalid QStash signature on %s', c.req.path);
-      recordUpstashWorkflowEvent({
-        errorType: 'InvalidSignature',
-        interface: 'qstash',
-        operation: 'serve',
-        path: c.req.path,
-        status: 'error',
-      });
-
-      return c.json({ error: 'Invalid signature' }, 401);
-    }
-  } else if (cronSecret) {
-    log('Rejected: missing or wrong CRON_SECRET on %s', c.req.path);
-    return c.json({ error: 'Unauthorized' }, 401);
-  } else if (process.env.NODE_ENV === 'production') {
-    log('Rejected: neither CRON_SECRET nor QStash signing keys are set (%s)', c.req.path);
-    return c.json({ error: 'Set CRON_SECRET or QStash signing keys to call workflows' }, 503);
+    return c.json({ error: 'Invalid signature' }, 401);
   }
-
   try {
     await next();
 
@@ -83,4 +71,13 @@ export const qstashAuth = (): MiddlewareHandler => async (c, next) => {
 
     throw error;
   }
+};
+
+/** Keep the SDK's configured verification; guard its unsigned local fallback. */
+export const workflowAuth = (): MiddlewareHandler => async (c, next) => {
+  if (process.env.QSTASH_CURRENT_SIGNING_KEY && process.env.QSTASH_NEXT_SIGNING_KEY) {
+    await next();
+    return;
+  }
+  return qstashAuth()(c, next);
 };

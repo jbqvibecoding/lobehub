@@ -12,6 +12,7 @@ import {
   INSERT_ORDERED_LIST_COMMAND,
   INSERT_TABLE_COMMAND,
   INSERT_UNORDERED_LIST_COMMAND,
+  INSERT_VIDEO_COMMAND,
 } from '@lobehub/editor';
 import { Text } from '@lobehub/ui';
 import {
@@ -22,6 +23,7 @@ import {
   ImageIcon,
   ListIcon,
   ListOrderedIcon,
+  ListRestartIcon,
   ListTodoIcon,
   MessageSquareWarningIcon,
   MinusIcon,
@@ -29,11 +31,12 @@ import {
   SquareDashedBottomCodeIcon,
   SuperscriptIcon,
   Table2Icon,
+  VideoIcon,
 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { openFileSelector } from '@/features/EditorCanvas';
+import { openFileSelector, requestListNumberMenu } from '@/features/EditorCanvas';
 
 export const useSlashItems = (): SlashOptions['items'] => {
   const { t } = useTranslation('editor');
@@ -92,6 +95,15 @@ export const useSlashItems = (): SlashOptions['items'] => {
         },
       },
       {
+        // The keyboard's way to the menu the pointer opens on a list number.
+        icon: ListRestartIcon,
+        key: 'num',
+        label: t('list.number.set'),
+        onSelect: (editor) => {
+          requestListNumberMenu(editor);
+        },
+      },
+      {
         type: 'divider',
       },
       {
@@ -106,6 +118,14 @@ export const useSlashItems = (): SlashOptions['items'] => {
               }
             }
           }, 'image/*');
+        },
+      },
+      {
+        icon: VideoIcon,
+        key: 'video',
+        label: t('slash.video'),
+        onSelect: (editor) => {
+          editor.dispatchCommand(INSERT_VIDEO_COMMAND, {});
         },
       },
       {

@@ -10,6 +10,7 @@ import { Trans, useTranslation } from 'react-i18next';
 
 import { useAppOrigin } from '@/hooks/useAppOrigin';
 import type { SerializedPlatformDefinition } from '@/server/services/bot/platforms/types';
+import { densityTokens } from '@/styles/density.stylex';
 
 import type { ChannelFormValues, CurrentConfig, TestResult } from './index';
 
@@ -24,26 +25,26 @@ const styles = stylex.create({
     alignItems: 'center',
     display: 'flex',
     justifyContent: 'space-between',
-    paddingBlockStart: 16,
+    paddingBlockStart: densityTokens['--lobe-density-card-padding'],
   },
   bottom: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 16,
+    gap: densityTokens['--lobe-density-section-gap'],
     maxWidth: 1024,
     width: '100%',
   },
   notices: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 12,
+    gap: densityTokens['--lobe-density-content-gap'],
     marginBlockStart: { ':empty': 0, 'default': 8 },
     maxWidth: 1024,
     width: '100%',
   },
   resultDetail: {
     color: cssVar.colorTextTertiary,
-    fontFamily: 'monospace',
+    fontFamily: cssVar.fontFamilyCode,
     fontSize: 12,
     wordBreak: 'break-all',
   },
@@ -56,12 +57,12 @@ const styles = stylex.create({
     color: cssVar.colorTextSecondary,
     flexGrow: 1,
     flexShrink: 1,
-    fontFamily: 'monospace',
+    fontFamily: cssVar.fontFamilyCode,
     fontSize: 13,
     height: cssVar.controlHeight,
     lineHeight: cssVar.controlHeight,
     overflow: 'hidden',
-    paddingInline: 12,
+    paddingInline: densityTokens['--lobe-density-content-gap'],
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
   },
@@ -94,6 +95,12 @@ interface FooterNoticesProps {
   currentConfig?: CurrentConfig;
   form: FormInstance<ChannelFormValues>;
   hasConfig: boolean;
+  /**
+   * Leave out what the settings still need (the missing user id, the QQ webhook move): on a tab
+   * that shows history rather than settings there is nothing to fill in. What just happened
+   * (saved, connected, tested) still shows.
+   */
+  hideSetupHints?: boolean;
   platformDef: SerializedPlatformDefinition;
   saveResult?: TestResult;
   testResult?: TestResult;
@@ -106,7 +113,16 @@ interface FooterNoticesProps {
  * the person has to see.
  */
 export const FooterNotices = memo<FooterNoticesProps>(
-  ({ platformDef, currentConfig, form, hasConfig, connectResult, saveResult, testResult }) => {
+  ({
+    platformDef,
+    currentConfig,
+    form,
+    hasConfig,
+    hideSetupHints,
+    connectResult,
+    saveResult,
+    testResult,
+  }) => {
     const { t } = useTranslation('agent');
     const platformId = platformDef.id;
     const settingsConnectionMode = useWatch(form, 'settings.connectionMode');
@@ -136,6 +152,7 @@ export const FooterNotices = memo<FooterNoticesProps>(
     }, [watchedUserId]);
     const effectiveUserId = formHydrated ? watchedUserId : savedUserId;
     const userIdMissing =
+      !hideSetupHints &&
       hasConfig &&
       hasUserIdField &&
       !(typeof effectiveUserId === 'string' && effectiveUserId.trim());
@@ -214,7 +231,7 @@ export const FooterNotices = memo<FooterNoticesProps>(
           />
         )}
 
-        {hasConfig && showWebhookUrl && platformId === 'qq' && (
+        {!hideSetupHints && hasConfig && showWebhookUrl && platformId === 'qq' && (
           <Alert
             closable
             showIcon
@@ -255,6 +272,8 @@ FooterNotices.displayName = 'ChannelFooterNotices';
 
 interface FooterActionsProps {
   connecting: boolean;
+  /** Remove and Test connection act on the connection, so they live on the Connect tab only. */
+  connectionActions?: boolean;
   disabled?: boolean;
   form: FormInstance<ChannelFormValues>;
   hasConfig: boolean;
@@ -277,6 +296,7 @@ export const FooterActions = memo<FooterActionsProps>(
   ({
     platformDef,
     form,
+    connectionActions = true,
     hasConfig,
     hideSave,
     isDirty,
@@ -302,51 +322,56 @@ export const FooterActions = memo<FooterActionsProps>(
       ? `${origin}/api/agent/webhooks/${platformId}/${applicationId}`
       : `${origin}/api/agent/webhooks/${platformId}`;
 
+    const showConnectionActions = connectionActions && hasConfig;
+    const showActionBar = showConnectionActions || isDirty || !hideSave;
+
     return (
       <div {...stylex.props(styles.bottom)}>
-        <div {...stylex.props(styles.actionBar)}>
-          {hasConfig ? (
-            <Button
-              danger
-              disabled={disabled || saving || connecting}
-              icon={<Trash2 size={16} />}
-              onClick={onDelete}
-            >
-              {t('channel.removeChannel')}
-            </Button>
-          ) : (
-            <div />
-          )}
-          <Flexbox horizontal gap={12}>
-            {hasConfig && (
+        {showActionBar && (
+          <div {...stylex.props(styles.actionBar)}>
+            {showConnectionActions ? (
               <Button
-                disabled={writeDisabled || saving || connecting}
-                icon={<RefreshCw size={16} />}
-                loading={testing}
-                onClick={onTestConnection}
+                danger
+                disabled={disabled || saving || connecting}
+                icon={<Trash2 size={16} />}
+                onClick={onDelete}
               >
-                {t('channel.testConnection')}
+                {t('channel.removeChannel')}
               </Button>
+            ) : (
+              <div />
             )}
-            {isDirty && (
-              <Button disabled={writeDisabled || saving || connecting} onClick={onDiscard}>
-                {t('channel.discard')}
-              </Button>
-            )}
-            {!hideSave && (
-              <Button
-                disabled={writeDisabled}
-                loading={saving || connecting}
-                type="primary"
-                onClick={onSave}
-              >
-                {connecting
-                  ? t('channel.connecting')
-                  : t(hasConfig ? 'channel.save' : 'channel.saveAndConnect')}
-              </Button>
-            )}
-          </Flexbox>
-        </div>
+            <Flexbox horizontal gap={12}>
+              {showConnectionActions && (
+                <Button
+                  disabled={writeDisabled || saving || connecting}
+                  icon={<RefreshCw size={16} />}
+                  loading={testing}
+                  onClick={onTestConnection}
+                >
+                  {t('channel.testConnection')}
+                </Button>
+              )}
+              {isDirty && (
+                <Button disabled={writeDisabled || saving || connecting} onClick={onDiscard}>
+                  {t('channel.discard')}
+                </Button>
+              )}
+              {!hideSave && (
+                <Button
+                  disabled={writeDisabled}
+                  loading={saving || connecting}
+                  type="primary"
+                  onClick={onSave}
+                >
+                  {connecting
+                    ? t('channel.connecting')
+                    : t(hasConfig ? 'channel.save' : 'channel.saveAndConnect')}
+                </Button>
+              )}
+            </Flexbox>
+          </div>
+        )}
 
         {hasConfig && showWebhookUrl && (
           <Flexbox gap={8}>

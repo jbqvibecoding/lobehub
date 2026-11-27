@@ -94,6 +94,7 @@ export const queriesRouter = router({
         id: item.id,
         metadata: item.metadata as Record<string, any> | null | undefined,
         name: item.name,
+        parentId: item.parentId,
         size: item.size,
         sourceType: 'file' as const,
         updatedAt: item.updatedAt,
@@ -144,7 +145,7 @@ export const queriesRouter = router({
       if (fileItems.length === 0) return [];
 
       // Get file IDs for batch processing
-      const fileIds = fileItems.map((item) => item.id);
+      const fileIds = fileItems.map((item) => item.fileId ?? item.id);
       const chunksArray = await ctx.chunkModel.countByFileIds(fileIds);
       const chunks: Record<string, number> = {};
       for (const item of chunksArray) {
@@ -177,7 +178,7 @@ export const queriesRouter = router({
 
         resultFiles.push({
           ...item,
-          chunkCount: chunks[item.id] ?? 0,
+          chunkCount: chunks[item.fileId ?? item.id] ?? 0,
           chunkingError: chunkTask?.error ?? null,
           chunkingStatus: chunkTask?.status as AsyncTaskStatus,
           embeddingError: embeddingTask?.error ?? null,

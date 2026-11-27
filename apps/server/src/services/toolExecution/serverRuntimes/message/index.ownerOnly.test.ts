@@ -1,10 +1,11 @@
 import type { ChatTopicBotContext } from '@lobechat/types';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ToolExecutionContext } from '../../types';
 
 const mocks = vi.hoisted(() => ({
   delete: vi.fn(),
+  gatewayEnabled: false,
   findById: vi.fn(),
   linkDeleteByPlatform: vi.fn(),
   startClient: vi.fn(),
@@ -26,6 +27,11 @@ vi.mock('@/server/services/gateway', () => ({
     return { startClient: mocks.startClient };
   }),
 }));
+vi.mock('@/server/services/gateway/MessageGatewayClient', () => ({
+  isAnyMessageGatewayEnabled: () => mocks.gatewayEnabled,
+  isMessageGatewayHostConfigured: () => true,
+  resolveMessageGatewayHost: () => 'default',
+}));
 vi.mock('@/server/modules/KeyVaultsEncrypt', () => ({
   KeyVaultsGateKeeper: { initWithEnvKey: vi.fn().mockResolvedValue({}) },
 }));
@@ -41,6 +47,9 @@ vi.mock('@/server/services/bot/agentBotProviderSettings', () => ({
   assertBotAccessSettings: vi.fn(),
   assertWatchKeywordsWritable: vi.fn(),
   invalidateBotAfterUpdate: vi.fn().mockResolvedValue(undefined),
+  mergeBotSettingsForCreate: vi.fn(
+    async (_db: unknown, _agentId: string, _platform: string, settings: unknown) => settings,
+  ),
   mergeBotSettingsForPersist: vi.fn((_platform: string, settings: unknown) => settings),
   mergeBotSettingsPatch: vi.fn(
     (
@@ -150,5 +159,40 @@ describe('messageRuntime: only the owner changes a bot from a bot conversation',
 
     expect(result.success).toBe(true);
     expect(mocks.update).toHaveBeenCalledWith('bot-1', { enabled: false });
+  });
+});
+
+describe('messageRuntime: platforms this deployment cannot run', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.gatewayEnabled = true;
+  });
+
+  afterEach(() => {
+    mocks.gatewayEnabled = false;
+  });
+
+  it('does not offer WeCom behind the external message gateway', async () => {
+    const runtime = await runtimeFor();
+
+    const result = await runtime.listPlatforms();
+
+    expect(result.success).toBe(true);
+    expect(result.content).not.toContain('(wecom)');
+    expect(result.content).toContain('(discord)');
+  });
+
+  it('refuses to create a WeCom bot there instead of storing one that can never connect', async () => {
+    const runtime = await runtimeFor();
+
+    const result = await runtime.createBot({
+      agentId: 'agt-1',
+      applicationId: 'bot-2',
+      credentials: { secret: 'x' },
+      platform: 'wecom',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.content).toContain('cannot hold where it answers messages');
   });
 });

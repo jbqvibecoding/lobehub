@@ -1,7 +1,7 @@
 'use client';
 
-import { Button, createStaticStyles, Flexbox, Text, toast } from '@lobehub/ui';
-import { PauseIcon, PlayIcon } from 'lucide-react';
+import { Button, createStaticStyles, Flexbox, Tag, Text, toast } from '@lobehub/ui';
+import { ArchiveIcon, ArchiveRestoreIcon, PauseIcon, PlayIcon } from 'lucide-react';
 import { memo, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
@@ -32,11 +32,13 @@ import GoalAgentModelConfig from './GoalAgentModelConfig';
 import GoalChat from './GoalChat';
 import { GoalConversationContext } from './goalConversation';
 import GoalDetailActions from './GoalDetailActions';
+import GoalDetailTitle from './GoalDetailTitle';
 import GoalHeaderMetrics from './GoalHeaderMetrics';
 import { goalManagerConversation } from './goalPresentation';
 import GoalRequirement from './GoalRequirement';
 import { GoalSupervision } from './GoalSupervision';
 import GoalSupervisorToggle from './GoalSupervisorToggle';
+import GoalVisibilitySelector from './GoalVisibilitySelector';
 import GoalWorkspaceBreadcrumb from './GoalWorkspaceBreadcrumb';
 import NorthStarMetrics from './NorthStarMetrics';
 import ProcessControl from './ProcessControl';
@@ -80,6 +82,8 @@ const GoalDetailPage = memo<GoalDetailPageProps>(({ agentId, goalId }) => {
   const pauseGoal = useGoalStore((s) => s.pauseGoal);
   const resumeGoal = useGoalStore((s) => s.resumeGoal);
   const startGoal = useGoalStore((s) => s.startGoal);
+  const archiveGoal = useGoalStore((s) => s.archiveGoal);
+  const [restoring, setRestoring] = useState(false);
   // The server lets only a draft's creator or a workspace owner launch it.
   const canStart = useResourceManageable(snapshot?.goal.userId);
 
@@ -124,6 +128,7 @@ const GoalDetailPage = memo<GoalDetailPageProps>(({ agentId, goalId }) => {
   const showLeftPanel = useGlobalStore(systemStatusSelectors.showLeftPanel);
   const toggleLeftPanel = useGlobalStore((s) => s.toggleLeftPanel);
   const collapsedRailRef = useRef(false);
+  const titleInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (showPortal) {
@@ -232,6 +237,22 @@ const GoalDetailPage = memo<GoalDetailPageProps>(({ agentId, goalId }) => {
     else openPanel();
   };
 
+  // Deferred past the menu closing, which hands focus back to its trigger.
+  const focusTitleEditor = () => {
+    requestAnimationFrame(() => {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    });
+  };
+
+  // Clipped like the workspace crumb, so a long title cannot push the header's
+  // actions off the bar.
+  const goalCrumb = (
+    <Text ellipsis color={'inherit'} style={{ maxWidth: 'min(320px, 45vw)' }} weight={500}>
+      {goal.title}
+    </Text>
+  );
+
   const paused = goal.status === 'paused';
   // Pace control exists only while the coordinator loop is actually moving (or
   // explicitly paused). A goal in review awaits the human, and a closed goal
@@ -251,7 +272,7 @@ const GoalDetailPage = memo<GoalDetailPageProps>(({ agentId, goalId }) => {
                 {agentId ? (
                   <AgentBreadcrumb
                     agentId={agentId}
-                    extraItems={[goal.title]}
+                    extraItems={[goalCrumb]}
                     // The goal title owns the last crumb, so this one is a way back
                     // to the agent's goal list rather than a label for this page.
                     title={<Link to={buildAgentPath('goals')}>{t('goalList.title')}</Link>}
@@ -267,7 +288,13 @@ const GoalDetailPage = memo<GoalDetailPageProps>(({ agentId, goalId }) => {
                 />
                 {/* Not nested under the breadcrumb: an agent-less goal still has to
                   be deletable, and this menu is the only place that can do it. */}
-                <GoalDetailActions agentId={agentId} goalId={goal.id} projectId={goal.projectId} />
+                <GoalDetailActions
+                  agentId={agentId}
+                  archivedAt={goal.archivedAt ?? null}
+                  goalId={goal.id}
+                  projectId={goal.projectId}
+                  onRename={focusTitleEditor}
+                />
               </Flexbox>
             }
             right={
@@ -291,9 +318,12 @@ const GoalDetailPage = memo<GoalDetailPageProps>(({ agentId, goalId }) => {
           <Flexbox flex={1} style={{ overflowY: 'auto' }}>
             <WideScreenContainer gap={20} paddingBlock={16}>
               <Flexbox className={styles.header} gap={8}>
-                <Text as={'h1'} fontSize={22} weight={600}>
-                  {goal.title}
-                </Text>
+                <GoalDetailTitle
+                  creatorUserId={goal.userId}
+                  goalId={goal.id}
+                  inputRef={titleInputRef}
+                  title={goal.title}
+                />
                 <GoalHeaderMetrics goalId={goalId} />
                 {/* Pause/resume above the requirement document — its reviewed
                   home. The status glyph keeps the "running" animation; this
@@ -303,7 +333,32 @@ const GoalDetailPage = memo<GoalDetailPageProps>(({ agentId, goalId }) => {
                 <Flexbox horizontal align={'center'} gap={10} paddingBlock={'8px 0'} wrap={'wrap'}>
                   {/* One control at a time: a draft is started, a moving goal is
                       paused or resumed — the two states never overlap. */}
-                  {goal.status === 'draft' ? (
+                  {goal.archivedAt ? (
+                    // Archived goals stay put: start / resume refuse them until
+                    // restored, so restoring is the one control offered.
+                    <>
+                      <Tag icon={<ArchiveIcon size={12} />}>{t('goalList.archived')}</Tag>
+                      {canEdit && canStart && (
+                        <Button
+                          icon={ArchiveRestoreIcon}
+                          loading={restoring}
+                          onClick={async () => {
+                            setRestoring(true);
+                            try {
+                              await archiveGoal(goal.id, false);
+                              toast.success(t('goalList.unarchiveSuccess'));
+                            } catch {
+                              toast.error(t('goalList.unarchiveFailed'));
+                            } finally {
+                              setRestoring(false);
+                            }
+                          }}
+                        >
+                          {t('goalList.unarchive')}
+                        </Button>
+                      )}
+                    </>
+                  ) : goal.status === 'draft' ? (
                     canEdit &&
                     canStart && (
                       <Button
@@ -344,7 +399,8 @@ const GoalDetailPage = memo<GoalDetailPageProps>(({ agentId, goalId }) => {
                       canEdit ? t('goalDetail.agentManagedByOwner') : editBlockedReason
                     }
                   />
-                  {goal.status === 'draft' && (
+                  <GoalVisibilitySelector goalId={goal.id} />
+                  {goal.status === 'draft' && !goal.archivedAt && (
                     <Text fontSize={12} type={'secondary'}>
                       {t('goalProcess.draft')}
                     </Text>

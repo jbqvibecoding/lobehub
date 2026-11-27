@@ -17,6 +17,7 @@ import {
   shouldRunUserMemoryLexicalSearch,
   UserMemoryModel,
 } from '@/database/models/userMemory';
+import { notEvalTopic } from '@/database/utils/evalTopic';
 import { buildWorkspaceWhere } from '@/database/utils/workspace';
 import { createFtsSearchRepo } from '@/server/services/ftsSearch';
 import { recordUserMemoryLexicalSearchDecision } from '@/server/services/ftsSearch/observability';
@@ -261,7 +262,11 @@ export async function filterTopicIdsForUser(
   const db = await ctx.db;
   const rows = await db.query.topics.findMany({
     columns: { id: true },
-    where: and(buildWorkspaceWhere({ userId, workspaceId }, topics), inArray(topics.id, topicIds)),
+    where: and(
+      buildWorkspaceWhere({ userId, workspaceId }, topics),
+      inArray(topics.id, topicIds),
+      notEvalTopic(),
+    ),
   });
 
   return rows.map((row) => row.id);

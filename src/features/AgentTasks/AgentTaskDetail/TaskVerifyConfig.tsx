@@ -1,13 +1,17 @@
 'use client';
 
 import { AgentRuntimeErrorType } from '@lobechat/types';
-import { Block, createStaticStyles, cssVar, Flexbox, Icon } from '@lobehub/ui';
 import {
   ActionIcon,
+  Block,
   Button,
   confirmModal,
+  createStaticStyles,
+  cssVar,
   type DropdownItem,
   DropdownMenu,
+  Flexbox,
+  Icon,
   Select,
   Spin,
   Tag,
@@ -42,6 +46,7 @@ import { useSingleton } from '@/hooks/useSingleton';
 import { type VerifyCriterionDraft, verifyService } from '@/services/verify';
 import { useTaskStore } from '@/store/task';
 import { taskDetailSelectors } from '@/store/task/selectors';
+import { densityVars } from '@/styles/densityVars';
 
 import { resolveTaskAcceptanceGoal } from './resolveTaskAcceptanceGoal';
 import { TaskAcceptanceHeader } from './TaskAcceptanceHeader';
@@ -60,8 +65,8 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
   `,
   row: css`
     cursor: pointer;
-    padding-block: 10px;
-    padding-inline: 12px;
+    padding-block: 8px;
+    padding-inline: ${densityVars.contentGap};
 
     & + & {
       border-block-start: 1px solid ${cssVar.colorBorderSecondary};
@@ -75,8 +80,8 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
     flex: 1;
   `,
   section: css`
-    padding-block: 12px;
-    padding-inline: 12px;
+    padding-block: ${densityVars.contentGap};
+    padding-inline: ${densityVars.contentGap};
   `,
   subtitle: css`
     color: ${cssVar.colorTextSecondary};
@@ -143,7 +148,7 @@ const TaskVerifyConfig = memo(() => {
   });
   const savedCount = verify?.verifyCriteriaIds?.length ?? 0;
 
-  const { data: rubrics } = useRubrics();
+  const { data: rubrics, mutate: refreshRubrics } = useRubrics();
 
   // ---- local working state ----
   const [requirement, setRequirement] = useState(verify?.requirement ?? '');
@@ -479,11 +484,13 @@ const TaskVerifyConfig = memo(() => {
         rubric.id,
         templateCriterionIds.map((criterionId) => ({ criterionId })),
       );
+      // The template list is persisted: list the new template now, not after a reload.
+      void refreshRubrics();
       toast.success(t('verifyConfig.saveAsTemplateSuccess'));
     } catch (e) {
       console.error('[TaskVerifyConfig] save as template failed:', e);
     }
-  }, [drafts, verify?.verifyCriteriaIds, requirement, t]);
+  }, [drafts, verify?.verifyCriteriaIds, refreshRubrics, requirement, t]);
 
   const rubricOptions = useMemo(
     () => (rubrics ?? []).map((r) => ({ label: r.title, value: r.id })),
@@ -516,7 +523,7 @@ const TaskVerifyConfig = memo(() => {
         gap={8}
         paddingBlock={4}
         paddingInline={8}
-        style={{ width: 'fit-content' }}
+        style={{ marginInlineStart: -8, width: 'fit-content' }}
         variant={'borderless'}
         onClick={handleCollapsedClick}
       >

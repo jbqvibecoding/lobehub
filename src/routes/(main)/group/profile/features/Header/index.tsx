@@ -1,7 +1,6 @@
 'use client';
 
-import { type DropdownItem, Flexbox, Icon } from '@lobehub/ui';
-import { createStaticStyles } from '@lobehub/ui';
+import { createStaticStyles, type DropdownItem, Flexbox, Icon } from '@lobehub/ui';
 import { Crown, Sparkles, Users, UsersRound } from 'lucide-react';
 import { memo, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -16,11 +15,12 @@ import { useAgentGroupStore } from '@/store/agentGroup';
 import { agentGroupSelectors } from '@/store/agentGroup/selectors';
 import { useGlobalStore } from '@/store/global';
 import { systemStatusSelectors } from '@/store/global/selectors';
+import { densityVars } from '@/styles/densityVars';
 import { isMobileSurface } from '@/utils/mobileSurface';
 
 import AgentBuilderToggle from './AgentBuilderToggle';
-import { type ChromeTabItem } from './ChromeTabs';
 import ChromeTabs from './ChromeTabs';
+import { type ChromeTabItem } from './ChromeTabs';
 
 const styles = createStaticStyles(({ css, cssVar }) => ({
   header: css`
@@ -28,9 +28,9 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
     flex: none;
 
     width: 100%;
-    height: 44px;
-    padding-block: 8px;
-    padding-inline: 12px;
+    height: ${densityVars.headerHeight};
+    padding-block: 0;
+    padding-inline: ${densityVars.contentGap};
     border-block-end: 1px solid ${cssVar.colorBorderSecondary};
   `,
   tabsWrapper: css`

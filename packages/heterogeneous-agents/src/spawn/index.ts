@@ -51,6 +51,14 @@ export {
   type AgentStreamPipelineOptions,
   type UploadHeterogeneousImage,
 } from './agentStreamPipeline';
+export { ANTIGRAVITY_BASE_ARGS, buildAntigravityArgs } from './antigravity';
+export {
+  type AntigravityLiveExit,
+  AntigravityLiveInput,
+  type AntigravityLiveInputOptions,
+  type AntigravityTurnOutcome,
+  resolveAntigravityLiveRuntimeEnd,
+} from './antigravityLiveInput';
 export {
   classifyHeteroProcessFailure,
   type ClassifyHeteroProcessFailureParams,
@@ -87,6 +95,20 @@ export {
   refreshCodexJwtFiles,
   toTomlBasicString,
 } from './codexShellEnv';
+export {
+  buildCopilotAcpArgs,
+  buildCopilotAcpPrompt,
+  type CopilotAcpImagePromptBlock,
+  type CopilotAcpModelCatalog,
+  type CopilotAcpPromptBlock,
+  CopilotAcpSession,
+  type CopilotAcpSessionOptions,
+  type CopilotAcpTextPromptBlock,
+  isCopilotAcpSessionNotFoundError,
+  listCopilotAcpModels,
+  type ListCopilotAcpModelsOptions,
+  parseCopilotAcpModelCatalog,
+} from './copilotAcpSession';
 export {
   buildCursorAcpArgs,
   buildCursorAcpPrompt,
@@ -129,6 +151,7 @@ export {
   DshAcpSession,
   type DshAcpSessionHandle,
   type DshAcpSessionOptions,
+  resolveDshSpawnCommand,
   spawnDshAcpSession,
   type SpawnDshAcpSessionOptions,
 } from './dshAcpSession';
@@ -186,7 +209,16 @@ export {
   sanitizeClaudeCodeDirectArgs,
   sanitizeClaudeCodeDirectEnv,
 } from './claudeCodeDirectEnv';
+export {
+  type ClaudeCodeControlRequest,
+  type ClaudeCodeControlRequestHandle,
+  type ClaudeCodeControlResponse,
+  type ClaudeCodeLiveExit,
+  ClaudeCodeLiveInput,
+  resolveClaudeCodeLiveRuntimeEnd,
+} from './claudeCodeLiveInput';
 export { readClaudeCodeSessionCost } from './claudeCodeSessionCost';
+export { STOP_TASK_ANSWER_TIMEOUT_MS, stopClaudeCodeTask } from './claudeCodeStopTask';
 export {
   ensureClaudeCodeResumeTranscript,
   type EnsureResumeTranscriptReason,
@@ -194,7 +226,7 @@ export {
   findClaudeCodeTranscriptPath,
   resolveClaudeCodeTranscriptPath,
 } from './ensureResumeTranscript';
-export { getHeterogeneousAgentPresetEnv } from './presetEnv';
+export { getHeterogeneousAgentSpawnEnv } from './presetEnv';
 export {
   AMP_BASE_ARGS,
   buildQoderArgs,

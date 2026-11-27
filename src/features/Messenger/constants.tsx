@@ -1,16 +1,8 @@
 import { Discord, IMessage, Lark, Slack, Telegram, WeChat } from '@lobehub/ui/icons';
 import type { ReactNode } from 'react';
 
-export type MessengerPlatform =
-  | 'telegram'
-  | 'slack'
-  | 'discord'
-  | 'wechat'
-  | 'linq'
-  | 'imessage'
-  | 'lark'
-  | 'feishu'
-  | 'wechatmp';
+import type { MessengerPlatform } from './platforms';
+import { SUPPORTED_MESSENGER_PLATFORMS } from './platforms';
 
 /** The platforms upstream's push-to-my-DM supports; Biber's shared bots have no push */
 export type MessengerPushPlatform = Extract<
@@ -26,17 +18,7 @@ export const MESSENGER_PUSH_PLATFORMS: readonly MessengerPushPlatform[] = [
   'wechat',
 ];
 
-export const SUPPORTED_MESSENGER_PLATFORMS = [
-  { id: 'telegram', name: 'Telegram' },
-  { id: 'slack', name: 'Slack' },
-  { id: 'discord', name: 'Discord' },
-  { id: 'wechat', name: 'WeChat' },
-  { id: 'linq', name: 'iMessage' },
-  { id: 'imessage', name: 'iMessage' },
-  { id: 'lark', name: 'Lark' },
-  { id: 'feishu', name: 'Feishu' },
-  { id: 'wechatmp', name: 'WeChat Official Account' },
-] as const satisfies readonly { id: MessengerPlatform; name: string }[];
+export { type MessengerPlatform, SUPPORTED_MESSENGER_PLATFORMS } from './platforms';
 
 export const isMessengerPlatform = (value: string | null | undefined): value is MessengerPlatform =>
   SUPPORTED_MESSENGER_PLATFORMS.some((platform) => platform.id === value);

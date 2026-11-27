@@ -1,17 +1,11 @@
+import { BRANDING_PROVIDER } from '@lobechat/business-const';
 import { type ChatModelCard } from '@lobechat/types';
 import { type IconAvatarProps } from '@lobehub/icons';
 import { LobeHub } from '@lobehub/icons';
 import { type FlexboxProps } from '@lobehub/ui';
-import {
-  Avatar,
-  createStaticStyles,
-  Flexbox,
-  Icon,
-  Tag,
-  Text,
-  Tooltip,
-  useResponsive,
-} from '@lobehub/ui';
+import { Avatar, Flexbox, Icon, Tag, Text, Tooltip, useResponsive } from '@lobehub/ui';
+import { cssVar } from '@lobehub/ui/stylex/cssVar.stylex';
+import * as stylex from '@stylexjs/stylex';
 import {
   AudioLines,
   Infinity as InfinityIcon,
@@ -27,7 +21,10 @@ import { type CSSProperties, type FC, type ReactNode } from 'react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { ProductLogo } from '@/components/Branding/ProductLogo';
 import { ModelIcon, ProviderIcon } from '@/components/LobeIcons';
+import { isCustomBranding } from '@/const/version';
+import { useDensityTokens, useInterfaceDensity } from '@/styles/density';
 import { type AiProviderSourceType } from '@/types/aiProvider';
 import { formatTokenNumber } from '@/utils/format';
 
@@ -36,32 +33,27 @@ import RoutingBadge from './RoutingBadge';
 
 export const TAG_CLASSNAME = 'lobe-model-info-tags';
 
-const styles = createStaticStyles(({ css, cssVar }) => ({
-  tag: css`
-    cursor: default;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    width: 20px !important;
-    height: 20px;
-    border-radius: 4px;
-  `,
-  token: css`
-    width: 36px !important;
-    height: 20px;
-    border-radius: 4px;
-
-    font-family: ${cssVar.fontFamilyCode};
-    font-size: 11px;
-    color: ${cssVar.colorTextSecondary};
-
-    background: ${cssVar.colorFillTertiary};
-  `,
-}));
-
-type TooltipStyles = typeof styles;
+const styles = stylex.create({
+  tag: {
+    cursor: 'default',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '20px',
+    height: '20px',
+    borderRadius: '4px',
+  },
+  token: {
+    width: '36px',
+    height: '20px',
+    borderRadius: '4px',
+    fontFamily: cssVar.fontFamilyCode,
+    fontSize: '11px',
+    color: cssVar.colorTextSecondary,
+    backgroundColor: cssVar.colorFillTertiary,
+    backgroundImage: 'none',
+  },
+});
 
 interface ModelInfoTagsProps extends ModelAbilities {
   contextWindowTokens?: number | null;
@@ -191,18 +183,16 @@ const Context = memo(
     contextWindowTokens,
     disableTooltip,
     placement,
-    styles,
   }: {
     contextWindowTokens: number;
     disableTooltip?: boolean;
     placement: 'top' | 'right';
-    styles: TooltipStyles;
   }) => {
     const { t } = useTranslation('components');
     const tokensText = contextWindowTokens === 0 ? '∞' : formatTokenNumber(contextWindowTokens);
 
     const tag = (
-      <Tag className={styles.token} size={'small'}>
+      <Tag className={stylex.props(styles.token).className} size={'small'}>
         {contextWindowTokens === 0 ? <InfinityIcon size={17} strokeWidth={1.6} /> : tokensText}
       </Tag>
     );
@@ -239,7 +229,7 @@ export const ModelInfoTags = memo<ModelInfoTagsProps>(
           functionCall={model.functionCall}
           imageOutput={model.imageOutput}
           placement={placement}
-          tagClassName={styles.tag}
+          tagClassName={stylex.props(styles.tag).className ?? ''}
           video={model.video}
           vision={model.vision}
         />
@@ -248,7 +238,6 @@ export const ModelInfoTags = memo<ModelInfoTagsProps>(
             contextWindowTokens={model.contextWindowTokens}
             disableTooltip={disableTooltip}
             placement={placement}
-            styles={styles}
           />
         )}
       </Flexbox>
@@ -296,6 +285,8 @@ export const ModelItemRender = memo<ModelItemRenderProps>(
     style,
   }) => {
     const { mobile } = useResponsive();
+    const compact = useInterfaceDensity() === 'compact';
+    const { iconSize } = useDensityTokens();
     const displayNameOrId = displayName || id;
 
     return (
@@ -303,7 +294,7 @@ export const ModelItemRender = memo<ModelItemRenderProps>(
         horizontal
         align={'center'}
         className={className}
-        gap={32}
+        gap={compact ? 16 : 32}
         justify={'space-between'}
         style={{
           overflow: 'hidden',
@@ -318,7 +309,7 @@ export const ModelItemRender = memo<ModelItemRenderProps>(
           gap={8}
           style={{ flexShrink: 1, minWidth: 0, overflow: 'hidden' }}
         >
-          <ModelIcon model={id} size={20} />
+          <ModelIcon model={id} size={compact ? iconSize : 20} />
           <Text
             style={mobile ? { maxWidth: '60vw' } : { minWidth: 0, overflow: 'hidden' }}
             ellipsis={{
@@ -394,6 +385,8 @@ export const ProviderItemRender = memo<ProviderItemRenderProps>(
             style={isMono ? { filter: 'grayscale(1)' } : {}}
             title={name}
           />
+        ) : isCustomBranding && provider === BRANDING_PROVIDER ? (
+          <ProductLogo size={size} type={isMono ? 'mono' : 'flat'} />
         ) : provider === 'lobehub' ? (
           <LobeHub.Morden size={size} />
         ) : (

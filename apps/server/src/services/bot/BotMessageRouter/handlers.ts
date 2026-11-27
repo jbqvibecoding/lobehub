@@ -4,9 +4,13 @@ import debug from 'debug';
 import { getBotFeatureAccessState } from '@/business/server/bot/featureAccess';
 import type { LobeChatDatabase } from '@/database/type';
 import { emitAgentSignalSourceEvent } from '@/server/services/agentSignal';
-import { parseBotWakeSettings } from '@/server/services/agentSignal/scenarios/botWake/config';
-import { resolveChannelKeys } from '@/server/services/agentSignal/scenarios/botWake/facts';
-import { isBotWakeEnabled } from '@/server/services/agentSignal/scenarios/botWake/gate';
+import { resolveChannelKeys } from '@/server/services/bot/wake/platformFacts';
+import { createWakeClassify } from '@/server/services/conversationWake/classify';
+import { parseBotWakeSettings } from '@/server/services/conversationWake/config';
+import { createWakeDutyJudge } from '@/server/services/conversationWake/dutyJudge';
+import { isBotWakeEnabled } from '@/server/services/conversationWake/gate';
+import { createWakeIdentityLoader } from '@/server/services/conversationWake/identity';
+import type { WakeInitiation } from '@/server/services/conversationWake/initiation';
 
 import { AgentBridgeService } from '../AgentBridgeService';
 import { buildBotContext } from '../buildBotContext';
@@ -30,11 +34,14 @@ import {
   resolveReplyStyle,
   type UserAllowlist,
 } from '../platforms';
-import { extractDeviceAllowlist } from '../platforms/deviceAccess';
+import {
+  extractDeviceAllowlist,
+  extractDeviceChannelAllowlist,
+  extractDeviceChannelGrantlist,
+  isDeviceChannelGranted,
+  isDeviceChannelRestricted,
+} from '../platforms/deviceAccess';
 import { renderThrownAgentError } from '../renderThrownError';
-import { createWakeClassify } from '../wake/classify';
-import { createWakeDutyJudge } from '../wake/dutyJudge';
-import { createWakeIdentityLoader } from '../wake/identity';
 import { createReplyOpener } from '../wake/opener';
 import { resolveWakeScheduler } from '../wake/scheduler';
 import type { WakeMessageLike } from '../wake/signal';
@@ -54,7 +61,6 @@ import {
 } from './utils';
 import {
   type BotWakeEntryPoint,
-  type BotWakeInitiation,
   botWakeKindFor,
   type BotWakeObservation,
   type BotWakeReason,
@@ -168,6 +174,33 @@ export function registerHandlers(
       : undefined;
   /** Who besides the owner may use the owner's devices; read once per bot. */
   const deviceAllowlist = extractDeviceAllowlist(info.settings);
+  /** Channels the owner limited device use to; `undefined` when unrestricted. */
+  const deviceChannelAllowlist = extractDeviceChannelAllowlist(info.settings);
+  /**
+   * Whether a thread sits outside those channels. Matches the same raw IDs as
+   * the group policy (`passesGroupPolicy`), so pasted channel IDs line up.
+   */
+  const isDeviceChannelRestrictedFor = (thread: { id: string; isDM?: boolean }): boolean =>
+    isDeviceChannelRestricted({
+      candidateChannelIds: [
+        client.extractChatId(thread.id),
+        ...(client.extraGroupAllowlistChannels?.(thread.id) ?? []),
+      ],
+      channelAllowlist: deviceChannelAllowlist,
+      isDM: thread.isDM === true,
+    });
+  /** Channels whose members may all use the devices (`devicePolicy: 'channel'`). */
+  const deviceChannelGrantlist = extractDeviceChannelGrantlist(info.settings);
+  /** Whether a thread sits in one of those channels; same candidate IDs as above. */
+  const isDeviceChannelGrantedFor = (thread: { id: string; isDM?: boolean }): boolean =>
+    isDeviceChannelGranted({
+      candidateChannelIds: [
+        client.extractChatId(thread.id),
+        ...(client.extraGroupAllowlistChannels?.(thread.id) ?? []),
+      ],
+      channelGrantlist: deviceChannelGrantlist,
+      isDM: thread.isDM === true,
+    });
   const fallbackReplyLocale: BotReplyLocale = getBotReplyLocale(platform);
 
   /**
@@ -279,7 +312,8 @@ export function registerHandlers(
 
   /**
    * How the bot opens a reply: an acknowledgement before the run, and the channel or a thread
-   * under the message, on any platform that offers the choice (`PlatformClient.getReplyTargets`).
+   * under the message, on any platform that offers the choice (`PlatformClient.getReplyTargets`);
+   * the acknowledgement alone on a threadless platform that opts in (`decidesReplyOpening`).
    * Decided by the bot only while the owner leaves the placement to it (see `./replyOpening`);
    * otherwise the previous behaviour.
    */
@@ -294,7 +328,7 @@ export function registerHandlers(
       userId,
       workspaceId: workspaceId ?? undefined,
     }),
-    rolledOut: wakeRecorder.isRolledOut,
+    decides: botWakeEnabled,
   });
 
   const observationOf = (
@@ -388,7 +422,7 @@ export function registerHandlers(
     message: WakeMessageLike,
     thread: { id: string },
     threadSubscribed = false,
-  ): Promise<BotWakeInitiation | undefined> =>
+  ): Promise<WakeInitiation | undefined> =>
     wakeRecorder.initiate(
       observationOf(entryPoint, message, thread, 'skip', 'not-addressed', threadSubscribed),
     );
@@ -445,13 +479,10 @@ export function registerHandlers(
   /**
    * Whether the agent may step back from a conversation when people say it is interfering. Only
    * where it changes something: a stand-down is enforced by the owner rules, in a group
-   * conversation, once the rollout reaches the bot's owner.
+   * conversation, while the bot's wake switch is on.
    */
   const canStandDown = async (thread: { isDM?: boolean }) =>
-    botWakeEnabled &&
-    wakeSettings.ruleMode === 'enforce' &&
-    !thread.isDM &&
-    (await wakeRecorder.isRolledOut());
+    botWakeEnabled && wakeSettings.ruleMode === 'enforce' && !thread.isDM;
 
   const gateFollowup = createFollowupGate({
     applicationId,
@@ -559,6 +590,8 @@ export function registerHandlers(
           applicationId,
           authorUserId: merged.author?.userId,
           deviceAllowlist,
+          deviceChannelGranted: isDeviceChannelGrantedFor(thread),
+          deviceChannelRestricted: isDeviceChannelRestrictedFor(thread),
           operatorUserId,
           platform,
           platformThreadId: thread.id,
@@ -776,9 +809,9 @@ export function registerHandlers(
               : 'watch-keyword'
             : (initiation?.reason ?? 'addressed');
     // Only a wake nobody asked for may end in silence; a DM, @mention, command or solo
-    // conversation is always answered, exactly as before. Until the bot-wake rollout reaches this
-    // bot's owner nothing may: every wake is answered, as it was before the pipeline existed.
-    const wakeKind = (await wakeRecorder.isRolledOut()) ? botWakeKindFor(wakeReason) : 'mention';
+    // conversation is always answered, exactly as before. While the bot's wake switch is off
+    // nothing may: every wake is answered, as it was before the pipeline existed.
+    const wakeKind = botWakeEnabled ? botWakeKindFor(wakeReason) : 'mention';
     if (
       wakeKind === 'followup' &&
       (await gateFollowup({
@@ -842,6 +875,8 @@ export function registerHandlers(
           applicationId,
           authorUserId: merged.author?.userId,
           deviceAllowlist,
+          deviceChannelGranted: isDeviceChannelGrantedFor(thread),
+          deviceChannelRestricted: isDeviceChannelRestrictedFor(thread),
           operatorUserId,
           platform,
           platformThreadId: thread.id,
@@ -850,7 +885,10 @@ export function registerHandlers(
         charLimit,
         client,
         displayToolCalls,
-        duty: wakeReason === 'in-duty' ? { matched: initiation?.duty } : undefined,
+        duty:
+          wakeReason === 'in-duty'
+            ? { helpful: initiation?.helpful, matched: initiation?.duty }
+            : undefined,
         followup: wakeReason === 'followup-window' ? initiation?.followup : undefined,
         named: wakeReason === 'named-in-text',
         openingReply,
@@ -894,6 +932,8 @@ export function registerHandlers(
 
   registerCatchAllHandler(bot, {
     deviceAllowlist,
+    isDeviceChannelGrantedFor,
+    isDeviceChannelRestrictedFor,
     agentId,
     applicationId,
     replyVoiceFor,
@@ -909,7 +949,6 @@ export function registerHandlers(
     dmSettings,
     gateFollowup,
     initiate,
-    isBotWakeRolledOut: wakeRecorder.isRolledOut,
     isMessageMonitoringAllowed,
     nameKeywords,
     observeBurst,

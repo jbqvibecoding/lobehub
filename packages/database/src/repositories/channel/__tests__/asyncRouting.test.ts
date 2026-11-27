@@ -29,7 +29,7 @@ const setup = async () => {
   const root = await team.asMember.send(team.channel.id, {
     content: 'Make a change',
     requestKey: 'root',
-    routing: 'jev',
+    routing: 'decision',
   });
   return { ...team, agent, other, root };
 };
@@ -54,7 +54,7 @@ describe('asynchronous Channel routing', () => {
       content: 'Undo the change',
       mentions: [agent.id],
       requestKey: 'undo',
-      routing: 'jev',
+      routing: 'decision',
     });
     const [nextJob] = await jobsOf(db, next.id);
     expect(await routing.claim(channel.id, root.id)).toBeNull();
@@ -73,11 +73,15 @@ describe('asynchronous Channel routing', () => {
     });
     const [firstJob] = await jobsOf(db, root.id);
     expect(await execution.claim(channel.id, nextJob.id, lease)).toBeNull();
+    // Once routed, the earlier request runs first and answers the same person's follow-up with it.
     const first = await execution.claim(channel.id, firstJob.id, lease);
-    expect(first).not.toBeNull();
+    expect(first?.job.manifest).toMatchObject({
+      requestMessageId: next.id,
+      requestMessageIds: [root.id, next.id],
+    });
+    expect(await jobById(db, nextJob.id)).toMatchObject({ status: 'merged' });
     await finish(channel.id, firstJob.id);
-    const second = await execution.claim(channel.id, nextJob.id, lease);
-    expect(second?.topic.id).toBe(first?.topic.id);
+    expect(await execution.claim(channel.id, nextJob.id, lease)).toBeNull();
   });
 
   it.each(['skipped', 'unassigned'] as const)(
@@ -88,7 +92,7 @@ describe('asynchronous Channel routing', () => {
         content: 'Explicit request',
         mentions: [agent.id],
         requestKey: 'next',
-        routing: 'jev',
+        routing: 'decision',
       });
       const [job] = await jobsOf(db, next.id);
       expect(await execution.claim(channel.id, job.id, lease)).toBeNull();
@@ -108,19 +112,19 @@ describe('asynchronous Channel routing', () => {
       content: 'Other branch',
       rootMessageId: root.id,
       requestKey: 'branch',
-      routing: 'jev',
+      routing: 'decision',
     });
     const next = await asMember.send(channel.id, {
       content: 'Independent',
       mentions: [agent.id],
       requestKey: 'next',
-      routing: 'jev',
+      routing: 'decision',
     });
     const [job] = await jobsOf(db, next.id);
     expect(await execution.claim(channel.id, job.id, lease)).not.toBeNull();
   });
 
-  it('waits for an earlier branch decision for a following Agent without blocking other channels', async () => {
+  it('waits for an earlier decision in its own branch only', async () => {
     const { agent, asMember, channel, root } = await setup();
     await execution.resolveRouting(channel.id, root.id, 1, {
       memberIds: [agent.id],
@@ -134,16 +138,28 @@ describe('asynchronous Channel routing', () => {
       content: 'Earlier branch',
       rootMessageId: root.id,
       requestKey: 'branch',
-      routing: 'jev',
+      routing: 'decision',
     });
-    const next = await asMember.send(channel.id, {
+    // The main timeline is another branch: the Thread's pending decision never holds it.
+    const main = await asMember.send(channel.id, {
       content: 'Later main',
       mentions: [agent.id],
       requestKey: 'main',
       routing: 'fallback',
     });
-    const [job] = await jobsOf(db, next.id);
+    const [mainJob] = await jobsOf(db, main.id);
+    expect(await execution.claim(channel.id, mainJob.id, lease)).not.toBeNull();
+
+    const later = await asMember.send(channel.id, {
+      content: 'Later in the branch',
+      mentions: [agent.id],
+      requestKey: 'later',
+      routing: 'fallback',
+      threadId: branch.threadId,
+    });
+    const [job] = await jobsOf(db, later.id);
     expect(await execution.claim(channel.id, job.id, lease)).toBeNull();
+    expect(await jobById(db, job.id)).toMatchObject({ blockedCode: 'member_busy' });
     const otherChannel = await fixture.createTeamChannel('Unrelated');
     const otherAgent = await fixture.addAgent(otherChannel.channel.id, 'Other channel Agent');
     const unrelated = await otherChannel.asMember.send(otherChannel.channel.id, {
@@ -161,7 +177,7 @@ describe('asynchronous Channel routing', () => {
     expect(await execution.claim(channel.id, job.id, lease)).not.toBeNull();
   });
 
-  it.each(['jev', 'fallback'] as const)(
+  it.each(['decision', 'fallback'] as const)(
     'keeps the first %s thread reply pending until it can inherit the root responders',
     async (mode) => {
       const { agent, asMember, channel, other, root } = await setup();
@@ -205,7 +221,7 @@ describe('asynchronous Channel routing', () => {
       expect(await messageById(reply.id)).toMatchObject({
         recipientMemberIds: [agent.id],
         routingStatus: 'assigned',
-        routingSource: mode === 'fallback' ? 'fallback' : 'jev',
+        routingSource: mode === 'fallback' ? 'fallback' : 'decision',
       });
       expect(await jobsOf(db, reply.id)).toHaveLength(1);
       const next = await asMember.send(channel.id, {
@@ -224,7 +240,7 @@ describe('asynchronous Channel routing', () => {
       content: 'Continue',
       requestKey: 'reply',
       rootMessageId: root.id,
-      routing: 'jev',
+      routing: 'decision',
     });
     expect(reply.routingStatus).toBe('pending');
     await asOwner.stop(channel.id, { threadId: reply.threadId });
@@ -244,7 +260,7 @@ describe('asynchronous Channel routing', () => {
       content: 'Continue',
       requestKey: 'reply',
       rootMessageId: root.id,
-      routing: 'jev',
+      routing: 'decision',
     });
     await execution.resolveRouting(channel.id, root.id, 1, {
       reason: 'Provider unavailable',

@@ -1,10 +1,19 @@
 import { app } from 'electron';
 
+import { getDesktopEnv } from '@/env';
 import { desktopProtocolScheme, desktopRegion, isDesktopProtocol } from '~common/identity';
 
 import type { McpSchema, ProtocolUrlParsed } from '../types/protocol';
 
 export type AppChannel = 'stable' | 'beta' | 'nightly';
+
+/**
+ * The distribution's scheme, lowercased: `new URL()` lowercases the scheme it
+ * parses, so a mixed-case value would never match an incoming link. The build
+ * rejects non-lowercase values (electron-builder.mjs); this keeps the runtime
+ * consistent even if one slips through. Unset, the scheme is Biber's for the edition.
+ */
+const getSchemeOverride = () => getDesktopEnv().DESKTOP_PROTOCOL_SCHEME?.toLowerCase();
 
 /** The release channel, from the app's name or install path (`Biber-Nightly`, ...). */
 const detectChannel = (): string | undefined => {
@@ -20,6 +29,8 @@ const detectChannel = (): string | undefined => {
 };
 
 export const getProtocolScheme = (): string =>
+  // A distribution owns its scheme outright
+  getSchemeOverride() ??
   desktopProtocolScheme(desktopRegion(process.env.APP_REGION), detectChannel());
 
 export const getVersionInfo = (): { channel: AppChannel; protocolScheme: string } => {
@@ -96,8 +107,11 @@ export const parseProtocolUrl = (url: string): ProtocolUrlParsed | null => {
   try {
     const parsedUrl = new URL(url);
 
-    // Every edition and channel of the desktop app (`biber-desktop:`, `biber-desktop-nightly:`, ...)
-    if (!isDesktopProtocol(parsedUrl.protocol)) {
+    // Every edition and channel of the desktop app (`biber-desktop:`, `biber-desktop-nightly:`,
+    // ...), and a distribution's own scheme
+    const override = getSchemeOverride();
+    const isOverride = !!override && parsedUrl.protocol === `${override}:`;
+    if (!isDesktopProtocol(parsedUrl.protocol) && !isOverride) {
       return null;
     }
 

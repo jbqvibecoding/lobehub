@@ -8,6 +8,7 @@ import {
   isProtocolRevision,
   MAX_PROTOCOL_REVISIONS,
   protocolRevisionCount,
+  withoutMarks,
 } from '@lobechat/utils/goalGraph';
 import { and, eq } from 'drizzle-orm';
 
@@ -17,8 +18,13 @@ import type { LobeChatDatabase } from '../type';
 import { buildWorkspaceWhere } from '../utils/workspace';
 import { GoalGraphModel } from './goalGraph';
 
-/** Ignore only coordinator bookkeeping; edits to policy, evidence or graph invalidate a plan. */
-export const goalExplorationSnapshot = (graph: GoalGraphSnapshot): string => {
+/**
+ * Ignore only coordinator bookkeeping and marks; edits to policy, evidence or
+ * graph invalidate a plan. Marks are left while sibling Tasks run, so hashing
+ * them would void the plan whenever any of them noted a pitfall.
+ */
+export const goalExplorationSnapshot = (input: GoalGraphSnapshot): string => {
+  const graph = withoutMarks(input);
   const { checkpoint: _checkpoint, ...policy } = graph.goal.config?.exploration ?? {};
   return createHash('sha256')
     .update(
@@ -210,7 +216,6 @@ export class GoalExplorationModel {
           scopeId: container,
           title: decision.title.trim() || target.title,
         });
-        /* v8 ignore next -- unreachable: this.lock() already holds the goal row FOR UPDATE in this transaction under the same ownership predicate createNode re-checks, so createNode never returns undefined */
         if (!node) throw new Error('Could not persist the revised protocol');
         await graphModel.createEdge(goalId, node.id, target.id, 'revises');
         const members = experimentScope(graph, container);
@@ -263,7 +268,6 @@ export class GoalExplorationModel {
         questionId,
         scopeId: experimentOwner(graph, questionId),
       });
-      /* v8 ignore next -- unreachable: this.lock() already holds the goal row FOR UPDATE in this transaction under the same ownership predicate createNode re-checks, so createNode never returns undefined */
       if (!experiment) throw new Error('Could not create experiment');
       const node = await graphModel.createNode(goalId, {
         scopeId: experiment.id,
@@ -271,7 +275,6 @@ export class GoalExplorationModel {
         title: decision.title,
         description: decision.instruction,
       });
-      /* v8 ignore next -- unreachable: this.lock() already holds the goal row FOR UPDATE in this transaction under the same ownership predicate createNode re-checks, so createNode never returns undefined */
       if (!node) throw new Error('Could not persist exploration node');
       await graphModel.createEdge(goalId, experiment.id, parent.id, 'derived_from');
       const parentMembers = experimentScope(graph, parent.id);

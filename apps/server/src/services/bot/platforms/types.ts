@@ -75,10 +75,15 @@ export interface FieldSchema {
   enumRecommended?: string;
   /**
    * Rollout gate for the field: the key of a boolean in the user's feature flags (for example
-   * `enableBotWake`). The form hides the field unless that flag is on for the signed-in user.
+   * `enableChannels`). The form hides the field unless that flag is on for the signed-in user.
    * The server stays authoritative; this only keeps unreleased options out of sight.
    */
   featureFlag?: string;
+  /**
+   * For a `boolean`: the switch shows on while the stored value is not `true`. For an off switch
+   * (`...Disabled`) whose absence means on, labelled as what it turns on.
+   */
+  inverted?: boolean;
   /** Array item schema */
   items?: FieldSchema;
   /** Unique field identifier */
@@ -298,6 +303,13 @@ export interface PlatformClient {
   createAdapter: () => Record<string, any>;
 
   /**
+   * Whether the bot decides how it opens a reply (an acknowledgement before the run) on a platform
+   * that offers no reply threads (no `getReplyTargets`): the reply always stays in
+   * `platformThreadId`. A platform with `getReplyTargets` lets the bot decide without it.
+   */
+  readonly decidesReplyOpening?: boolean;
+
+  /**
    * Ensure the triggering user is a member of the platform thread the bot
    * replies in, so the platform pushes them a notification and surfaces the
    * thread in their client.
@@ -391,6 +403,8 @@ export interface PlatformClient {
    */
   formatReply?: (body: string, stats?: UsageStats) => string;
 
+  // --- Runtime Operations ---
+
   /**
    * What people call the bot on this platform (display name, username), so a message that says the
    * name is read as addressed to it. Optional: without it the bot is recognised by @mention only.
@@ -400,8 +414,6 @@ export interface PlatformClient {
    */
   getBotNames?: (platformThreadId?: string) => Promise<string[]>;
 
-  // --- Runtime Operations ---
-
   /** Get a messenger for a specific thread (outbound messaging). */
   getMessenger: (platformThreadId: string) => PlatformMessenger;
 
@@ -409,7 +421,8 @@ export interface PlatformClient {
    * Where the reply to `message` can go, when it sits at the top level of a channel that has
    * threads (see `ReplyTargets`). `undefined` when there is no choice: a DM, a message already
    * inside a thread, or a threadless platform (Telegram, WeChat, QQ). Omit when the platform never
-   * offers one; the reply then stays in `platformThreadId`.
+   * offers one; the reply then stays in `platformThreadId`. Implementing it lets the bot decide how
+   * it opens a reply (see `decidesReplyOpening`).
    */
   getReplyTargets?: (
     platformThreadId: string,
@@ -556,8 +569,11 @@ export interface BotPlatformRuntimeContext {
  * `agent` locale namespace, shared with the runtime-status error codes.
  */
 export type BotCredentialErrorCode =
+  | 'application_mismatch'
   | 'application_not_found'
+  | 'bot_not_installed'
   | 'invalid_credentials'
+  | 'message_content_intent_disabled'
   | 'missing_credentials'
   | 'permission_denied'
   | 'rate_limited'
@@ -656,11 +672,28 @@ export interface PlatformDefinition {
   /** Documentation links for the platform */
   documentation?: PlatformDocumentation;
 
+  /**
+   * In group chats the platform delivers only the messages that address the bot (WeCom AI bots
+   * receive @-mentions only), so the bot cannot see — or fetch — what members say to each other.
+   * Group threads must be encoded as `<platform>:group:<id>`. The agent is told, so it does not
+   * go looking for a group history it can never have.
+   */
+  groupMessagesAddressedOnly?: boolean;
+
   /** The unique identifier of the platform. */
   id: string;
 
   /** The name of the platform. */
   name: string;
+
+  /**
+   * Only the Node message gateway has a handler for this platform's persistent connection. With
+   * the gateway enabled, persistent modes work only while the platform is routed to the Node host
+   * (`MESSAGE_GATEWAY_NODE_PLATFORMS`); otherwise only webhook mode works and persistent modes are
+   * refused with an actionable error. See `isMessageGatewayHostingUnavailable`. In-process
+   * connections (gateway disabled) are unaffected.
+   */
+  nodeMessageGatewayOnly?: boolean;
 
   /**
    * Credential keys that are identifiers rather than secrets, for platforms
@@ -670,6 +703,15 @@ export interface PlatformDefinition {
    * not. Everything unlisted is treated as secret.
    */
   publicCredentialKeys?: string[];
+
+  /**
+   * Outbound messages ride the live platform connection itself (WeCom AI bots have no REST send
+   * API), so only whoever holds that connection can reply: this server in-process, or the Node
+   * message gateway on its behalf. Deployments where neither can — serverless without a gateway,
+   * a gateway that keeps the platform on its default host — do not offer the platform or start
+   * its connections (`resolveReplyConnectionHost`).
+   */
+  repliesOverConnection?: boolean;
 
   /** Field schema — top-level objects `credentials` and `settings` map to DB columns. */
   schema: FieldSchema[];
@@ -707,4 +749,11 @@ export interface PlatformDefinition {
 }
 
 /** Serialized platform definition for frontend consumption (excludes runtime-only fields). */
-export type SerializedPlatformDefinition = Omit<PlatformDefinition, 'clientFactory'>;
+export type SerializedPlatformDefinition = Omit<PlatformDefinition, 'clientFactory'> & {
+  /**
+   * Set when this deployment cannot run the platform (see `repliesOverConnection`). The
+   * catalog still lists it so a bot configured earlier stays reachable to inspect, disable or
+   * remove; the channel list hides it for agents that have no such bot.
+   */
+  unavailableReason?: string;
+};

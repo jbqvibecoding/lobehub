@@ -1,5 +1,6 @@
-import type { TaskItem } from '@lobechat/types';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import type { TaskItem, TaskProjectMoveRefusal } from '@lobechat/types';
+import { and, eq, inArray, isNotNull, ne, notInArray, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 
 import {
   taskActivities,
@@ -10,11 +11,13 @@ import {
   taskTopics,
 } from '../../schemas/task';
 import type { LobeChatDatabase } from '../../type';
+import { notTrashed } from '../../utils/softDelete';
 import {
   activitiesOwnership,
   commentsOwnership,
   depsOwnership,
   docsOwnership,
+  seqOwnership,
   type TaskModelContext,
   taskOwnership,
   taskOwnershipSql,
@@ -57,6 +60,34 @@ export const findAllDescendants = async (
   }
 
   return all;
+};
+
+/**
+ * Whether a direct subtask sits outside `projectId` (`null` = no project). Scoped
+ * like the identifier sequence rather than by `taskOwnership`: another member's
+ * private subtask is hidden from the caller but still has to share its parent's
+ * project. A trashed subtask no longer counts, like a trashed dependency.
+ */
+export const hasSubtaskOutsideProject = async (
+  ctx: TaskModelContext,
+  taskId: string,
+  projectId: string | null,
+): Promise<boolean> => {
+  const [row] = await ctx.db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.parentTaskId, taskId),
+        seqOwnership(ctx),
+        notTrashed(tasks.isDeleted),
+        projectId === null
+          ? isNotNull(tasks.projectId)
+          : sql`${tasks.projectId} IS DISTINCT FROM ${projectId}`,
+      ),
+    )
+    .limit(1);
+  return !!row;
 };
 
 // Recursive query to get full task tree
@@ -189,6 +220,23 @@ export const setSubtreeVisibility = async (
   const stamp = new Date();
 
   return ctx.db.transaction(async (tx) => {
+    // A private task is creator-only, so a member assignee would keep a task
+    // they can no longer open. Unassign them before the root is read back
+    // below; the creator's own assignment and the agent assignee stay.
+    if (visibility === 'private') {
+      await tx
+        .update(tasks)
+        .set({ assigneeUserId: null })
+        .where(
+          and(
+            inArray(tasks.id, taskIds),
+            taskOwnership(ctx),
+            isNotNull(tasks.assigneeUserId),
+            ne(tasks.assigneeUserId, tasks.createdByUserId),
+          ),
+        );
+    }
+
     // Update the root with RETURNING so we read the post-update row in the
     // same statement. A second SELECT filtered by `ownership()` would self-
     // cancel when a workspace owner demotes another member's task to private:
@@ -245,6 +293,55 @@ export const setSubtreeVisibility = async (
 };
 
 /**
+ * Row-lock every task of a subtree for the enclosing transaction, whatever its
+ * visibility, and return their statuses. A takeover authorizes the root it can
+ * see, then must act on the whole subtree: private subtasks the caller cannot
+ * see and runs starting concurrently both have to be caught under the lock.
+ */
+export const lockWholeSubtree = async (
+  ctx: TaskModelContext,
+  rootId: string,
+): Promise<{ id: string; status: string }[]> => {
+  if (!ctx.workspaceId) return [];
+  const result = await ctx.db.execute(sql`
+    WITH RECURSIVE task_tree AS (
+      SELECT id FROM tasks WHERE id = ${rootId} AND workspace_id = ${ctx.workspaceId}
+      UNION ALL
+      SELECT t.id FROM tasks t JOIN task_tree tt ON t.parent_task_id = tt.id
+    )
+    SELECT id, status FROM tasks
+    WHERE id IN (SELECT id FROM task_tree) AND is_deleted IS NOT TRUE
+    FOR UPDATE
+  `);
+  return result.rows as { id: string; status: string }[];
+};
+
+/**
+ * Make the caller the creator of a task subtree, for a member taking another
+ * member's public task private as their own. Only the `tasks` rows change: the
+ * child rows keep their authors and stay readable through the creator branch
+ * of `childOwnership`.
+ *
+ * Automation stops: runs are attributed to the creator, so the previous
+ * creator's queued schedule/heartbeat ticks no longer match the row, and an
+ * armed `scheduled` task would otherwise look live with nothing driving it.
+ * It returns to `backlog` (`paused` reads as "awaiting review" in the UI); the
+ * new creator re-arms it if they want it.
+ */
+export const takeOverSubtree = async (ctx: TaskModelContext, taskIds: string[]): Promise<void> => {
+  if (taskIds.length === 0) return;
+  await ctx.db
+    .update(tasks)
+    .set({
+      automationMode: null,
+      createdByUserId: ctx.userId,
+      status: sql`CASE WHEN ${tasks.status} = 'scheduled' THEN 'backlog' ELSE ${tasks.status} END`,
+      updatedAt: new Date(),
+    })
+    .where(and(inArray(tasks.id, taskIds), taskOwnership(ctx)));
+};
+
+/**
  * Delete the given tasks (owned child rows cascade through their FKs).
  * Acceptances belong to the verify aggregate; `TaskSubtreeRepository`
  * removes them in the same transaction.
@@ -262,3 +359,115 @@ export const deleteTasksByIds = async (
 
   return result.length;
 };
+
+/** Why `moveUnfiledTreeToProject` refused to move a task tree. */
+export class TaskTreeProjectMoveError extends Error {
+  constructor(readonly reason: TaskProjectMoveRefusal) {
+    super(`Task tree cannot move to the project: ${reason}`);
+    this.name = 'TaskTreeProjectMoveError';
+  }
+}
+
+/**
+ * File a root task that has no project, together with every descendant, under
+ * `projectId` in one transaction.
+ *
+ * A subtask must share its parent's project and a dependency must stay inside
+ * one project, while a plain project patch moves only the one row. So a root
+ * with subtasks could never enter a project: moving the root splits it from its
+ * subtasks, and moving a subtask splits it from its root. Moving the whole tree
+ * at once keeps both rules.
+ *
+ * Only an unfiled tree moves: every task in it must have no project, so this
+ * never pulls a task out of a project it was deliberately filed under. The
+ * subtree is collected visibility-blind (`seqOwnership`) and without trashed
+ * rows, like `hasSubtaskOutsideProject`: another member's private subtask is
+ * hidden from the caller but must follow its parent, while a trashed one no
+ * longer counts for either rule. Every row is locked before the checks
+ * so a concurrent reparent or dependency cannot slip in between check and write.
+ *
+ * Returns the updated root, or `null` when the caller cannot see the root.
+ */
+export const moveUnfiledTreeToProject = async (
+  ctx: TaskModelContext,
+  rootId: string,
+  projectId: string,
+): Promise<TaskItem | null> =>
+  ctx.db.transaction(async (tx) => {
+    const [root] = await tx
+      .select({ id: tasks.id, parentTaskId: tasks.parentTaskId, projectId: tasks.projectId })
+      .from(tasks)
+      .where(and(eq(tasks.id, rootId), taskOwnership(ctx)))
+      .for('update')
+      .limit(1);
+    if (!root) return null;
+    if (root.parentTaskId) throw new TaskTreeProjectMoveError('has_parent');
+    if (root.projectId !== null) throw new TaskTreeProjectMoveError('filed_task');
+
+    const treeIds = [root.id];
+    // Guards against a corrupt parent cycle, which would otherwise loop forever.
+    const seen = new Set(treeIds);
+    let frontier = [root.id];
+    while (frontier.length > 0) {
+      const children = await tx
+        .select({ id: tasks.id, projectId: tasks.projectId })
+        .from(tasks)
+        .where(
+          and(
+            inArray(tasks.parentTaskId, frontier),
+            seqOwnership(ctx),
+            notTrashed(tasks.isDeleted),
+          ),
+        )
+        .for('update');
+      if (children.some((child) => child.projectId !== null)) {
+        throw new TaskTreeProjectMoveError('filed_subtask');
+      }
+      frontier = children.map((child) => child.id).filter((id) => !seen.has(id));
+      for (const id of frontier) seen.add(id);
+      treeIds.push(...frontier);
+    }
+
+    // A dependency inside the tree moves with it; one reaching a live task
+    // outside the tree would end up crossing into another project.
+    const outside = alias(tasks, 'outside_task');
+    const [externalLink] = await tx
+      .select({ id: taskDependencies.id })
+      .from(taskDependencies)
+      .innerJoin(
+        outside,
+        or(
+          and(
+            inArray(taskDependencies.taskId, treeIds),
+            eq(outside.id, taskDependencies.dependsOnId),
+          ),
+          and(
+            inArray(taskDependencies.dependsOnId, treeIds),
+            eq(outside.id, taskDependencies.taskId),
+          ),
+        ),
+      )
+      .where(
+        and(
+          notInArray(outside.id, treeIds),
+          notTrashed(outside.isDeleted),
+          sql`${outside.projectId} IS DISTINCT FROM ${projectId}`,
+        ),
+      )
+      .limit(1);
+    if (externalLink) throw new TaskTreeProjectMoveError('external_dependency');
+
+    const stamp = new Date();
+    const [updated] = await tx
+      .update(tasks)
+      .set({ projectId, updatedAt: stamp })
+      .where(and(eq(tasks.id, root.id), taskOwnership(ctx)))
+      .returning();
+    if (treeIds.length > 1) {
+      await tx
+        .update(tasks)
+        .set({ projectId, updatedAt: stamp })
+        .where(and(inArray(tasks.id, treeIds.slice(1)), seqOwnership(ctx)));
+    }
+    return updated ?? null;
+  });

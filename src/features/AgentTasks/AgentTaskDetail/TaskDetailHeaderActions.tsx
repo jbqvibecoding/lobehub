@@ -1,6 +1,7 @@
 import {
   ActionIcon,
   confirmModal,
+  cssVar,
   type DropdownItem,
   DropdownMenu,
   Icon,
@@ -30,16 +31,20 @@ import { useTaskStore } from '@/store/task';
 import { taskDetailSelectors } from '@/store/task/selectors';
 import { useUserStore } from '@/store/user';
 import { userProfileSelectors } from '@/store/user/selectors';
+import { useHeaderActionSize } from '@/styles/density';
 
 import { getArchiveErrorKey } from '../features/archiveErrorKey';
 import { useTaskArchiveGate } from '../features/useTaskArchiveGate';
+import { useTaskListCrumbTarget } from '../shared/taskListOrigin';
 import { useTaskCopyActions } from './useTaskCopyActions';
 import { useTaskFavoriteTarget } from './useTaskFavoriteTarget';
 
 const TaskDetailHeaderActions = memo(() => {
   const { t } = useTranslation(['chat', 'common']);
+  const headerActionSmallSize = useHeaderActionSize(true);
 
   const navigate = useWorkspaceAwareNavigate();
+  const allTasksTarget = useTaskListCrumbTarget('/tasks');
   const activeWorkspaceId = useActiveWorkspaceId();
   const { allowed: canEditTask } = usePermission('create_content');
   const { copyContent, copyId, copyLink, hasContent, taskId } = useTaskCopyActions();
@@ -68,14 +73,19 @@ const TaskDetailHeaderActions = memo(() => {
       okText: t('taskDetail.deleteConfirm.ok'),
       onOk: async () => {
         await deleteTask(taskId);
-        navigate('/tasks');
+        navigate(allTasksTarget.to, { escape: allTasksTarget.escape });
       },
       title: t('taskDetail.deleteConfirm.title'),
     });
-  }, [canEditTask, taskId, t, deleteTask, navigate]);
+  }, [canEditTask, taskId, t, deleteTask, navigate, allTasksTarget.to, allTasksTarget.escape]);
 
   const toggleArchive = useCallback(async () => {
-    if (!canArchive || !taskId) return;
+    if (!taskId) return;
+    if (!canArchive) {
+      // Touch users get no hover tooltip, so a blocked click says why.
+      if (archiveDeniedKey) toast.info(t(archiveDeniedKey));
+      return;
+    }
     try {
       await archiveTask(taskId, !isArchived);
     } catch (error) {
@@ -89,7 +99,7 @@ const TaskDetailHeaderActions = memo(() => {
           : 'taskList.contextMenu.archiveSuccess',
       ),
     );
-  }, [archiveTask, canArchive, isArchived, t, taskId]);
+  }, [archiveDeniedKey, archiveTask, canArchive, isArchived, t, taskId]);
 
   const triggerPublish = useCallback(() => {
     if (!canEditTask) return;
@@ -117,26 +127,47 @@ const TaskDetailHeaderActions = memo(() => {
     });
   }, [canEditTask, taskId, t, updateTaskVisibility]);
 
+  // Someone else's public task can only go private as the caller's own: it is
+  // taken over, which the confirmation spells out.
+  const takesOver = !!currentUserId && !!createdByUserId && createdByUserId !== currentUserId;
+
   const triggerMakePrivate = useCallback(() => {
     if (!canEditTask) return;
     if (!taskId) return;
     confirmModal({
       cancelText: t('cancel', { ns: 'common' }),
-      content: <VisibilityConfirmContent variant="makePrivate" />,
+      content: (
+        <>
+          <VisibilityConfirmContent variant="makePrivate" />
+          {takesOver && (
+            <div style={{ marginTop: 8, opacity: 0.7 }}>{t('taskDetail.takeOver.confirmHint')}</div>
+          )}
+        </>
+      ),
       okButtonProps: { danger: true },
-      okText: t('makePrivate.confirm.ok', { ns: 'common' }),
+      okText: takesOver
+        ? t('taskDetail.takeOver.confirmOk')
+        : t('makePrivate.confirm.ok', { ns: 'common' }),
       onOk: async () => {
         try {
-          await updateTaskVisibility(taskId, 'private');
-          toast.success(t('makePrivate.success', { ns: 'common' }));
+          await (takesOver
+            ? updateTaskVisibility(taskId, 'private', { takeOwnership: true })
+            : updateTaskVisibility(taskId, 'private'));
+          toast.success(
+            takesOver
+              ? t('taskDetail.takeOver.success')
+              : t('makePrivate.success', { ns: 'common' }),
+          );
         } catch {
           // store action already surfaced a targeted toast; swallow so the
           // confirm modal doesn't bubble a second error to base-ui.
         }
       },
-      title: t('makePrivate.confirm.title', { ns: 'common' }),
+      title: takesOver
+        ? t('taskDetail.takeOver.confirmTitle')
+        : t('makePrivate.confirm.title', { ns: 'common' }),
     });
-  }, [canEditTask, taskId, t, updateTaskVisibility]);
+  }, [canEditTask, taskId, t, takesOver, updateTaskVisibility]);
 
   const menuItems = useMemo<DropdownItem[]>(() => {
     if (!taskId) return [];
@@ -164,15 +195,6 @@ const TaskDetailHeaderActions = memo(() => {
       { type: 'divider' },
       ...(favoriteMenuItem ? [favoriteMenuItem, { type: 'divider' as const }] : []),
       {
-        desc: archiveDeniedKey && t(archiveDeniedKey),
-        disabled: !canArchive,
-        icon: <Icon icon={isArchived ? ArchiveRestoreIcon : ArchiveIcon} />,
-        key: 'archive',
-        label: t(isArchived ? 'taskList.contextMenu.unarchive' : 'taskList.contextMenu.archive'),
-        onClick: toggleArchive,
-      },
-      { type: 'divider' },
-      {
         danger: true,
         disabled: !canEditTask,
         icon: <Icon icon={Trash} />,
@@ -195,19 +217,17 @@ const TaskDetailHeaderActions = memo(() => {
           }
         : null;
 
-    // Inverse transition: only the task creator can pull a
-    // published task back to private ( — an owner demoting another
-    // member's task would appropriate it into the creator's private list);
-    // everyone else doesn't see the entry at all (the server enforces the
-    // same rule as a backstop).
-    const canMakePrivate = !!currentUserId && createdByUserId === currentUserId;
+    // Inverse transition: the creator pulls a published task back to private;
+    // any other member takes it over as their own private task.
     const makePrivateItem: DropdownItem | null =
-      activeWorkspaceId && visibility === 'public' && canMakePrivate
+      activeWorkspaceId && visibility === 'public' && !!currentUserId
         ? {
             disabled: !canEditTask,
             icon: <Icon icon={EyeOffIcon} />,
             key: 'makePrivate',
-            label: t('makePrivate', { ns: 'common' }),
+            label: takesOver
+              ? t('taskDetail.takeOver.menuLabel')
+              : t('makePrivate', { ns: 'common' }),
             onClick: triggerMakePrivate,
           }
         : null;
@@ -241,14 +261,10 @@ const TaskDetailHeaderActions = memo(() => {
     hasContent,
     activeWorkspaceId,
     visibility,
-    createdByUserId,
     currentUserId,
+    takesOver,
     t,
     triggerDelete,
-    toggleArchive,
-    isArchived,
-    archiveDeniedKey,
-    canArchive,
     triggerPublish,
     triggerMakePrivate,
     canEditTask,
@@ -257,9 +273,29 @@ const TaskDetailHeaderActions = memo(() => {
 
   if (!taskId) return null;
 
+  const archiveLabel = t(
+    isArchived ? 'taskList.contextMenu.unarchive' : 'taskList.contextMenu.archive',
+  );
+  const archiveDeniedReason = archiveDeniedKey ? t(archiveDeniedKey) : undefined;
+
   return (
     <>
       {favoriteTarget && <FavoriteButton {...favoriteTarget} />}
+      {/* A blocked archive stays enabled so hover and keyboard users can read why;
+          a click only repeats the reason. Never mark it `aria-disabled`: ActionIcon styles that
+          with `pointer-events: none`, which hides the reason and, when the attribute
+          outlives the block, leaves the button dead until a refresh. */}
+      <ActionIcon
+        aria-description={archiveDeniedReason}
+        aria-label={archiveLabel}
+        color={canArchive ? undefined : cssVar.colorTextDisabled}
+        icon={isArchived ? ArchiveRestoreIcon : ArchiveIcon}
+        size={headerActionSmallSize}
+        style={canArchive ? undefined : { cursor: 'not-allowed' }}
+        title={archiveDeniedReason ?? archiveLabel}
+        tooltipProps={{ placement: 'bottom' }}
+        onClick={() => void toggleArchive()}
+      />
       <DropdownMenu items={menuItems}>
         <ActionIcon icon={MoreHorizontal} size={'small'} />
       </DropdownMenu>

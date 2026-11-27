@@ -4,31 +4,48 @@ import {
   appendAttachedFilesToPrompt,
   collectHeteroAttachedFiles,
   isLocalHeterogeneousType,
+  isLocalRuntimeHeterogeneousType,
+  resolveDispatchedClaudeCodeEntrypoint,
 } from '@lobechat/heterogeneous-agents';
 import {
+  BOT_CHANNEL_MESSAGING_INSTRUCTIONS,
   CHANNEL_INSTRUCTIONS,
   formatContextSelections,
   formatPageSelections,
 } from '@lobechat/prompts';
-import { applyTopicModelToHeterogeneousProvider, buildHeteroExecArgs } from '@lobechat/types';
+import {
+  applyTopicModelToHeterogeneousProvider,
+  buildHeteroExecArgs,
+  RequestTrigger,
+} from '@lobechat/types';
 import debug from 'debug';
+import pMap from 'p-map';
 
 import { signHeteroOperationJWT } from '@/libs/trpc/utils/internalJwt';
 import { FileService } from '@/server/services/file';
+import { resolveInlineImages } from '@/server/services/file/inlineImages';
 import { HeterogeneousAgentService } from '@/server/services/heterogeneousAgent';
 import type { ConversationHistoryEntry } from '@/server/services/heterogeneousAgent/cloudHeteroContext';
 import { buildCloudHeteroContext } from '@/server/services/heterogeneousAgent/cloudHeteroContext';
+import { expectPermissionModeReport } from '@/server/services/heterogeneousAgent/permissionModeReport';
 import type { UnansweredUserTurn } from '@/server/services/heterogeneousAgent/unansweredUserTurns';
 import { collectUnansweredUserTurns } from '@/server/services/heterogeneousAgent/unansweredUserTurns';
-import { getSandboxProviderKind } from '@/server/services/sandbox/factory';
+import { getSandboxProviderKind } from '@/server/services/sandbox/deployment';
 import { resolveSandboxSessionConfig } from '@/server/services/sandbox/session';
 
 import { supportsCloudHeterogeneousSandbox } from '../../helpers/heteroErrors';
 import type { ExecRunContext } from '../../types';
 import { heteroOperationCapabilities } from '../heteroOperationCapabilities';
 import { buildHeteroProjectContext } from '../projectContext';
+import { traceHeteroStage } from '../sendTracing';
 import { buildViewedTaskContextPrompt, joinSystemContext } from '../viewedTaskContext';
+import { resolveDispatchCollaborationMode } from './codexCollaboration';
+import { resolveDispatchPermissionMode } from './permissionMode';
 import type { HeteroDispatchDeps, HeteroDispatchInput } from './types';
+import { settleInOrder } from './utils';
+
+/** How many stored attachment keys are signed at once, per level. */
+const SIGN_URL_CONCURRENCY = 5;
 
 const log = debug('lobe-server:ai-agent-service');
 
@@ -45,10 +62,12 @@ export const prepareHeteroRun = async (
     | 'agentConfig'
     | 'appContext'
     | 'assistantMessageId'
+    | 'botContext'
     | 'prompt'
     | 'resolvedAgentId'
     | 'shareGate'
     | 'topicId'
+    | 'userMessageId'
     | 'userMessageMetadata'
     | 'trigger'
   >,
@@ -74,66 +93,125 @@ export const prepareHeteroRun = async (
     selfMessageIds,
   } = input;
 
-  // Read resume session id for next-turn continuity.
+  const { shareGate } = ctx;
+  // Read resume session id for next-turn continuity. A share visitor's topic
+  // is hidden from a default-scoped read, so the visitor scope is needed to
+  // find the session the previous turn recorded.
   const heteroService = new HeterogeneousAgentService(deps.db, deps.userId, {
+    shareVisitor: shareGate
+      ? { shareId: shareGate.shareId, visitorUserId: shareGate.visitorUserId }
+      : undefined,
     workspaceId: deps.workspaceId,
   });
   const isChannelOperation = ctx.trigger === 'channel' && input.reservedOperationId === operationId;
-  // A Biber group member runs beside the host and resumes its own session (see the seeding in
-  // `dispatchHeteroAgent`)
-  const isGroupMemberRun = appContext?.orchestrationRole === 'member';
-  const resumeSessionId = await heteroService.getHeterogeneousResumeSessionId(
-    topicId,
-    ctx.resolvedAgentId,
-    { ownOnly: isGroupMemberRun },
-  );
+  // The bot's owner messaging their own Agent (e.g. on Telegram) may have it post into their
+  // Channels. `isOwner` is decided once, fail-closed, in `buildBotContext`.
+  const isOwnerBotOperation =
+    ctx.trigger === RequestTrigger.Bot && ctx.botContext?.isOwner === true;
+  // A scheduled run replays the user's own message off history, so it has
+  // no fresh user row; server-started `chat` deliveries have none either.
+  const isUserTurn =
+    (ctx.trigger === RequestTrigger.Chat && !!ctx.userMessageId) ||
+    ctx.trigger === RequestTrigger.Scheduled;
+  // Mirrors the `channel:message` grant in `heteroOperationCapabilities`.
+  const canMessageForUser =
+    !shareGate && (isOwnerBotOperation || (isUserTurn && !isChannelOperation && !operationTaskId));
+
   // Sign an operation-scoped JWT so the CLI can authenticate against
   // heteroIngest / heteroFinish without full user credentials.
-  let operationJwt: string;
-  try {
-    operationJwt = await signHeteroOperationJWT({
-      // A `/goal` run also gets `goal:manage` so it can create the goal the agent
-      // supervises; the server still derives the agent and topic from this
-      // operation, never from the CLI. A Task run also gets `acceptance:evidence`
-      // for its own verification round.
-      capabilities: heteroOperationCapabilities(prompt, {
-        channel: isChannelOperation,
-        taskId: operationTaskId,
-      }),
-      operationId,
-      userId: deps.userId,
-      workspaceId: deps.workspaceId,
-    });
-  } catch (err) {
-    log('execAgent: failed to sign operation JWT for hetero run: %O', err);
-    throw new Error('Failed to sign operation JWT for hetero agent', { cause: err });
-  }
+  const signOperationJwt = async () => {
+    try {
+      return await signHeteroOperationJWT({
+        // A run the user sent also gets `goal:manage` so it can create
+        // the goal the agent supervises; the server still derives the agent and
+        // topic from this operation, never from the CLI. A Task run also gets
+        // `acceptance:evidence` for its own verification round.
+        capabilities: heteroOperationCapabilities(prompt, {
+          channel: isChannelOperation,
+          ownerBotTurn: isOwnerBotOperation,
+          shareVisitor: !!shareGate,
+          taskId: operationTaskId,
+          userTurn: isUserTurn,
+        }),
+        operationId,
+        userId: deps.userId,
+        workspaceId: deps.workspaceId,
+      });
+    } catch (err) {
+      log('execAgent: failed to sign operation JWT for hetero run: %O', err);
+      throw new Error('Failed to sign operation JWT for hetero agent', { cause: err });
+    }
+  };
 
-  // Read repos from topic metadata for sandbox setup (web/cloud only).
-  const topic = await deps.topicModel.findById(topicId);
-  const topicRepos: string[] = topic?.metadata?.repos ?? [];
-
-  // No GitHub token is resolved for the run: none goes into the sandbox. Code reaches it
-  // through the coding tools, which act on the server with the user's approval.
+  // No GitHub token is resolved for the run: none goes into the sandbox (the only place upstream
+  // sends it). Code reaches it through the coding tools, which act on the server with the
+  // user's approval.
 
   // Recovery history is reserved for the CLI's retry without native resume.
-  // The primary resumed attempt already has native history and must not get
-  // a serialized duplicate. Amp threads are server-backed, so they rely on
-  // native continuation exclusively and never need this local-file fallback.
-  let conversationHistory: ConversationHistoryEntry[] | undefined;
-  // A resumed session still needs the prompts of runs stopped before the CLI
-  // recorded them; the history above is withheld from it.
-  let unansweredUserTurns: UnansweredUserTurn[] | undefined;
-  if (heteroType !== 'amp') {
+  // Amp threads are server-backed, so they rely on native continuation
+  // exclusively and never need this local-file fallback. Never rejects.
+  const loadRecentMessages = async () => {
+    if (heteroType === 'amp') return;
     try {
       // `allowShareVisitor`: this is the RUN's own topic, already resolved
       // and authorized upstream. An agent-share visitor run executes under
       // the creator's identity, so without the opt-in `query()`'s
       // creator-facing default would hand the agent an empty history.
-      const recentMsgs = await deps.messageModel.query(
-        { topicId, pageSize: 200 },
-        { allowShareVisitor: true },
-      );
+      return await deps.messageModel.query({ topicId, pageSize: 200 }, { allowShareVisitor: true });
+    } catch (err) {
+      log('execAgent: failed to load conversation history for hetero context: %O', err);
+    }
+  };
+
+  // Every read below depends only on the request, so they start together
+  // instead of one after another. The best-effort read (history) never
+  // rejects; the required ones are settled in their old order
+  // so a failure surfaces the same error the sequential code threw. Nothing
+  // here writes: the sandbox placement, which may create a drive folder,
+  // waits until these required reads have succeeded, as before.
+  const recentMessagesPromise = traceHeteroStage('history', loadRecentMessages);
+  const [resumeSessionId, operationJwt, topic] = await settleInOrder([
+    traceHeteroStage('resume_session', () =>
+      // A Biber group member runs beside the host and resumes its own session (see the seeding
+      // in `dispatchHeteroAgent`)
+      heteroService.getHeterogeneousResumeSessionId(topicId, ctx.resolvedAgentId, {
+        ownOnly: appContext?.orchestrationRole === 'member',
+      }),
+    ),
+    traceHeteroStage('sign_operation_jwt', signOperationJwt),
+    // Read repos from topic metadata for sandbox setup (web/cloud only).
+    traceHeteroStage('topic', () => deps.topicModel.findById(topicId)),
+  ]);
+  const topicRepos: string[] = topic?.metadata?.repos ?? [];
+  const permissionModePromise = resolveDispatchPermissionMode(deps.db, deps.userId, {
+    heteroType,
+    topicMetadata: topic?.metadata,
+  }).then(async (mode) => {
+    // An `lh` that never reports the mode back is flagged when the run ends.
+    await expectPermissionModeReport(deps.topicModel, { mode, operationId, topicId }).catch(
+      (error) => log('execAgent: permission mode report marker failed: %O', error),
+    );
+    return mode;
+  });
+
+  const collaborationModePromise = resolveDispatchCollaborationMode(deps.db, deps.userId, {
+    heteroType,
+    topicMetadata: topic?.metadata,
+  });
+
+  // The primary resumed attempt already has native history and must not get
+  // a serialized duplicate. A resumed session still needs the prompts of runs
+  // stopped before the CLI recorded them; the history is withheld from it.
+  const buildRecoveryHistory = async (): Promise<{
+    conversationHistory?: ConversationHistoryEntry[];
+    unansweredUserTurns?: UnansweredUserTurn[];
+  }> => {
+    const recentMsgs = await recentMessagesPromise;
+    if (!recentMsgs) return {};
+    // Assigned before the attachments are signed: a signing failure drops only
+    // the unanswered turns, never the text history the resume fallback needs.
+    let conversationHistory: ConversationHistoryEntry[] | undefined;
+    try {
       const topicMsgs = recentMsgs.filter((m) => !m.threadId && !selfMessageIds.has(m.id));
       const turns = topicMsgs
         .filter(
@@ -147,57 +225,89 @@ export const prepareHeteroRun = async (
           content: m.content ?? '',
           role: m.role as 'assistant' | 'user',
         }));
-      if (turns.length > 0) conversationHistory = turns;
-      if (resumeSessionId) {
-        const unanswered = collectUnansweredUserTurns(topicMsgs, prompt);
-        if (unanswered.length > 0) {
-          // The query returns stored file keys; sign them like the current turn's attachments.
-          const fileService = unanswered.some((turn) => turn.files.length > 0)
-            ? new FileService(deps.db, deps.userId, deps.workspaceId)
-            : undefined;
-          unansweredUserTurns = await Promise.all(
-            unanswered.map(async (turn) => ({
-              ...turn,
-              files: await Promise.all(
-                turn.files.map(async (file) => ({
-                  ...file,
-                  url: (await fileService?.getFullFileUrl(file.url)) || file.url,
-                })),
-              ),
-            })),
-          );
-        }
-      }
+      conversationHistory = turns.length > 0 ? turns : undefined;
+      if (!resumeSessionId) return { conversationHistory };
+      const unanswered = collectUnansweredUserTurns(topicMsgs, prompt);
+      if (unanswered.length === 0) return { conversationHistory };
+      // The query returns stored file keys; sign them like the current turn's attachments.
+      const fileService = unanswered.some((turn) => turn.files.length > 0)
+        ? new FileService(deps.db, deps.userId, deps.workspaceId)
+        : undefined;
+      // Both lists come from stored rows, so cap the URL signing they fan out into.
+      const unansweredUserTurns = await pMap(
+        unanswered,
+        async (turn) => ({
+          ...turn,
+          files: await pMap(
+            turn.files,
+            async (file) => ({
+              ...file,
+              url: (await fileService?.getFullFileUrl(file.url)) || file.url,
+            }),
+            { concurrency: SIGN_URL_CONCURRENCY },
+          ),
+        }),
+        { concurrency: SIGN_URL_CONCURRENCY },
+      );
+      return { conversationHistory, unansweredUserTurns };
     } catch (err) {
       log('execAgent: failed to load conversation history for hetero context: %O', err);
+      return { conversationHistory };
     }
-  }
+  };
 
   // Where a cloud-sandbox run keeps its files: the same resolution the plain
   // cloud-sandbox runtime does, so a hetero topic bound to an environment
   // instance runs in that instance rather than in a throwaway box. Only for
   // providers the cloud sandbox can host at all; device-only providers never
   // read it. Never throws — a failed lookup is the ephemeral sandbox.
-  const sandbox = supportsCloudHeterogeneousSandbox(heteroType)
-    ? await resolveSandboxSessionConfig({
-        isShareVisitorRun: !!ctx.shareGate,
-        serverDB: deps.db,
-        topicId,
-        userId: deps.userId,
-        workspaceId: deps.workspaceId,
-      })
-    : undefined;
-  const sandboxPlacement = sandbox && { cwd: sandbox.cwd, mode: sandbox.mode };
-
+  //
   // Primary context omits history (a failed native resume retries with the full
   // fallback). `/goal`, the task viewed in a Tasks side chat and the content the
   // user attached to this message ride along — the same selection context the
-  // desktop's in-process run hands its CLI.
-  const providerContext = agentConfig.agencyConfig?.heterogeneousProvider?.systemContext;
-  const [viewedTaskContext, projectContext] = await Promise.all([
-    buildViewedTaskContextPrompt(deps, appContext, operationTaskId),
-    buildHeteroProjectContext(deps, appContext?.projectId, agentConfig.id),
+  // desktop's in-process run hands its CLI. These reads are independent of
+  // each other and of the history, so they overlap too.
+  const [
+    { conversationHistory, unansweredUserTurns },
+    sandbox,
+    [viewedTaskContext, projectContext],
+    inlineImages,
+  ] = await settleInOrder([
+    buildRecoveryHistory(),
+    supportsCloudHeterogeneousSandbox(heteroType)
+      ? traceHeteroStage('sandbox_session', () =>
+          resolveSandboxSessionConfig({
+            isShareVisitorRun: !!ctx.shareGate,
+            serverDB: deps.db,
+            topicId,
+            userId: deps.userId,
+            workspaceId: deps.workspaceId,
+          }),
+        )
+      : Promise.resolve(undefined),
+    traceHeteroStage('system_context', () =>
+      Promise.all([
+        buildViewedTaskContextPrompt(deps, appContext, operationTaskId),
+        buildHeteroProjectContext(deps, appContext?.projectId, agentConfig.id),
+      ]),
+    ),
+    // Images pasted into the message body ride in the markdown as file links,
+    // which the CLI reads as plain text: hand them over as images too. Not for
+    // a share visitor, whose prompt must not resolve the owner's files.
+    ctx.shareGate
+      ? Promise.resolve([])
+      : resolveInlineImages(
+          deps,
+          prompt,
+          (runAttachments.imageList ?? []).map((image) => image.id),
+        ).catch((error) => {
+          log('execAgent: failed to resolve inline images for hetero run: %O', error);
+          return [];
+        }),
   ]);
+  const sandboxPlacement = sandbox && { cwd: sandbox.cwd, mode: sandbox.mode };
+
+  const providerContext = agentConfig.agencyConfig?.heterogeneousProvider?.systemContext;
   const contextSelections = userMessageMetadata?.contextSelections;
   const pageSelections = userMessageMetadata?.pageSelections;
   const selectionContext = contextSelections?.length
@@ -205,16 +315,22 @@ export const prepareHeteroRun = async (
     : pageSelections?.length
       ? formatPageSelections(pageSelections)
       : undefined;
-  const agentSystemContext = withConversationGoalPrompt(
-    joinSystemContext(
-      providerContext,
-      projectContext,
-      viewedTaskContext,
-      selectionContext,
-      isChannelOperation ? CHANNEL_INSTRUCTIONS : undefined,
-    ),
-    prompt,
+  const baseSystemContext = joinSystemContext(
+    providerContext,
+    projectContext,
+    viewedTaskContext,
+    selectionContext,
+    isChannelOperation
+      ? CHANNEL_INSTRUCTIONS
+      : canMessageForUser
+        ? BOT_CHANNEL_MESSAGING_INSTRUCTIONS
+        : undefined,
   );
+  // A share visitor gets no goal capability (see `heteroOperationCapabilities`),
+  // so a `/goal` prompt must not add goal instructions either.
+  const agentSystemContext = shareGate
+    ? baseSystemContext
+    : withConversationGoalPrompt(baseSystemContext, prompt);
   // Biber's own cloud computer keeps the user's files between runs
   const persistentWorkspace = getSandboxProviderKind() === 'openbot';
   const systemContext = buildCloudHeteroContext({
@@ -240,27 +356,43 @@ export const prepareHeteroRun = async (
   // mirrors the local-mode path, where the client feeds the persisted
   // message's imageList into `sendPrompt`. Reuses the shared resolution above
   // so bot/IM and SPA gateway attachments are handled identically.
-  const heteroImageList =
-    runAttachments.imageList && runAttachments.imageList.length > 0
-      ? runAttachments.imageList.map((image) => ({ id: image.id, url: image.url }))
+  const heteroImages = [
+    ...(runAttachments.imageList ?? []).map((image) => ({ id: image.id, url: image.url })),
+    ...inlineImages,
+  ];
+  const heteroImageList = heteroImages.length > 0 ? heteroImages : undefined;
+  // Protocol runtimes (DeepSeek Harness) also launch through `lh hetero exec`
+  // and need the selector flags (e.g. `--model <tuple>`) built for it, even
+  // though they are not local-CLI descriptor agents.
+  const heteroExecArgs =
+    isLocalHeterogeneousType(heteroType) || isLocalRuntimeHeterogeneousType(heteroType)
+      ? buildHeteroExecArgs(
+          heterogeneousProvider?.type === heteroType
+            ? applyTopicModelToHeterogeneousProvider(
+                heterogeneousProvider,
+                pinnedHeterogeneousTopicModel,
+              )
+            : { type: heteroType },
+        )
       : undefined;
-  const heteroExecArgs = isLocalHeterogeneousType(heteroType)
-    ? buildHeteroExecArgs(
-        heterogeneousProvider?.type === heteroType
-          ? applyTopicModelToHeterogeneousProvider(
-              heterogeneousProvider,
-              pinnedHeterogeneousTopicModel,
-            )
-          : { type: heteroType },
-      )
-    : undefined;
 
   const heteroParams = {
     agentType: heteroType,
     assistantMessageId,
+    // The one setting that travels from the agent's env to wherever the run
+    // lands: forwarding the whole env would let an agent's author set arbitrary
+    // variables on a member's device.
+    claudeCodeEntrypoint:
+      heteroType === 'claude-code' && heterogeneousProvider?.type === heteroType
+        ? resolveDispatchedClaudeCodeEntrypoint(heterogeneousProvider.env)
+        : undefined,
+    // The Codex Plan switch before the runtime is known; the device dispatch
+    // narrows it (`forDeviceRuntime`), and the cloud sandbox (`codex exec`) ignores it.
+    collaborationMode: await collaborationModePromise,
     imageList: heteroImageList,
     jwt: operationJwt,
     operationId,
+    permissionMode: await permissionModePromise,
     // The CLI receives only the request: `/goal` is already in the system
     // context, and Claude Code's own `/goal` command would otherwise take it.
     // Non-image attachments have no content block a CLI accepts, so they ride

@@ -49,9 +49,13 @@ describe('resolveMount', () => {
 });
 
 describe('pipelineFor', () => {
-  it('maps ts/tsx to the stylelint+eslint+prettier pipeline', () => {
+  it('maps ts/tsx to the oxlint+prettier pipeline and css to stylelint+prettier', () => {
     const pipeline = pipelineFor(lobehubPipelines, 'src/auth.ts');
-    expect(pipeline?.tools.map(([tool]) => tool)).toEqual(['stylelint', 'eslint', 'prettier']);
+    expect(pipeline?.tools.map(([tool]) => tool)).toEqual(['oxlint', 'prettier']);
+    expect(pipelineFor(lobehubPipelines, 'src/a.module.css')?.tools.map(([tool]) => tool)).toEqual([
+      'stylelint',
+      'prettier',
+    ]);
   });
 
   it('maps md to remark+prettier and json to prettier only', () => {
@@ -64,8 +68,17 @@ describe('pipelineFor', () => {
     ]);
   });
 
+  it('keeps oxlint from failing when every passed file is ignored', () => {
+    // Vendored skills such as `.agents/skills/lobe-design/scripts/*.mjs` are
+    // ignored by oxlint; without this flag it exits 1 with "No files found".
+    for (const file of ['a.mjs', 'a.js', 'a.ts']) {
+      const oxlint = pipelineFor(lobehubPipelines, file)?.tools.find(([tool]) => tool === 'oxlint');
+      expect(oxlint).toContain('--no-error-on-unmatched-pattern');
+    }
+  });
+
   it('returns null for extensions with no pipeline', () => {
-    expect(pipelineFor(lobehubPipelines, '.github/workflows/ci.yml')).not.toBeNull();
+    expect(pipelineFor(lobehubPipelines, '.github/workflows/ci.yml')).toBeNull();
     expect(pipelineFor(lobehubPipelines, 'image.png')).toBeNull();
     expect(pipelineFor([], 'a.ts')).toBeNull();
   });
@@ -105,11 +118,10 @@ describe('lobehubPipelines drift', () => {
 
 describe('stylelintApplies', () => {
   it('scopes stylelint to src/tests like the lint:style scripts', () => {
-    expect(stylelintApplies('src/auth.ts')).toBe(true);
-    expect(stylelintApplies('tests/foo.ts')).toBe(true);
-    // stylelint's CSS-in-JS fixer corrupts files outside its configured scope
-    expect(stylelintApplies('.agents/scripts/check/index.ts')).toBe(false);
-    expect(stylelintApplies('packages/utils/src/a.ts')).toBe(false);
+    expect(stylelintApplies('src/auth.css')).toBe(true);
+    expect(stylelintApplies('tests/foo.less')).toBe(true);
+    expect(stylelintApplies('.agents/scripts/check/style.css')).toBe(false);
+    expect(stylelintApplies('packages/utils/src/a.css')).toBe(false);
   });
 });
 

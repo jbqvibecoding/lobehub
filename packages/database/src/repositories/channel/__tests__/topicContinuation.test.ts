@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getTestDB } from '../../../core/getTestDB';
-import { agents, channelMembers, channelThreads, topics } from '../../../schemas';
+import { agents, channelJobs, channelMembers, channelThreads, topics } from '../../../schemas';
 import { ChannelExecutionRepository } from '..';
 import { createChannelFixture, jobsOf, lease } from './testUtils';
 
@@ -147,12 +147,37 @@ describe('Channel topic continuation', () => {
     expect(await state.input(third.job.id)).toEqual(['Request 3']);
   });
 
+  it('starts a new topic when a gathered run still holds the one it answered in', async () => {
+    const state = await setup();
+    const first = (await state.claim((await state.send()).id))!;
+    await state.finish(first.job.id);
+    const gathered = (await state.claim((await state.send()).id))!;
+    expect(gathered.topic.id).toBe(first.topic.id);
+    // Gathering moves the running peer's branch only: the topic it answered in stays its own.
+    const [thread] = await db
+      .insert(channelThreads)
+      .values({
+        channelId: state.channel.id,
+        followerMemberIds: [state.agent.id],
+        rootMessageId: gathered.job.messageId,
+        rootSequence: 1,
+      })
+      .returning();
+    await db
+      .update(channelJobs)
+      .set({ threadId: thread.id })
+      .where(eq(channelJobs.id, gathered.job.id));
+    const next = (await state.claim((await state.send()).id))!;
+    expect(next.topic.id).not.toBe(first.topic.id);
+    expect(await state.input(next.job.id)).toEqual(['Request 3']);
+  });
+
   it('starts a new topic when failed routing is explicitly retried after a newer delivery', async () => {
     const state = await setup();
     const early = await state.asMember.send(state.channel.id, {
       content: 'Delayed request',
       requestKey: 'delayed',
-      routing: 'jev',
+      routing: 'decision',
     });
     await execution.resolveRouting(state.channel.id, early.id, early.routingAttempt, {
       reason: 'Decision unavailable',
@@ -173,6 +198,38 @@ describe('Channel topic continuation', () => {
     const next = (await state.claim((await state.send()).id))!;
     expect(next.topic.id).toBe(delayed.topic.id);
     expect(await state.input(next.job.id)).toEqual(['Request 2']);
+  });
+
+  it('hands a run the latest public messages its topic has not seen', async () => {
+    const state = await setup();
+    const say = (content: string) =>
+      state.asOwner.send(state.channel.id, {
+        content,
+        mentions: [state.member.id],
+        requestKey: content,
+        routing: 'decision',
+      });
+    const recent = async (id: string) =>
+      (await execution.recentContext(state.channel.id, id)).messages.map((m) => m.content);
+    for (const n of [1, 2, 3, 4, 5, 6]) await say(`Earlier ${n}`);
+
+    const first = (await state.claim((await state.send()).id))!;
+    expect(await recent(first.job.id)).toEqual([
+      'Earlier 2',
+      'Earlier 3',
+      'Earlier 4',
+      'Earlier 5',
+      'Earlier 6',
+    ]);
+    // The oldest unseen message did not fit: the run is told one more exists.
+    expect((await execution.recentContext(state.channel.id, first.job.id)).omitted).toBe(1);
+    await state.finish(first.job.id);
+    await say('Two o’clock?');
+
+    const second = (await state.claim((await state.send()).id))!;
+    expect(second.topic.id).toBe(first.topic.id);
+    expect(await recent(second.job.id)).toEqual(['Two o’clock?']);
+    expect((await execution.recentContext(state.channel.id, second.job.id)).omitted).toBe(0);
   });
 
   it('blocks a deleted Agent reference while retaining the public request', async () => {

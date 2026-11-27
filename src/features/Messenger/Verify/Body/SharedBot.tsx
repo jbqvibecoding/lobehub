@@ -3,6 +3,8 @@
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { marketplaceAppPath } from '@/features/Marketplace/paths';
+
 import { type SharedBotPlatform, sharedBotUrl } from '../../constants';
 import {
   AwaitingCodeCard,
@@ -106,9 +108,9 @@ const SharedBotBody = memo<SharedBotBodyProps>(
         blockingNotice={
           rebindBlocked
             ? {
-                ctaHref: `/settings/messenger/${platform}`,
-                ctaLabel: t('verify.confirm.relink.manage'),
-                description: t('verify.confirm.relink.description', {
+                ctaHref: marketplaceAppPath(platform),
+                ctaLabel: t('verify.confirm.relink.openApp'),
+                description: t('verify.confirm.relink.disconnectInMarketplace', {
                   account: existingLink ? describeAccount(existingLink) : '',
                   platform: platformLabel,
                 }),

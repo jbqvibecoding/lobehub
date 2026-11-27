@@ -210,19 +210,29 @@ export const getTopicShareSubject = async (
 export const getAgentVisibilityMeta = async (
   ctx: AgentModelContext,
   id: string,
-): Promise<{ slug: string | null; userId: string; visibility: 'private' | 'public' } | null> => {
+): Promise<{
+  pinned: boolean;
+  slug: string | null;
+  userId: string;
+  visibility: 'private' | 'public';
+} | null> => {
   const rows = await ctx.db
-    .select({ slug: agents.slug, userId: agents.userId, visibility: agents.visibility })
+    .select({
+      pinned: agents.pinned,
+      slug: agents.slug,
+      userId: agents.userId,
+      visibility: agents.visibility,
+    })
     .from(agents)
     .where(and(eq(agents.id, id), ctx.ownership()))
     .limit(1);
   const row = rows[0];
   if (!row) return null;
   return {
+    pinned: !!row.pinned,
     slug: row.slug,
     userId: row.userId,
-    /* v8 ignore next -- unreachable: agents.visibility is NOT NULL (default 'public'), so the `?? 'public'` fallback never runs */
-    visibility: (row.visibility as 'private' | 'public' | null) ?? 'public',
+    visibility: row.visibility,
   };
 };
 
@@ -260,11 +270,15 @@ export const getAgentByMarketIdentifier = async (
 /**
  * Get an agent by the forkedFromIdentifier stored in params
  * @param forkedFromIdentifier - The source agent's market identifier
+ * @param options.virtual - Look among hidden copies (a Market agent run from an
+ *   @ mention) instead of installed agents. An installed lookup never matches a
+ *   hidden copy, so mentioning an agent never counts as installing it.
  * @returns agent id if exists, null otherwise
  */
 export const getAgentByForkedFromIdentifier = async (
   ctx: AgentModelContext,
   forkedFromIdentifier: string,
+  { virtual = false }: { virtual?: boolean } = {},
 ): Promise<string | null> => {
   const result = await ctx.db.query.agents.findFirst({
     columns: { id: true },
@@ -272,6 +286,7 @@ export const getAgentByForkedFromIdentifier = async (
     where: and(
       ctx.ownership(),
       sql`${agents.params}->>'forkedFromIdentifier' = ${forkedFromIdentifier}`,
+      sql`coalesce(${agents.virtual}, false) = ${virtual}`,
     ),
   });
   return result?.id ?? null;

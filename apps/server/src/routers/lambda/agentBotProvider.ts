@@ -8,19 +8,15 @@ import {
   assertBotFeatureAccess,
   withBotPlatformAccessMeta,
 } from '@/business/server/bot/featureAccess';
-import { withScopedPermission } from '@/business/server/trpc-middlewares/rbacPermission';
-import { wsCompatProcedure } from '@/business/server/trpc-middlewares/workspaceAuth';
 import { AgentBotProviderModel } from '@/database/models/agentBotProvider';
 import { WorkspaceMemberModel } from '@/database/models/workspaceMember';
 import type { LobeChatDatabase } from '@/database/type';
 import { authedProcedure, router } from '@/libs/trpc/lambda';
-import { serverDatabase } from '@/libs/trpc/lambda/middleware';
-import { KeyVaultsGateKeeper } from '@/server/modules/KeyVaultsEncrypt';
-import { flattenBotWakeSettings } from '@/server/services/agentSignal/scenarios/botWake/config';
 import {
   assertBotAccessSettings,
   assertWatchKeywordsWritable,
   invalidateBotAfterUpdate,
+  mergeBotSettingsForCreate,
   mergeBotSettingsForPersist,
 } from '@/server/services/bot/agentBotProviderSettings';
 import { getBotMessageRouter } from '@/server/services/bot/BotMessageRouter';
@@ -35,34 +31,24 @@ import {
   formatFieldFormatViolations,
   mergeWithDefaults,
   platformRegistry,
+  restrictPlatformToWebhook,
   withResolvedConcurrencySettings,
 } from '@/server/services/bot/platforms';
 import {
   beginFeishuAppRegistration,
   pollFeishuAppRegistration,
 } from '@/server/services/bot/platforms/feishu/registration';
+import { flattenBotWakeSettings } from '@/server/services/conversationWake/config';
 import { GatewayService } from '@/server/services/gateway';
+import { isMessageGatewayHostingUnavailable } from '@/server/services/gateway/nodeGatewayOnly';
+import { getReplyConnectionUnavailableReason } from '@/server/services/gateway/replyConnectionHost';
 import { getBotRuntimeStatus } from '@/server/services/gateway/runtimeStatus';
 
+import {
+  agentBotProviderProcedure,
+  agentBotProviderProcedureWrite,
+} from './_helpers/agentBotProviderProcedure';
 import { assertWorkspaceRowManageable } from './_helpers/assertWorkspaceRowManageable';
-
-const agentBotProviderProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) => {
-  const { ctx } = opts;
-  const wsId = ctx.workspaceId ?? undefined;
-  const gateKeeper = await KeyVaultsGateKeeper.initWithEnvKey();
-
-  return opts.next({
-    ctx: {
-      agentBotProviderModel: new AgentBotProviderModel(ctx.serverDB, ctx.userId, gateKeeper, wsId),
-    },
-  });
-});
-
-// Write variant gates viewers out of bot-provider mutations
-// (create/update/delete + start/test connections). Reads keep the bare proc.
-const agentBotProviderProcedureWrite = agentBotProviderProcedure.use(
-  withScopedPermission('agent:update'),
-);
 
 const BOT_NOT_FOUND_MESSAGE = 'Bot integration not found';
 
@@ -188,13 +174,26 @@ const withFormSettings = (platform: string, settings?: Record<string, unknown>) 
 
 export const agentBotProviderRouter = router({
   listPlatforms: authedProcedure.query(async ({ ctx }) => {
+    const { useMessageGateway } = new GatewayService();
+
+    // A platform that replies over its own connection only runs where something here can hold
+    // that connection (see `resolveReplyConnectionHost`). Elsewhere it is marked, not dropped, so
+    // a bot configured before the deployment changed can still be opened and removed.
     return Promise.all(
-      platformRegistry.listSerializedPlatforms().map((platform) =>
-        withBotPlatformAccessMeta(platform, {
-          userId: ctx.userId,
-          workspaceId: ctx.workspaceId ?? undefined,
-        }),
-      ),
+      platformRegistry.listSerializedPlatforms().map((platform) => {
+        const offered =
+          useMessageGateway && isMessageGatewayHostingUnavailable(platform)
+            ? restrictPlatformToWebhook(platform)
+            : platform;
+        const unavailableReason = getReplyConnectionUnavailableReason(offered);
+        return withBotPlatformAccessMeta(
+          unavailableReason ? { ...offered, unavailableReason } : offered,
+          {
+            userId: ctx.userId,
+            workspaceId: ctx.workspaceId ?? undefined,
+          },
+        );
+      }),
     );
   }),
 
@@ -219,6 +218,14 @@ export const agentBotProviderRouter = router({
         });
       }
 
+      // A bot this deployment can never connect would only fail later, on connect.
+      const unavailableReason = getReplyConnectionUnavailableReason(
+        platformRegistry.getPlatform(input.platform),
+      );
+      if (unavailableReason) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: unavailableReason });
+      }
+
       await assertBotFeatureAccess({
         action: 'manage',
         applicationId: input.applicationId,
@@ -234,7 +241,12 @@ export const agentBotProviderRouter = router({
 
       const payload = {
         ...input,
-        settings: mergeBotSettingsForPersist(input.platform, input.settings),
+        settings: await mergeBotSettingsForCreate(
+          ctx.serverDB,
+          input.agentId,
+          input.platform,
+          input.settings,
+        ),
       };
       assertAccessSettingsForTRPC(payload.settings);
       await assertWatchKeywordsWritable({
@@ -702,6 +714,7 @@ export const agentBotProviderRouter = router({
         await invalidateBotAfterUpdate(
           {
             applicationId: existing.applicationId,
+            credentials: existing.credentials,
             platform: existing.platform,
             settings: existing.settings,
             userId: ctx.userId,

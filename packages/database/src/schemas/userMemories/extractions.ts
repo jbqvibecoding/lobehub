@@ -4,7 +4,7 @@ import { createNanoId } from '../../utils/idGenerator';
 import { createdAt, varchar255 } from '../_helpers';
 import { topics } from '../topic';
 import { users } from '../user';
-import { userMemories } from './index';
+import { userMemories } from './base';
 
 /**
  * An identity memory as it was before a memory extraction changed or removed it: its base row and

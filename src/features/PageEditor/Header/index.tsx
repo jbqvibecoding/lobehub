@@ -22,12 +22,12 @@ import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import ShareButton from '@/business/client/features/PageShare/ShareButton';
-import { DESKTOP_HEADER_ICON_SMALL_SIZE } from '@/const/layoutTokens';
 import { AutoSaveHint } from '@/features/EditorCanvas';
 import { FavoriteButton } from '@/features/Favorites';
 import NavHeader from '@/features/NavHeader';
 import ToggleRightPanelButton from '@/features/RightPanel/ToggleRightPanelButton';
 import { usePermission } from '@/hooks/usePermission';
+import { useHeaderActionSize } from '@/styles/density';
 
 import { useDocumentComments } from '../DocumentComments/context';
 import EditingIndicator from '../EditingIndicator';
@@ -35,6 +35,7 @@ import { useIsHtmlPage } from '../HtmlPageBody';
 import { usePageAgentPanelControl } from '../RightPanel/OverrideContext';
 import { selectors, usePageEditorStore } from '../store';
 import Breadcrumb from './Breadcrumb';
+import PresenceStack from './PresenceStack';
 import { useMenu } from './useMenu';
 
 const styles = createStaticStyles(({ css }) => ({
@@ -47,6 +48,7 @@ const styles = createStaticStyles(({ css }) => ({
 }));
 
 const Header = memo(() => {
+  const headerActionSize = useHeaderActionSize(true);
   const { t } = useTranslation('file');
   const [documentId, emoji, title, parentId, onBack] = usePageEditorStore((s) => [
     s.documentId,
@@ -77,7 +79,7 @@ const Header = memo(() => {
     <NavHeader
       left={
         <>
-          {onBack && <ActionIcon icon={ArrowLeftIcon} onClick={onBack} />}
+          {onBack && <ActionIcon icon={ArrowLeftIcon} size={headerActionSize} onClick={onBack} />}
           {/* Breadcrumb - show when page has a parent folder */}
           {parentId && <Breadcrumb />}
           {/* Show icon and title only when there's no parent folder */}
@@ -116,6 +118,7 @@ const Header = memo(() => {
       right={
         <>
           <EditingIndicator />
+          <PresenceStack />
           {documentId && <ShareButton documentId={documentId} />}
           {/* Three-dot menu */}
           <DropdownMenu
@@ -128,7 +131,7 @@ const Header = memo(() => {
               },
             }}
           >
-            <ActionIcon icon={MoreHorizontal} size={DESKTOP_HEADER_ICON_SMALL_SIZE} />
+            <ActionIcon icon={MoreHorizontal} size={headerActionSize} />
           </DropdownMenu>
           {(comments?.panelAvailable || canExpandRightPanel) && (
             // The framed segment control only earns its frame with two
@@ -145,7 +148,7 @@ const Header = memo(() => {
                 <ActionIcon
                   active={isCommentsPanelOpen}
                   icon={MessageSquareTextIcon}
-                  size={DESKTOP_HEADER_ICON_SMALL_SIZE}
+                  size={headerActionSize}
                   title={t('pageEditor.comments.toggle')}
                   onClick={() => setCommentsPanelOpen(!isCommentsPanelOpen)}
                 />

@@ -2,14 +2,18 @@
 
 import type { QuotaLimitReading } from '@lobechat/heterogeneous-agents/quota';
 import { projectWindows } from '@lobechat/heterogeneous-agents/quota';
-import { createStaticStyles, cssVar, Flexbox, Icon, Tooltip } from '@lobehub/ui';
 import {
   ActionIcon,
   createModal,
+  createStaticStyles,
+  cssVar,
+  Flexbox,
+  Icon,
   type ModalInstance,
   Segmented,
   Skeleton,
   Text,
+  Tooltip,
 } from '@lobehub/ui';
 import dayjs from 'dayjs';
 import type { TFunction } from 'i18next';
@@ -17,6 +21,8 @@ import { t as i18nT } from 'i18next';
 import { BanIcon, ChevronLeftIcon, ChevronRightIcon, InfoIcon, RotateCcwIcon } from 'lucide-react';
 import { memo, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { densityVars } from '@/styles/densityVars';
 
 import {
   buildBurnSeries,
@@ -62,7 +68,7 @@ const styles = createStaticStyles(({ css }) => ({
   layout: css`
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 16px;
+    gap: ${densityVars.sectionGap};
     align-items: start;
 
     /* Nothing to pair the calendar with, so let it take the whole width. */
@@ -313,7 +319,7 @@ const styles = createStaticStyles(({ css }) => ({
   windowListRow: css`
     display: grid;
     grid-template-columns: minmax(0, 1.1fr) minmax(110px, 1fr) minmax(0, 1fr);
-    gap: 12px;
+    gap: ${densityVars.contentGap};
     align-items: center;
 
     min-height: 30px;

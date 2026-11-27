@@ -1,4 +1,5 @@
 import { HETEROGENEOUS_PROVIDER_BINDING_LOCAL_ONLY_ERROR } from '@lobechat/heterogeneous-agents';
+import { CHANNEL_INSTRUCTIONS } from '@lobechat/prompts';
 import { ChatErrorType } from '@lobechat/types';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   publishAgentRuntimeInit: vi.fn(),
   readDeviceSystemInfo: vi.fn(),
   recordStart: vi.fn(),
+  waitForVerifyPlan: vi.fn(),
   resolveDeviceDispatchAuthorizationFailure: vi.fn(),
   resolveSandboxSessionConfig: vi.fn(),
   scheduleTimedOutDispatchConfirmation: vi.fn(),
@@ -33,7 +35,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/server/services/agentRuntime/CompletionLifecycle', () => ({
   CompletionLifecycle: vi.fn().mockImplementation(function () {
-    return { completeOperation: mocks.completeOperation, recordStart: mocks.recordStart };
+    return {
+      completeOperation: mocks.completeOperation,
+      recordStart: mocks.recordStart,
+      waitForVerifyPlan: mocks.waitForVerifyPlan,
+    };
   }),
 }));
 
@@ -71,7 +77,10 @@ vi.mock('@/server/modules/AgentRuntime/factory', () => ({
 
 vi.mock('@/server/services/agentQuota', () => ({
   AgentQuotaService: vi.fn(function () {
-    return { planDeviceRouting: mocks.planDeviceRouting };
+    return {
+      planDeviceRouting: mocks.planDeviceRouting,
+      resolveDeviceRowId: async (id?: string) => (id ? `row-${id}` : undefined),
+    };
   }),
 }));
 
@@ -123,6 +132,7 @@ const createDeps = (overrides: Partial<HeteroDispatchDeps> = {}) => {
     patchRunningOperation: vi.fn().mockResolvedValue(true),
     updateMetadata: vi.fn().mockResolvedValue(undefined),
     updateMetadataEntry: vi.fn().mockResolvedValue(undefined),
+    settleRunningOperation: vi.fn().mockResolvedValue({ status: 'settled' }),
   };
   const deps = {
     bindTopicWorkingDirectory: vi.fn().mockResolvedValue(undefined),
@@ -197,6 +207,7 @@ const finalizeParams = (fields: Record<string, unknown>) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.recordStart.mockResolvedValue(true);
+  mocks.waitForVerifyPlan.mockResolvedValue(undefined);
   mocks.signHeteroOperationJWT.mockResolvedValue('op-jwt');
   mocks.signUserJWT.mockResolvedValue('user-jwt');
   mocks.signHeteroRunJwt.mockResolvedValue('run-jwt');
@@ -215,7 +226,7 @@ beforeEach(() => {
 
 describe('Channel history context', () => {
   it.each([true, false])(
-    'passes history instructions only for a reserved Channel run (%s)',
+    'passes complete Channel instructions only for a reserved Channel run (%s)',
     async (channel) => {
       const { deps } = createDeps();
       const result = await dispatchHeteroAgent(
@@ -232,12 +243,59 @@ describe('Channel history context', () => {
       );
       expect(result.success).toBe(true);
       const dispatched = mocks.dispatchAgentRun.mock.calls[0][0];
-      expect((dispatched.systemContext ?? '').includes('channel history --json')).toBe(channel);
-      expect((dispatched.systemContext ?? '').includes('Only the current request')).toBe(channel);
+      expect((dispatched.systemContext ?? '').includes(CHANNEL_INSTRUCTIONS)).toBe(channel);
       const signed = mocks.signHeteroOperationJWT.mock.calls[0][0];
       expect(signed.capabilities.includes('channel:read')).toBe(channel);
     },
   );
+});
+
+describe('goal management capability', () => {
+  it.each([
+    // The user typed this turn, so "run a goal" works without the `/goal` prefix.
+    ['a chat turn the user sent', { trigger: 'chat' }, true],
+    ['a run the user scheduled', { trigger: 'scheduled', userMessageId: undefined }, true],
+    // A server-started `chat` delivery (background results) writes no user row.
+    ['a chat delivery with no user turn', { trigger: 'chat', userMessageId: undefined }, false],
+    // Goal planning and supervision turns carry no trigger: no goal spawns goals.
+    ['a goal planning turn', { trigger: undefined }, false],
+    ['a bot message', { trigger: 'bot' }, false],
+    ['an inbox wakeup', { trigger: 'inbox' }, false],
+  ])('for %s: %s', async (_, overrides, granted) => {
+    const { deps } = createDeps();
+    await dispatchHeteroAgent(
+      deps,
+      createCtx(
+        {
+          boundDeviceId: 'dev-1',
+          executionTarget: 'device',
+          heterogeneousProvider: { type: 'claude-code' },
+        },
+        { prompt: 'run a goal to polish the mailbox', ...overrides },
+      ),
+      createInput('claude-code'),
+    );
+    const signed = mocks.signHeteroOperationJWT.mock.calls[0][0];
+    expect(signed.capabilities.includes('goal:manage')).toBe(granted);
+  });
+
+  it('keeps it out of a Task run the user did not type', async () => {
+    const { deps } = createDeps();
+    await dispatchHeteroAgent(
+      deps,
+      createCtx(
+        {
+          boundDeviceId: 'dev-1',
+          executionTarget: 'device',
+          heterogeneousProvider: { type: 'claude-code' },
+        },
+        { prompt: 'Implement this step of the goal', trigger: 'chat' },
+      ),
+      createInput('claude-code', { operationTaskId: 'task_1' }),
+    );
+    const signed = mocks.signHeteroOperationJWT.mock.calls[0][0];
+    expect(signed.capabilities).not.toContain('goal:manage');
+  });
 });
 
 describe('dispatchHeteroAgent — preparation failures', () => {
@@ -315,6 +373,27 @@ describe('dispatchHeteroAgent — remote platform agents', () => {
       }),
     );
     expect(mocks.executeToolCall).not.toHaveBeenCalled();
+  });
+
+  it('names the channel when the device is limited to other channels', async () => {
+    const { deps } = createDeps();
+
+    await dispatchHeteroAgent(
+      deps,
+      createCtx(remoteConfig({ boundDeviceId: 'dev-1' }), {
+        canUseDevice: false,
+        deviceAccessReason: 'bot-channel-restricted',
+      }),
+      createInput('openclaw'),
+    );
+
+    expect(mocks.finalizeHeteroDispatchError).toHaveBeenCalledWith(
+      deps,
+      finalizeParams({
+        detail: 'Running agents on a bound device is not allowed in this channel.',
+        message: 'Device access denied',
+      }),
+    );
   });
 
   it('fails when no device is available', async () => {
@@ -547,6 +626,35 @@ describe('dispatchHeteroAgent — local CLI agents', () => {
     expect(result).toMatchObject({ status: 'created', success: true, token: 'user-jwt' });
   });
 
+  // Regression: the plan was started without being waited for, so a dispatch that
+  // returned first lost it and the builder's `plan state` read null all run.
+  it('holds the dispatch until the verify plan has settled', async () => {
+    const { deps } = createDeps();
+    let settlePlan = () => {};
+    mocks.waitForVerifyPlan.mockReturnValue(
+      new Promise<void>((resolve) => {
+        settlePlan = resolve;
+      }),
+    );
+
+    const dispatch = dispatchHeteroAgent(
+      deps,
+      createCtx({
+        boundDeviceId: 'dev-1',
+        executionTarget: 'device',
+        heterogeneousProvider: { type: 'claude-code' },
+      }),
+      createInput('claude-code'),
+    );
+    await vi.waitFor(() => expect(mocks.waitForVerifyPlan).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mocks.dispatchAgentRun).not.toHaveBeenCalled();
+
+    settlePlan();
+    await dispatch;
+    expect(mocks.dispatchAgentRun).toHaveBeenCalledTimes(1);
+  });
+
   it('sends the Claude Code account the agent is routed to', async () => {
     // Without it the device always spawned on its default login, so picking an
     // account in Manage accounts changed nothing for a device-bound agent.
@@ -561,7 +669,11 @@ describe('dispatchHeteroAgent — local CLI agents', () => {
 
     await dispatchHeteroAgent(deps, createCtx(deviceCtx), createInput('claude-code'));
 
-    expect(mocks.planDeviceRouting).toHaveBeenCalledWith('agent-1', { provider: 'claude-code' });
+    // The routing is asked for this device, so its own account choice applies.
+    expect(mocks.planDeviceRouting).toHaveBeenCalledWith('agent-1', {
+      deviceId: 'row-dev-1',
+      provider: 'claude-code',
+    });
     expect(mocks.dispatchAgentRun.mock.calls[0][0].claudeAccountRouting).toEqual(routing);
   });
 
@@ -627,6 +739,38 @@ describe('dispatchHeteroAgent — local CLI agents', () => {
     expect(deps.bindTopicWorkingDirectory).toHaveBeenCalledWith(
       expect.objectContaining({ config: workingDirectoryConfig }),
     );
+  });
+
+  it('spawns in a worktree the app created on the first send, without describing it', async () => {
+    // Fixed before the first turn, so the CLI session starts — and stays — there.
+    const workingDirectoryConfig = {
+      git: { activeWorktree: '/wt/quiet-hill', autoCreated: true, branch: 'lobehub/quiet-hill' },
+      path: '/repo',
+      repoType: 'github' as const,
+      sessionPath: '/wt/quiet-hill',
+    };
+    const { deps, topicModel } = createDeps();
+    topicModel.findById.mockResolvedValue({
+      metadata: {
+        boundDeviceId: 'dev-1',
+        workingDirectory: '/wt/quiet-hill',
+        workingDirectoryConfig,
+      },
+    });
+
+    await dispatchHeteroAgent(
+      deps,
+      createCtx({
+        boundDeviceId: 'dev-1',
+        executionTarget: 'device',
+        heterogeneousProvider: { type: 'claude-code' },
+      }),
+      createInput('claude-code'),
+    );
+
+    const dispatched = mocks.dispatchAgentRun.mock.calls[0][0];
+    expect(dispatched.cwd).toBe('/wt/quiet-hill');
+    expect(dispatched.systemContext ?? '').not.toContain('<active_worktree>');
   });
 
   it('keeps a timed-out dispatch alive and settles it later as a device timeout', async () => {
@@ -851,5 +995,162 @@ describe('dispatchHeteroAgent — cloud sandbox', () => {
 
     expect(mocks.signUserJWT).not.toHaveBeenCalled();
     expect(result).toMatchObject({ success: true, token: undefined });
+  });
+
+  describe('spawn failure', () => {
+    const marketService = { market: { creds: { list: vi.fn().mockResolvedValue({ data: [] }) } } };
+    const credentialMissing =
+      'CLAUDE_CODE_OAUTH_TOKEN 未设置。请先在凭证管理中添加该凭证后再运行 claude-code。';
+    const spawnFailure = async (ctx: ExecRunContext, detail = credentialMissing) => {
+      mocks.spawnHeteroSandbox.mockRejectedValueOnce(new Error(detail));
+      const { deps } = createDeps({ getMarketService: vi.fn().mockResolvedValue(marketService) });
+      await dispatchHeteroAgent(deps, ctx, createInput('claude-code'));
+      await vi.waitFor(() => expect(mocks.finalizeHeteroDispatchError).toHaveBeenCalled());
+      return mocks.finalizeHeteroDispatchError.mock.calls.at(-1)![1];
+    };
+
+    /**
+     * A sender without device access on a device-bound agent is degraded to the
+     * sandbox. When the sandbox then fails, the reply must say why the run was
+     * there at all — otherwise "the sandbox is missing a credential" reads as
+     * nonsense to someone who expected the owner's device.
+     */
+    it('marks a sandbox run that replaced a denied device', async () => {
+      const params = await spawnFailure(
+        createCtx(
+          {
+            boundDeviceId: 'dev-1',
+            executionTarget: 'device',
+            heterogeneousProvider: { type: 'claude-code' },
+          },
+          { canUseDevice: false, deviceAccessReason: 'bot-external-sender' },
+        ),
+      );
+
+      expect(params).toMatchObject({
+        detail: credentialMissing,
+        dispatch: {
+          agentType: 'claude-code',
+          deviceAccessDenied: true,
+          missingCredential: 'CLAUDE_CODE_OAUTH_TOKEN',
+          stage: 'sandbox_spawn',
+        },
+        message: 'Hetero sandbox spawn failed',
+      });
+    });
+
+    const sandboxAgent = () =>
+      createCtx(
+        { executionTarget: 'sandbox', heterogeneousProvider: { type: 'claude-code' } },
+        { canUseDevice: false },
+      );
+
+    it('reads the credential from English wording too', async () => {
+      const params = await spawnFailure(
+        sandboxAgent(),
+        'CLAUDE_CODE_OAUTH_TOKEN is not set. Add it under Credentials and retry.',
+      );
+
+      expect(params.dispatch.missingCredential).toBe('CLAUDE_CODE_OAUTH_TOKEN');
+    });
+
+    it('does not blame device access for an agent that targets the sandbox', async () => {
+      const params = await spawnFailure(sandboxAgent());
+
+      expect(params.dispatch).toEqual({
+        agentType: 'claude-code',
+        missingCredential: 'CLAUDE_CODE_OAUTH_TOKEN',
+        stage: 'sandbox_spawn',
+      });
+    });
+
+    it.each([
+      'E2B_API_KEY is not set; sandbox credential configuration is incomplete',
+      'Gateway Timeout',
+    ])('names no credential for a failure that is not about one (%s)', async (detail) => {
+      const params = await spawnFailure(sandboxAgent(), detail);
+
+      expect(params.dispatch).toEqual({ agentType: 'claude-code', stage: 'sandbox_spawn' });
+    });
+  });
+});
+
+describe('explicit topic-status opt-in', () => {
+  const remoteConfig = (extra: Record<string, unknown> = {}) => ({
+    executionTarget: 'device',
+    heterogeneousProvider: { platformAgentId: 'platform-agent', type: 'openclaw' },
+    ...extra,
+  });
+  it('installs running with its marker before dispatch for an opted-in root event run', async () => {
+    const { deps, topicModel } = createDeps();
+    await dispatchHeteroAgent(
+      deps,
+      createCtx(remoteConfig({ boundDeviceId: 'dev-1' })),
+      createInput('openclaw', { markTopicRunning: true }),
+    );
+    expect(topicModel.updateMetadata).toHaveBeenCalledWith(
+      'topic-1',
+      expect.objectContaining({
+        runningOperation: expect.objectContaining({ operationId: expect.any(String) }),
+      }),
+      { status: 'running' },
+    );
+    expect(topicModel.updateMetadata.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.executeToolCall.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('cleans up an opted-in dispatch error through operation ownership', async () => {
+    const { deps, topicModel } = createDeps();
+    mocks.executeToolCall.mockResolvedValueOnce({
+      success: false,
+      error: 'device refused dispatch',
+    });
+    const result = await dispatchHeteroAgent(
+      deps,
+      createCtx(remoteConfig({ boundDeviceId: 'dev-1' })),
+      createInput('openclaw', { markTopicRunning: true }),
+    );
+    expect(result.error).toBeTruthy();
+    expect(topicModel.settleRunningOperation).toHaveBeenCalledWith(
+      'topic-1',
+      result.operationId,
+      'active',
+    );
+  });
+
+  it('settles an opted-in network exception before rethrowing it', async () => {
+    const { deps, topicModel } = createDeps();
+    mocks.executeToolCall.mockRejectedValueOnce(new Error('device connection failed'));
+    await expect(
+      dispatchHeteroAgent(
+        deps,
+        createCtx(remoteConfig({ boundDeviceId: 'dev-1' })),
+        createInput('openclaw', { markTopicRunning: true }),
+      ),
+    ).rejects.toThrow('device connection failed');
+    expect(topicModel.settleRunningOperation).toHaveBeenCalledWith(
+      'topic-1',
+      expect.stringMatching(/^op_/),
+      'active',
+    );
+  });
+
+  it('settles an opted-in marker write failure before propagating it', async () => {
+    const { deps, topicModel } = createDeps();
+    topicModel.updateMetadata.mockRejectedValueOnce(new Error('marker persistence failed'));
+    await expect(
+      dispatchHeteroAgent(
+        deps,
+        createCtx(remoteConfig({ boundDeviceId: 'dev-1' })),
+        createInput('openclaw', { markTopicRunning: true }),
+      ),
+    ).rejects.toThrow('marker persistence failed');
+    expect(topicModel.settleRunningOperation).toHaveBeenCalledWith(
+      'topic-1',
+      expect.stringMatching(/^op_/),
+      'active',
+    );
+    expect(mocks.executeToolCall).not.toHaveBeenCalled();
   });
 });

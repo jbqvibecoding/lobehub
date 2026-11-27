@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { BOT_WAKE_SETTING_KEYS } from '@/server/services/agentSignal/scenarios/botWake/config';
 import { botWakeFields } from '@/server/services/bot/platforms/botWakeFields';
 import type { FieldSchema } from '@/server/services/bot/platforms/types';
+import { BOT_WAKE_SETTING_KEYS } from '@/server/services/conversationWake/config';
 
 import {
   getSchemaFields,
@@ -17,15 +17,25 @@ const field = (key: string): FieldSchema => ({ key, label: key, type: 'string' }
 describe('groupAccessFields', () => {
   it('splits access into owner identity, conversation and device blocks, in page order', () => {
     const sections = groupAccessFields(
-      ['deviceAllowFrom', 'groupPolicy', 'userId', 'devicePolicy', 'dmPolicy', 'serverId'].map(
-        field,
-      ),
+      [
+        'deviceChannelAllowFrom',
+        'deviceAllowFrom',
+        'groupPolicy',
+        'userId',
+        'deviceChannelPolicy',
+        'devicePolicy',
+        'dmPolicy',
+        'serverId',
+      ].map(field),
     );
 
     expect(sections.map((s) => [s.key, s.fields.map((f) => f.key)])).toEqual([
       ['identity', ['userId', 'serverId']],
       ['conversation', ['dmPolicy', 'groupPolicy']],
-      ['device', ['devicePolicy', 'deviceAllowFrom']],
+      [
+        'device',
+        ['devicePolicy', 'deviceAllowFrom', 'deviceChannelPolicy', 'deviceChannelAllowFrom'],
+      ],
     ]);
   });
 
@@ -92,7 +102,7 @@ describe('groupSettingsFields', () => {
     const groups = groupSettingsFields(
       [
         'charLimit',
-        'botWakeEnabled',
+        'botWakeDisabled',
         'displayToolCalls',
         'botWakeScope',
         'dmPolicy',
@@ -102,7 +112,7 @@ describe('groupSettingsFields', () => {
 
     expect(groups.map((g) => [g.key, g.fields.map((f) => f.key)])).toEqual([
       ['access', ['dmPolicy']],
-      ['wake', ['watchKeywords', 'botWakeEnabled', 'botWakeScope']],
+      ['wake', ['watchKeywords', 'botWakeDisabled', 'botWakeScope']],
       ['reply', ['displayToolCalls']],
       ['advanced', ['charLimit']],
     ]);
@@ -139,7 +149,7 @@ describe('getSchemaFields', () => {
       label: 'settings',
       properties: [
         field('charLimit'),
-        { ...field('botWakeEnabled'), featureFlag: 'enableBotWake' },
+        { ...field('gatedSetting'), featureFlag: 'enableExampleRollout' },
       ],
       type: 'object',
     },
@@ -147,13 +157,12 @@ describe('getSchemaFields', () => {
 
   it('hides a field behind a rollout flag until the flag is on', () => {
     expect(getSchemaFields(schema, 'settings').map((f) => f.key)).toEqual(['charLimit']);
-    expect(getSchemaFields(schema, 'settings', { enableBotWake: false }).map((f) => f.key)).toEqual(
-      ['charLimit'],
-    );
-    expect(getSchemaFields(schema, 'settings', { enableBotWake: true }).map((f) => f.key)).toEqual([
-      'charLimit',
-      'botWakeEnabled',
-    ]);
+    expect(
+      getSchemaFields(schema, 'settings', { enableExampleRollout: false }).map((f) => f.key),
+    ).toEqual(['charLimit']);
+    expect(
+      getSchemaFields(schema, 'settings', { enableExampleRollout: true }).map((f) => f.key),
+    ).toEqual(['charLimit', 'gatedSetting']);
   });
 });
 
@@ -215,8 +224,14 @@ describe('groupWakeFields', () => {
     const sections = groupWakeFields(botWakeFields);
     const keys = sections.flatMap((section) => section.fields.map((f) => f.key));
 
-    expect(sections.map((section) => section.key)).toEqual(['judgement', 'channels', 'pace']);
-    expect(sections[0].fields.map((f) => f.key)).toEqual([
+    expect(sections.map((section) => section.key)).toEqual([
+      'switch',
+      'judgement',
+      'channels',
+      'pace',
+    ]);
+    expect(sections[0].fields.map((f) => f.key)).toEqual([K.disabled]);
+    expect(sections[1].fields.map((f) => f.key)).toEqual([
       K.duties,
       K.dutiesThreshold,
       K.customInstructionsEnabled,
@@ -225,7 +240,7 @@ describe('groupWakeFields', () => {
     expect(keys.filter((key) => /Proactive|Initiate/.test(key))).toEqual([]);
   });
 
-  it('shows only the keywords until the rollout reaches the user', () => {
+  it('shows only the keywords on a platform without the bot-wake options', () => {
     expect(keysOf(['watchKeywords'].map(field))).toEqual([['keywords', ['watchKeywords']]]);
   });
 
@@ -236,16 +251,12 @@ describe('groupWakeFields', () => {
     ]);
   });
 
-  it('places every option the runtime reads, apart from the hidden master switch', () => {
-    const placed = groupWakeFields(Object.values(K).map(field)).flatMap((section) =>
-      section.fields.map((f) => f.key),
-    );
+  it('places every option the runtime reads, the master switch in a block of its own first', () => {
+    const sections = groupWakeFields(Object.values(K).map(field));
+    const placed = sections.flatMap((section) => section.fields.map((f) => f.key));
 
-    expect(placed.sort()).toEqual(
-      Object.values(K)
-        .filter((key) => key !== K.enabled)
-        .sort(),
-    );
+    expect(sections[0]).toMatchObject({ fields: [{ key: K.disabled }], key: 'switch' });
+    expect(placed.sort()).toEqual(Object.values(K).sort());
   });
 });
 

@@ -26,16 +26,19 @@ import { memo, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import AsyncError from '@/components/AsyncError';
+import {
+  getBoundDevicePresence,
+  getDeviceSelectState,
+} from '@/features/HeterogeneousAgent/ExecutionEnvironment/boundDevicePresence';
 import { deviceService } from '@/services/device';
 import { useAgentStore } from '@/store/agent';
 import { isDevicePresenceUnknown, useDeviceList } from '@/store/device';
-
-import { getBoundDevicePresence, getDeviceSelectState } from './boundDevicePresence';
+import { densityVars } from '@/styles/densityVars';
 
 const styles = createStaticStyles(({ css }) => ({
   card: css`
-    padding-block: 16px 4px;
-    padding-inline: 16px;
+    padding-block: ${densityVars.cardPadding} 4px;
+    padding-inline: ${densityVars.cardPadding};
     border: 1px solid ${cssVar.colorBorderSecondary};
     border-radius: ${cssVar.borderRadiusLG};
 
@@ -43,14 +46,14 @@ const styles = createStaticStyles(({ css }) => ({
   `,
   cardHeader: css`
     display: flex;
-    gap: 12px;
+    gap: ${densityVars.contentGap};
     align-items: center;
     justify-content: space-between;
 
-    padding-block-end: 12px;
+    padding-block-end: ${densityVars.contentGap};
   `,
   title: css`
-    font-size: 14px;
+    font-size: ${densityVars.fontSize};
     font-weight: 500;
   `,
   detailList: css`
@@ -58,7 +61,7 @@ const styles = createStaticStyles(({ css }) => ({
   `,
   detailRow: css`
     display: flex;
-    gap: 16px;
+    gap: ${densityVars.sectionGap};
     align-items: center;
 
     min-height: 44px;

@@ -16,9 +16,11 @@ import pMap from 'p-map';
 import { AgentModel } from '@/database/models/agent';
 import { GoalGraphModel } from '@/database/models/goalGraph';
 import { TaskModel } from '@/database/models/task';
+import { TaskLabelModel } from '@/database/models/taskLabel';
 import { TaskTopicModel } from '@/database/models/taskTopic';
 import { UserModel } from '@/database/models/user';
 import { VerifyRunModel } from '@/database/models/verifyRun';
+import { WorkspaceMemberModel } from '@/database/models/workspaceMember';
 import type { LobeChatDatabase } from '@/database/type';
 
 import { extractFileIdsFromEditorData } from '../file/extractFileIdsFromEditorData';
@@ -107,6 +109,7 @@ export class TaskDetailService {
       workspace,
       acceptance,
       goal,
+      labels,
     ] = await Promise.all([
       this.taskModel.findAllDescendants(task.id),
       this.taskModel.getDependencies(task.id),
@@ -119,6 +122,7 @@ export class TaskDetailService {
       new GoalGraphModel(this.db, this.userId, this.workspaceId)
         .findGoalByTaskId(task.id)
         .catch(() => undefined),
+      new TaskLabelModel(this.db, this.userId, this.workspaceId).getTaskLabels(task.id),
     ]);
 
     // What the reader is shown, not what was written: a burst of edits to one
@@ -523,9 +527,11 @@ export class TaskDetailService {
       id: task.id,
       identifier: task.identifier,
       instruction: task.instruction,
+      labels,
       name: task.name,
       parent,
       priority: task.priority,
+      projectId: task.projectId,
       startedAt: task.startedAt ? new Date(task.startedAt).toISOString() : undefined,
       status: task.status,
       userId: task.assigneeUserId,
@@ -551,9 +557,15 @@ export class TaskDetailService {
   ): Promise<Map<string, TaskDetailActivityAuthor>> {
     const map = new Map<string, TaskDetailActivityAuthor>();
 
-    const [agentRows, userRows] = await Promise.all([
+    const [agentRows, userRows, nicknames] = await Promise.all([
       this.agentModel.getAgentAvatarsByIds([...agentIds]),
       UserModel.findByIds(this.db, [...userIds]),
+      // Inside a workspace, people go by the nickname they set there.
+      this.workspaceId
+        ? new WorkspaceMemberModel(this.db, this.userId).getNicknames(this.workspaceId, [
+            ...userIds,
+          ])
+        : new Map<string, string>(),
     ]);
 
     // An agent is labelled by its name, with `title` (its role) as the
@@ -564,7 +576,12 @@ export class TaskDetailService {
       map.set(a.id, { avatar: a.avatar, id: a.id, name: agentDisplayName(a), type: 'agent' });
     }
     for (const u of userRows) {
-      map.set(u.id, { avatar: u.avatar, id: u.id, name: u.fullName || u.username, type: 'user' });
+      map.set(u.id, {
+        avatar: u.avatar,
+        id: u.id,
+        name: nicknames.get(u.id) || u.fullName || u.username,
+        type: 'user',
+      });
     }
 
     return map;

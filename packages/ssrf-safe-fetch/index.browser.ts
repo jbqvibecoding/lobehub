@@ -17,6 +17,27 @@ export interface SSRFOptions {
   maxContentLength?: number;
 }
 
+/** Kept for API parity with the server version; the browser fetch never throws it. */
+export class SSRFBlockedError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'SSRFBlockedError';
+  }
+}
+
+/** Kept for API parity with the server version. */
+export const isSSRFBlockedError = (error: unknown): boolean => {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (current instanceof Error && !seen.has(current)) {
+    if (current instanceof SSRFBlockedError || current.message.startsWith('SSRF blocked'))
+      return true;
+    seen.add(current);
+    current = current.cause;
+  }
+  return false;
+};
+
 /**
  * Browser-safe fetch implementation
  * Uses native fetch API in browser environments
@@ -33,3 +54,17 @@ export const ssrfSafeFetch = async (
 ): Promise<Response> => {
   return fetch(url, options);
 };
+
+/**
+ * Browser parity stub. In the browser the origin enforces connectivity, so
+ * this only validates that the URL parses.
+ */
+export const assertSsrfSafeUrl = async (url: string, _ssrfOptions?: SSRFOptions): Promise<void> => {
+  if (!URL.canParse(url)) throw new TypeError(`Invalid URL: ${url}`);
+};
+
+/**
+ * Browser parity stub. Agents are a Node.js transport concept; the browser
+ * never constructs one, so this always returns `undefined`.
+ */
+export const ssrfSafeAgent = (_url: string, _ssrfOptions?: SSRFOptions) => undefined;

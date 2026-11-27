@@ -1,9 +1,11 @@
 import type {
   ChannelAuditDetails,
+  ChannelConfig,
   ChannelExecutionConfig,
   ChannelInputManifest,
   ChannelJobBlockCode,
   ChannelJobStatus,
+  ChannelJobWake,
   ChannelMemberActorType,
   ChannelMemberConfig,
   ChannelMemberGrantMetadata,
@@ -80,6 +82,18 @@ export const channels = pgTable(
 
     /** Bound Agent for a direct conversation; NULL for a group. Deleted with the Agent. */
     agentId: text('agent_id').references(() => agents.id, { onDelete: 'cascade' }),
+    /**
+     * The other person of a personal conversation between two contacts; `userId` is the one who
+     * opened it. Both are owner members. Deleted with either account. One conversation per pair
+     * is kept by the application, which serializes opening it.
+     */
+    peerUserId: text('peer_user_id').references(() => users.id, { onDelete: 'cascade' }),
+    /**
+     * The two Agents of a conversation between Agents (`agentA:agentB`, sorted), opened when one
+     * of `userId`'s Agents asks another. `userId` is its owner member and the execution identity
+     * of both Agents; it watches the exchange without being part of it.
+     */
+    agentPairKey: text('agent_pair_key'),
 
     title: text('title').notNull(),
     /** Last allocated message sequence; incremented under the row lock when a message lands. */
@@ -92,6 +106,8 @@ export const channels = pgTable(
      * Ignored for personal channels.
      */
     visibility: text('visibility').$type<ChannelVisibility>().notNull().default('private'),
+    /** Validated channel settings; NULL uses the defaults. */
+    config: jsonb('config').$type<ChannelConfig>(),
     metadata: jsonb('metadata').$type<ChannelMetadata>().default({}),
     /** Recycle bin — see `schemas/trash.ts`. */
     ...softDeleteColumns(),
@@ -105,6 +121,10 @@ export const channels = pgTable(
     uniqueIndex('channels_direct_unique')
       .on(t.agentId, t.userId, sql`coalesce(${t.workspaceId}, '')`)
       .where(sql`${t.agentId} IS NOT NULL`),
+    // One conversation per Agent pair, person and scope, like the direct conversation.
+    uniqueIndex('channels_agent_pair_unique')
+      .on(t.agentPairKey, t.userId, sql`coalesce(${t.workspaceId}, '')`)
+      .where(sql`${t.agentPairKey} IS NOT NULL`),
     check(
       'channels_direct_visibility_check',
       sql`${t.agentId} IS NULL OR ${t.visibility} = 'private'`,
@@ -114,6 +134,30 @@ export const channels = pgTable(
       .where(sql`${t.projectId} IS NOT NULL`),
     index('channels_workspace_visibility_idx').on(t.workspaceId, t.visibility),
   ],
+);
+
+/**
+ * A person's own sidebar section for organizing channels (Slack-style). Sections belong to one
+ * person in one scope: channels are shared, so how each member files them is not a channel
+ * property. Built-in sections (pinned, channels, direct messages) are derived, not stored.
+ */
+export const channelSections = pgTable(
+  'channel_sections',
+  {
+    id: uuid('id').defaultRandom().primaryKey().notNull(),
+    userId: text('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** NULL for the personal scope. */
+    workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+
+    name: text('name').notNull(),
+    sort: integer('sort'),
+    collapsed: boolean('collapsed').notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('channel_sections_user_id_workspace_id_idx').on(t.userId, t.workspaceId)],
 );
 
 /**
@@ -137,6 +181,17 @@ export const channelMembers = pgTable(
     role: text('role').$type<ChannelMemberRole>(),
     /** Highest sequence this person has read in the main channel. */
     lastReadSequence: integer('last_read_sequence'),
+    /** This person's sidebar section; NULL falls back to the built-in section. */
+    sectionId: uuid('section_id').references(() => channelSections.id, { onDelete: 'set null' }),
+    /**
+     * @deprecated Unused duplicate of `pinnedAt`, which carries both the pin and its order. Kept
+     * only so dropping it needs no migration; read and write `pinnedAt` instead.
+     */
+    pinned: boolean('pinned').notNull().default(false),
+    /** Hidden from this person's sidebar until new activity reaches them. */
+    hidden: boolean('hidden').notNull().default(false),
+    /** When this person pinned the conversation atop their own list; NULL when not pinned. */
+    pinnedAt: timestamptz('pinned_at'),
 
     // Agent members
     /** NULL after Agent deletion; keep membership and authored history. */
@@ -159,6 +214,9 @@ export const channelMembers = pgTable(
       .on(t.channelId, t.userId)
       .where(sql`${t.userId} IS NOT NULL`),
     index('channel_members_user_id_idx').on(t.userId),
+    index('channel_members_section_id_idx')
+      .on(t.sectionId)
+      .where(sql`${t.sectionId} IS NOT NULL`),
     index('channel_members_agent_id_idx').on(t.agentId),
     // One constraint per rule, so a new actor type adds constraints instead of rewriting these.
     check('channel_members_actor_type_check', sql`${t.actorType} IN ('user', 'agent')`),
@@ -179,6 +237,11 @@ export const channelMembers = pgTable(
     check(
       'channel_members_agent_id_owner_check',
       sql`${t.agentId} IS NULL OR ${t.actorType} = 'agent'`,
+    ),
+    // Sidebar placement is a person's view; Agent members have no sidebar.
+    check(
+      'channel_members_section_id_owner_check',
+      sql`${t.sectionId} IS NULL OR ${t.actorType} = 'user'`,
     ),
     check(
       'channel_members_config_owner_check',
@@ -305,7 +368,10 @@ export const channelMessages = pgTable(
     content: text('content').notNull(),
     /** Actual human sender, not the owner/requester of an Agent reply. */
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
-    /** Actual Agent sender. Author deletion retains group history and clears its reference. */
+    /**
+     * Actual Agent sender: of a reply, or of a request one Agent sent another in their
+     * conversation. Author deletion retains group history and clears its reference.
+     */
     agentId: text('agent_id').references(() => agents.id, { onDelete: 'set null' }),
     /** Mentioned member ids. Mentioned Agents run; mentioned people are only notified. */
     mentions: jsonb('mentions').$type<string[]>().notNull().default([]),
@@ -353,10 +419,6 @@ export const channelMessages = pgTable(
       'channel_messages_user_sender_check',
       sql`${t.routingStatus} <> 'reply' OR ${t.userId} IS NULL`,
     ),
-    check(
-      'channel_messages_agent_sender_check',
-      sql`${t.routingStatus} = 'reply' OR ${t.agentId} IS NULL`,
-    ),
   ],
 );
 
@@ -386,6 +448,9 @@ export const channelMessageFiles = pgTable(
  * topic (continued when safe); execution status, errors, usage and traces live on the
  * operation. The job keeps only what the operation cannot: the frozen input, the execution
  * lease, the writer lock and publication of the final reply.
+ *
+ * The retired delivery_key column is intentionally absent from the ORM schema. Migration
+ * 0197 retains it physically for older binaries; a later custom migration can remove it.
  */
 export const channelJobs = pgTable(
   'channel_jobs',
@@ -399,8 +464,6 @@ export const channelJobs = pgTable(
     threadId: text('thread_id'),
     /** Member who triggered the request; its user is the execution identity. */
     requesterMemberId: uuid('requester_member_id').notNull(),
-    /** Separates redeliveries of the same message to the same member, e.g. after a retry. */
-    deliveryKey: text('delivery_key').notNull().default('initial'),
     /**
      * Channel outcome of this delivery. It may settle while the writer is still held, e.g. a
      * stop cancels the job before the process exits; the locks follow `writerHeld`.
@@ -419,6 +482,8 @@ export const channelJobs = pgTable(
     operationId: text('operation_id')
       .unique()
       .references((): AnyPgColumn => agentOperations.id, { onDelete: 'set null' }),
+    /** Why the member was woken, frozen at delivery. NULL means an owed answer (`mention`). */
+    wake: jsonb('wake').$type<ChannelJobWake>(),
     /** Where the run's input ends, frozen at claim; later messages belong to the next job. */
     manifest: jsonb('manifest').$type<ChannelInputManifest>(),
     /** Effective Agent settings and Channel environment frozen at claim time. */
@@ -441,7 +506,7 @@ export const channelJobs = pgTable(
     /**
      * Set when termination could not be confirmed in time (INC-049). Publication is revoked so
      * the member may run again, though not in the same device directory until the stop is
-     * confirmed: isolation frees the member lock but never `writerHeld`.
+     * confirmed: isolation frees the member's branch but never `writerHeld`.
      */
     isolatedAt: timestamptz('isolated_at'),
     /** Final answer saved by the run; immutable once set. */
@@ -455,7 +520,7 @@ export const channelJobs = pgTable(
   },
   (t) => [
     unique('channel_jobs_scope_unique').on(t.channelId, t.id),
-    uniqueIndex('channel_jobs_delivery_unique').on(t.messageId, t.memberId, t.deliveryKey),
+    uniqueIndex('channel_jobs_delivery_unique').on(t.messageId, t.memberId),
     index('channel_jobs_channel_status_idx').on(t.channelId, t.status),
     index('channel_jobs_continuation_idx').on(
       t.memberId,
@@ -468,20 +533,14 @@ export const channelJobs = pgTable(
     index('channel_jobs_lease_expires_idx')
       .on(t.leaseExpiresAt)
       .where(sql`${t.writerHeld} AND ${t.isolatedAt} IS NULL`),
-    /** At most one writer per member. */
-    uniqueIndex('channel_jobs_active_member_unique')
-      .on(t.memberId)
-      .where(sql`${t.writerHeld} AND ${t.isolatedAt} IS NULL`),
     /**
-     * At most one writer per device directory, across all channels. Unlike the member lock,
-     * isolation does not release it: only physical stop confirmation proves the old process
-     * has left the directory.
+     * Live writers by device directory. The locks themselves are application rules checked in
+     * `claimJob` (one writer per member and branch under the channel lock, one per device
+     * directory under an advisory lock), not database constraints, so they can change freely.
      */
-    uniqueIndex('channel_jobs_active_directory_unique')
+    index('channel_jobs_active_directory_idx')
       .on(t.deviceId, t.workingDirectory)
-      .where(
-        sql`${t.deviceId} IS NOT NULL AND ${t.workingDirectory} IS NOT NULL AND ${t.writerHeld}`,
-      ),
+      .where(sql`${t.writerHeld}`),
     foreignKey({
       columns: [t.channelId, t.memberId],
       foreignColumns: [channelMembers.channelId, channelMembers.id],
@@ -508,6 +567,7 @@ export const channelJobs = pgTable(
 export type ChannelItem = typeof channels.$inferSelect;
 export type NewChannel = typeof channels.$inferInsert;
 export type ChannelMemberItem = typeof channelMembers.$inferSelect;
+export type ChannelSectionItem = typeof channelSections.$inferSelect;
 export type NewChannelMember = typeof channelMembers.$inferInsert;
 export type ChannelMemberGrantItem = typeof channelMemberGrants.$inferSelect;
 export type ChannelThreadItem = typeof channelThreads.$inferSelect;

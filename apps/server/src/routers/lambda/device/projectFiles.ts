@@ -2,10 +2,26 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { requireWorkspaceRoleWhenScoped } from '@/business/server/trpc-middlewares/workspaceAuth';
+import { AgentModel } from '@/database/models/agent';
+import { TopicModel } from '@/database/models/topic';
+import type { LobeChatDatabase } from '@/database/type';
 import { router } from '@/libs/trpc/lambda';
-import { deviceGateway, isValidDirectoryName } from '@/server/services/deviceGateway';
+import {
+  deviceGateway,
+  isPathWithinRoot,
+  isValidDirectoryName,
+} from '@/server/services/deviceGateway';
 
-import { assertWorkspaceRootApproved, registerDeviceSkillRoots } from '../deviceWorkspaceGuard';
+import {
+  assertCanUseTopicTargets,
+  assertCanViewTopicTargets,
+} from '../_helpers/conversationResourceGuard';
+import {
+  assertWorkspaceRootApproved,
+  findRegisteredWorkspaceRoot,
+  registerDeviceMemoryRoot,
+  registerDeviceSkillRoots,
+} from '../deviceWorkspaceGuard';
 import { assertDeviceOperable } from './guards';
 import { deviceProcedure } from './procedures';
 
@@ -13,6 +29,8 @@ const workspaceFileInput = z.object({
   deviceId: z.string(),
   workingDirectory: z.string(),
 });
+
+const topicFileInput = workspaceFileInput.extend({ topicId: z.string().min(1).optional() });
 
 /**
  * `deviceProcedure` that additionally requires `workingDirectory` to be an
@@ -31,12 +49,63 @@ const workspaceFileProcedure = deviceProcedure.input(workspaceFileInput).use(asy
   return opts.next();
 });
 
+/** Use the persisted topic checkout when it isn't independently registered on the device. */
+const topicFileProcedure = deviceProcedure.input(topicFileInput).use(async (opts) => {
+  const { ctx } = opts;
+  const { deviceId, topicId, workingDirectory } = topicFileInput.parse(await opts.getRawInput());
+  try {
+    await assertWorkspaceRootApproved(ctx.deviceModel, deviceId, workingDirectory, ctx.workspaceId);
+  } catch (error) {
+    if (!topicId || !(error instanceof TRPCError) || error.code !== 'FORBIDDEN') throw error;
+
+    const { serverDB: db, userId, workspaceId } = ctx;
+    const topicModel = new TopicModel(db, userId, workspaceId);
+    const topic = await topicModel.findById(topicId);
+    const config = topic?.metadata?.workingDirectoryConfig;
+    const checkout = config?.git?.activeWorktree;
+    if (
+      !config ||
+      !checkout ||
+      topic?.metadata?.boundDeviceId !== deviceId ||
+      !isPathWithinRoot(checkout, workingDirectory) ||
+      !isPathWithinRoot(workingDirectory, checkout)
+    )
+      throw error;
+
+    const assertTopicAccess =
+      opts.type === 'query' ? assertCanViewTopicTargets : assertCanUseTopicTargets;
+    await assertTopicAccess(
+      {
+        db,
+        grantedPermissions: (ctx as { workspacePermissionCodes?: string[] })
+          .workspacePermissionCodes,
+        userId,
+        workspaceId,
+      },
+      [topicId],
+    );
+    const approvedRoot = await findRegisteredWorkspaceRoot(
+      ctx.deviceModel,
+      deviceId,
+      config.path,
+      workspaceId,
+    );
+    if (!approvedRoot) throw error;
+
+    return opts.next({
+      ctx: { worktree: { approvedRoot, sourcePath: config.path, worktreePath: workingDirectory } },
+    });
+  }
+
+  return opts.next({ ctx: { worktree: undefined } });
+});
+
 /**
- * `workspaceFileProcedure` for routes that change files on the device. In a
+ * `topicFileProcedure` for routes that change files on the device. In a
  * shared workspace a read-only viewer may browse the tree but not alter it, so
  * writes also need at least the `member` role; personal mode stays open.
  */
-const workspaceFileWriteProcedure = workspaceFileProcedure.use(
+const workspaceFileWriteProcedure = topicFileProcedure.use(
   requireWorkspaceRoleWhenScoped('member'),
 );
 
@@ -50,6 +119,28 @@ const workspaceFileWriteProcedure = workspaceFileProcedure.use(
 const workspacePublishProcedure = workspaceFileProcedure.use(
   requireWorkspaceRoleWhenScoped('member'),
 );
+
+/**
+ * The agent's own `CLAUDE_CONFIG_DIR` / `CLAUDE_CODE_PROJECT_DIR_NAME`, which its
+ * runs spread over the device env. Read from the stored agent config, never the
+ * request: the memory directory they point at becomes an approved root.
+ */
+const resolveAgentClaudeMemoryEnv = async (
+  ctx: { serverDB: LobeChatDatabase; userId: string; workspaceId?: string },
+  agentId: string,
+) => {
+  const agencyConfig = await new AgentModel(
+    ctx.serverDB,
+    ctx.userId,
+    ctx.workspaceId,
+  ).getAgentAgencyConfig(agentId);
+  const env = agencyConfig?.heterogeneousProvider?.env;
+  if (!env) return undefined;
+  return {
+    CLAUDE_CODE_PROJECT_DIR_NAME: env.CLAUDE_CODE_PROJECT_DIR_NAME,
+    CLAUDE_CONFIG_DIR: env.CLAUDE_CONFIG_DIR,
+  };
+};
 
 export const projectFilesRouter = router({
   /**
@@ -191,9 +282,9 @@ export const projectFilesRouter = router({
     }),
   /**
    * Read-only local file preview for a file on a remote device. The web client
-   * receives render data, not a `localfile://` URL; saving remains unsupported.
+   * receives the serialized preview directly.
    */
-  getLocalFilePreview: workspaceFileProcedure
+  getLocalFilePreview: topicFileProcedure
     .input(
       z.object({
         accept: z.enum(['image']).optional(),
@@ -208,6 +299,7 @@ export const projectFilesRouter = router({
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
         workingDirectory: input.workingDirectory,
+        ...(ctx.worktree && { worktree: ctx.worktree }),
       });
     }),
   copyAssetForPublish: workspacePublishProcedure
@@ -248,14 +340,50 @@ export const projectFilesRouter = router({
         workspaceId: ctx.workspaceId,
       });
 
-      // Register device-scoped skill roots (~/.agents/skills / ~/.claude/skills)
+      // Register skill roots outside the scanned directory — device-scoped
+      // (~/.agents/skills, …) and project skills found in a parent directory —
       // in an in-memory cache so subsequent getLocalFilePreview calls pass the
       // workspace root guard without polluting the UI's working-directory list.
+      // A parent-level grant is tied to the scanned project, so it holds only
+      // while that project is an approved root.
       if (result?.skills) {
-        const skillRoots = [
-          ...new Set(result.skills.filter((s) => s.scope === 'device').map((s) => s.previewRoot)),
-        ].filter(Boolean);
-        registerDeviceSkillRoots(input.deviceId, skillRoots);
+        registerDeviceSkillRoots(
+          input.deviceId,
+          result.skills.flatMap((s) => {
+            if (s.scope === 'device') return [{ root: s.previewRoot }];
+            if (s.previewRoot !== input.scope)
+              return [{ projectRoot: input.scope, root: s.previewRoot }];
+            return [];
+          }),
+        );
+      }
+
+      return result ?? null;
+    }),
+  /**
+   * Claude Code's auto memory for a project on a remote device, via the
+   * device's `listClaudeCodeMemory` RPC. Powers the workspace panel's Memory
+   * tab in device mode; `agentId` applies that agent's own Claude Code config
+   * dir. The project must be an approved root; the memory directory it maps to
+   * is then approved for preview and save while the project stays approved.
+   * Returns `null` when offline.
+   */
+  listClaudeCodeMemory: workspaceFileProcedure
+    .input(z.object({ agentId: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      const result = await deviceGateway.listClaudeCodeMemory({
+        deviceId: input.deviceId,
+        env: input.agentId ? await resolveAgentClaudeMemoryEnv(ctx, input.agentId) : undefined,
+        scope: input.workingDirectory,
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+      });
+
+      if (result?.memoryDir && result.files.length > 0) {
+        registerDeviceMemoryRoot(input.deviceId, {
+          memoryDir: result.memoryDir,
+          projectRoot: input.workingDirectory,
+        });
       }
 
       return result ?? null;
@@ -277,6 +405,7 @@ export const projectFilesRouter = router({
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
         workingDirectory: input.workingDirectory,
+        ...(ctx.worktree && { worktree: ctx.worktree }),
       });
     }),
   /**
@@ -298,6 +427,7 @@ export const projectFilesRouter = router({
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
         workingDirectory: input.workingDirectory,
+        ...(ctx.worktree && { worktree: ctx.worktree }),
       });
     }),
   /**
@@ -319,6 +449,7 @@ export const projectFilesRouter = router({
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
         workingDirectory: input.workingDirectory,
+        ...(ctx.worktree && { worktree: ctx.worktree }),
       });
     }),
   /**
@@ -340,6 +471,7 @@ export const projectFilesRouter = router({
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
         workingDirectory: input.workingDirectory,
+        ...(ctx.worktree && { worktree: ctx.worktree }),
       });
     }),
   /**
@@ -355,6 +487,7 @@ export const projectFilesRouter = router({
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
         workingDirectory: input.workingDirectory,
+        ...(ctx.worktree && { worktree: ctx.worktree }),
       });
     }),
   /**
@@ -376,6 +509,7 @@ export const projectFilesRouter = router({
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
         workingDirectory: input.workingDirectory,
+        ...(ctx.worktree && { worktree: ctx.worktree }),
       });
     }),
   /**
@@ -391,6 +525,7 @@ export const projectFilesRouter = router({
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
         workingDirectory: input.workingDirectory,
+        ...(ctx.worktree && { worktree: ctx.worktree }),
       });
     }),
   /**

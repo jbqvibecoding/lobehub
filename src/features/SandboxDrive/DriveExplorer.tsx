@@ -15,6 +15,8 @@ import {
 import { cssVar } from '@lobehub/ui/stylex/cssVar.stylex';
 import * as stylex from '@stylexjs/stylex';
 import {
+  DownloadIcon,
+  EyeIcon,
   FolderPlusIcon,
   HardDriveIcon,
   LockIcon,
@@ -27,6 +29,7 @@ import {
 import { memo, type ReactNode, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { getActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import FileIcon from '@/components/FileIcon';
 import { describeError } from '@/features/EnvironmentManager/errorMessage';
 import {
@@ -37,7 +40,9 @@ import {
   openRenameFolderModal,
 } from '@/features/WorkingDirectory';
 import { sandboxStorageService } from '@/services/sandboxStorage';
+import { densityTokens } from '@/styles/density.stylex';
 
+import { openDriveFilePreview } from './DriveFilePreview';
 import {
   entryKind,
   entryModified,
@@ -45,7 +50,8 @@ import {
   entrySize,
   sortDriveEntries,
 } from './entryColumns';
-import { useDriveFiles, useRefreshDrive } from './useDriveData';
+import { useDriveFiles, useRefreshDrive, useRemeasureDrive } from './useDriveData';
+import { useDriveDownload } from './useDriveDownload';
 
 /**
  * The columns after the name — size, kind, then date modified — fixed so
@@ -94,7 +100,7 @@ const styles = stylex.create({
     borderBlockEndStyle: 'solid',
     borderBlockEndWidth: 1,
     paddingBlock: 6,
-    paddingInline: 16,
+    paddingInline: densityTokens['--lobe-density-card-padding'],
   },
   muted: {
     color: cssVar.colorTextTertiary,
@@ -107,7 +113,7 @@ const styles = stylex.create({
     borderRadius: cssVar.borderRadius,
     minHeight: 40,
     paddingBlock: 4,
-    paddingInline: 12,
+    paddingInline: densityTokens['--lobe-density-content-gap'],
   },
   toolbar: {
     borderBlockEndColor: cssVar.colorBorderSecondary,
@@ -115,7 +121,7 @@ const styles = stylex.create({
     borderBlockEndWidth: 1,
     minHeight: 48,
     paddingBlock: 8,
-    paddingInline: 12,
+    paddingInline: densityTokens['--lobe-density-content-gap'],
   },
 });
 
@@ -130,7 +136,8 @@ interface DriveExplorerProps {
 /**
  * One drive, browsed like a desktop file manager's list view: a header, then
  * each folder and file with its icon, when it changed, its size and its kind;
- * a new folder, rename and delete.
+ * a new folder, rename, delete and download — a file as it is, a folder as a
+ * zip. Opening a file previews it the way the resource library does.
  *
  * Every folder is an ordinary one. A folder a code environment initialized is
  * a checkout like any other — environments are one-time initializers — so
@@ -142,6 +149,8 @@ const DriveExplorer = memo<DriveExplorerProps>(({ drive, isWorkspace, toolbarExt
   const [creating, setCreating] = useState(false);
   const files = useDriveFiles(drive, path);
   const refreshDrive = useRefreshDrive();
+  const remeasureDrive = useRemeasureDrive();
+  const download = useDriveDownload(drive);
 
   const tSetting = (key: string, options?: Record<string, unknown>) =>
     (t as (key: string, options?: Record<string, unknown>) => string)(key, {
@@ -186,6 +195,8 @@ const DriveExplorer = memo<DriveExplorerProps>(({ drive, isWorkspace, toolbarExt
       okButtonProps: { danger: true },
       okText: t('drive.explorer.delete'),
       onOk: async () => {
+        // The workspace the delete is made in; see `useRemeasureDrive`.
+        const workspaceId = getActiveWorkspaceId();
         try {
           await sandboxStorageService.removeFile({
             drive,
@@ -193,6 +204,9 @@ const DriveExplorer = memo<DriveExplorerProps>(({ drive, isWorkspace, toolbarExt
             recursive: entry.isDirectory,
           });
           await refreshDrive();
+          // See `useRemeasureDrive`: the usage figure would otherwise stay at
+          // what was measured before the delete.
+          void remeasureDrive(drive, workspaceId);
         } catch (error) {
           failed(error, t('workingDirectory.drive.actionFailed', { ns: 'device' }));
         }
@@ -201,6 +215,9 @@ const DriveExplorer = memo<DriveExplorerProps>(({ drive, isWorkspace, toolbarExt
     });
 
   const scope = drive === 'public' && isWorkspace ? 'public' : 'personal';
+
+  const preview = (entry: { name: string; path: string }) =>
+    openDriveFilePreview({ drive, entry, onDownload: () => void download(entry) });
 
   const menuFor = (entry: { isDirectory: boolean; name: string; path: string }) => (
     <span
@@ -211,6 +228,22 @@ const DriveExplorer = memo<DriveExplorerProps>(({ drive, isWorkspace, toolbarExt
       <DropdownMenu
         placement={'bottomRight'}
         items={[
+          ...(entry.isDirectory
+            ? []
+            : [
+                {
+                  icon: <Icon icon={EyeIcon} />,
+                  key: 'preview',
+                  label: t('drive.explorer.preview'),
+                  onClick: () => preview(entry),
+                },
+              ]),
+          {
+            icon: <Icon icon={DownloadIcon} />,
+            key: 'download',
+            label: t(entry.isDirectory ? 'drive.explorer.downloadZip' : 'drive.explorer.download'),
+            onClick: () => void download(entry),
+          },
           ...(entry.isDirectory
             ? [
                 {
@@ -360,29 +393,26 @@ const DriveExplorer = memo<DriveExplorerProps>(({ drive, isWorkspace, toolbarExt
           </Flexbox>
         ) : (
           entries.map((entry) => {
-            const open = entry.isDirectory ? () => setPath(entry.path) : undefined;
+            // A folder opens in place; a file opens its preview.
+            const open = entry.isDirectory ? () => setPath(entry.path) : () => preview(entry);
 
             return (
               <Flexbox
                 horizontal
                 align={'center'}
-                className={stylex.props(styles.row, open && styles.clickable).className}
+                className={stylex.props(styles.row, styles.clickable).className}
                 data-testid={'drive-entry'}
                 gap={10}
                 key={entry.path}
-                role={open ? 'button' : undefined}
-                tabIndex={open ? 0 : undefined}
+                role={'button'}
+                tabIndex={0}
                 onClick={open}
-                onKeyDown={
-                  open
-                    ? (event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          open();
-                        }
-                      }
-                    : undefined
-                }
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    open();
+                  }
+                }}
               >
                 <span {...stylex.props(styles.entryIcon)}>
                   <FileIcon

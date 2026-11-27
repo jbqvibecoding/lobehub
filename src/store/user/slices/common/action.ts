@@ -2,8 +2,8 @@ import { isDesktop } from '@lobechat/const';
 import type { UserGeneralConfig } from '@lobechat/types';
 import isEqual from 'fast-deep-equal';
 import type { ReplicaSlice } from 'local-replica/zustand';
-import { type SWRResponse } from 'swr';
 import useSWR from 'swr';
+import { type SWRResponse } from 'swr';
 import { type PartialDeep } from 'type-fest';
 
 import { DEFAULT_PREFERENCE } from '@/const/user';
@@ -287,19 +287,6 @@ export class CommonActionImpl {
           if (!currentGeneralSettings?.timezone && typeof Intl !== 'undefined') {
             const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
             if (detectedTimezone) autoDetectedGeneralConfig.timezone = detectedTimezone;
-          }
-
-          // Keep reply language aligned with the browser locale until the user makes a choice.
-          // Only auto-fill once onboarding has finished — otherwise it pre-empts the
-          // language step in the onboarding flow, skipping past the user's explicit choice.
-          const hasFinishedOnboarding = !!data.onboarding?.finishedAt;
-          if (
-            hasFinishedOnboarding &&
-            !currentGeneralSettings?.responseLanguage &&
-            typeof navigator !== 'undefined'
-          ) {
-            autoDetectedGeneralConfig.responseLanguage =
-              userGeneralSettingsSelectors.currentResponseLanguage(this.#get());
           }
 
           if (Object.keys(autoDetectedGeneralConfig).length > 0) {

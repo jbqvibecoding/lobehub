@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   retry: vi.fn(),
   wake: vi.fn(),
   notify: vi.fn(),
+  notifyMentions: vi.fn(),
 }));
 vi.mock('@/database/repositories/channel', () => ({
   ChannelRepository: class {
@@ -21,6 +22,8 @@ vi.mock('@/database/models/device', () => ({ DeviceModel: class {} }));
 vi.mock('@/server/services/agent', () => ({ AgentService: class {} }));
 vi.mock('@/server/services/file', () => ({ FileService: class {} }));
 vi.mock('./ChannelCoordinator', () => ({ ChannelCoordinator: class {} }));
+vi.mock('./mention', () => ({ notifyChannelMentions: mocks.notifyMentions }));
+vi.mock('./directMessage', () => ({ notifyChannelDirectMessages: vi.fn() }));
 vi.mock('./notify', () => ({ notifyChannel: mocks.notify }));
 vi.mock('./queue', () => ({ wakeChannel: mocks.wake }));
 vi.mock('./routingConfig', () => ({ resolveChannelRoutingConfig: mocks.config }));
@@ -32,10 +35,10 @@ beforeEach(() => {
 describe('Channel routing ingress', () => {
   const service = () => new ChannelService({} as never, 'sender', 'workspace');
   const input = { content: 'Help with code', requestKey: 'key' };
-  it('enqueues unmentioned messages for Jev when configured', async () => {
+  it('enqueues unmentioned messages for the decision model when configured', async () => {
     mocks.config.mockResolvedValue({ model: 'jev-1.14.0', provider: 'typesafe' });
     await service().send('channel', input);
-    expect(mocks.send).toHaveBeenCalledWith('channel', { ...input, routing: 'jev' });
+    expect(mocks.send).toHaveBeenCalledWith('channel', { ...input, routing: 'decision' });
     expect(mocks.wake).toHaveBeenCalledWith('channel');
   });
   it('preserves the existing fallback when not configured', async () => {
@@ -49,6 +52,9 @@ describe('Channel routing ingress', () => {
       'channel',
       expect.objectContaining({ mentions: ['coder'] }),
     );
+    // A mentioned message is directed, so its routing settings are never needed.
+    expect(mocks.config).not.toHaveBeenCalled();
+    expect(mocks.wake).toHaveBeenCalledWith('channel');
   });
   it('schedules a retried attempt only after the permission-checked repository write', async () => {
     mocks.retry.mockResolvedValue({ routingAttempt: 2 });

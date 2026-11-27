@@ -5,14 +5,18 @@ import { Form, useForm } from '@lobehub/ui/form';
 import { cssVar } from '@lobehub/ui/stylex/cssVar.stylex';
 import * as stylex from '@stylexjs/stylex';
 import { useMutation } from '@tanstack/react-query';
-import { type FC } from 'react';
+import { type FC, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { type CredsApi } from '../useCredsApi';
+import InlineErrorText from '@/components/InlineErrorText';
+import { type InlineErrorState, toInlineError } from '@/components/InlineErrorText/errorDetail';
+
+import { credErrorKey } from '../credError';
+import CredFormFooter from '../CredFormFooter';
+import { createExtras, type CredsApi } from '../useCredsApi';
 
 const styles = stylex.create({
   connectionOption: { display: 'flex', gap: '8px', alignItems: 'center' },
-  footer: { display: 'flex', gap: '8px', justifyContent: 'flex-end', marginBlockStart: '24px' },
   provider: { fontWeight: 500 },
   username: { color: cssVar.colorTextSecondary },
 });
@@ -20,7 +24,7 @@ const styles = stylex.create({
 interface OAuthCredFormProps {
   credsApi: CredsApi;
   disabled?: boolean;
-  onBack: () => void;
+  onCancel: () => void;
   onSuccess: () => void;
 }
 
@@ -31,7 +35,7 @@ interface FormValues {
   oauthConnectionId: number;
 }
 
-const OAuthCredForm: FC<OAuthCredFormProps> = ({ credsApi, disabled, onBack, onSuccess }) => {
+const OAuthCredForm: FC<OAuthCredFormProps> = ({ credsApi, disabled, onCancel, onSuccess }) => {
   const { t } = useTranslation('setting');
   const form = useForm<FormValues>({ onSubmit: (values) => handleSubmit(values) });
 
@@ -57,6 +61,12 @@ const OAuthCredForm: FC<OAuthCredFormProps> = ({ credsApi, disabled, onBack, onS
     };
   });
 
+  /**
+   * Create failures (including Market's 409 slot conflicts) render above the submit row: the
+   * modal stays open and the user's next move is on this form, not behind a corner toast.
+   */
+  const [submitError, setSubmitError] = useState<InlineErrorState | null>(null);
+
   const createMutation = useMutation({
     mutationFn: async (values: FormValues) => {
       if (disabled) return;
@@ -66,7 +76,12 @@ const OAuthCredForm: FC<OAuthCredFormProps> = ({ credsApi, disabled, onBack, onS
         key: values.key,
         name: values.name,
         oauthConnectionId: values.oauthConnectionId,
+        ...createExtras(credsApi),
       });
+    },
+    onError: (error) => {
+      console.error('[OAuthCredForm] Create failed:', error);
+      setSubmitError(toInlineError(t(credErrorKey(error, 'creds.errors.createFailed')), error));
     },
     onSuccess: () => {
       onSuccess();
@@ -76,6 +91,7 @@ const OAuthCredForm: FC<OAuthCredFormProps> = ({ credsApi, disabled, onBack, onS
   const handleSubmit = (values: FormValues) => {
     if (disabled) return;
 
+    setSubmitError(null);
     createMutation.mutate(values);
   };
 
@@ -91,9 +107,11 @@ const OAuthCredForm: FC<OAuthCredFormProps> = ({ credsApi, disabled, onBack, onS
     return (
       <Flexbox gap={16}>
         <Empty description={t('creds.oauth.noConnections')} />
-        <div {...stylex.props(styles.footer)}>
-          <Button onClick={onBack}>{t('creds.form.back')}</Button>
-        </div>
+        <CredFormFooter>
+          <Button type="fill" onClick={onCancel}>
+            {t('creds.form.cancel')}
+          </Button>
+        </CredFormFooter>
       </Flexbox>
     );
   }
@@ -112,7 +130,12 @@ const OAuthCredForm: FC<OAuthCredFormProps> = ({ credsApi, disabled, onBack, onS
         />
       </Form.Field>
 
+      <Form.Field label={t('creds.form.name')} name="name" required={t('creds.form.nameRequired')}>
+        <Input disabled={disabled} placeholder="e.g., GitHub Connection" />
+      </Form.Field>
+
       <Form.Field
+        desc={t('creds.form.keyDesc')}
         label={t('creds.form.key')}
         name="key"
         required={t('creds.form.keyRequired')}
@@ -123,10 +146,6 @@ const OAuthCredForm: FC<OAuthCredFormProps> = ({ credsApi, disabled, onBack, onS
         <Input disabled={disabled} placeholder="e.g., github-oauth" />
       </Form.Field>
 
-      <Form.Field label={t('creds.form.name')} name="name" required={t('creds.form.nameRequired')}>
-        <Input disabled={disabled} placeholder="e.g., GitHub Connection" />
-      </Form.Field>
-
       <Form.Field label={t('creds.form.description')} name="description">
         <TextArea
           disabled={disabled}
@@ -135,8 +154,14 @@ const OAuthCredForm: FC<OAuthCredFormProps> = ({ credsApi, disabled, onBack, onS
         />
       </Form.Field>
 
-      <div {...stylex.props(styles.footer)}>
-        <Button onClick={onBack}>{t('creds.form.back')}</Button>
+      {submitError && (
+        <InlineErrorText detail={submitError.detail}>{submitError.summary}</InlineErrorText>
+      )}
+
+      <CredFormFooter>
+        <Button type="fill" onClick={onCancel}>
+          {t('creds.form.cancel')}
+        </Button>
         <Button
           disabled={disabled}
           htmlType="submit"
@@ -145,7 +170,7 @@ const OAuthCredForm: FC<OAuthCredFormProps> = ({ credsApi, disabled, onBack, onS
         >
           {t('creds.form.submit')}
         </Button>
-      </div>
+      </CredFormFooter>
     </Form>
   );
 };

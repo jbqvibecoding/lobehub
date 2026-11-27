@@ -18,12 +18,14 @@ import { memo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { DashboardTrendSeries, DashboardWidgetItem } from '@/services/dashboard';
+import { densityVars } from '@/styles/densityVars';
 
 import { ErrorLine } from '../ErrorLine';
 import { getWidgetCardBody, getWidgetHealth, getWidgetUpdatedAt } from '../utils/widgetHealth';
 import HealthDot from './HealthDot';
 import StatusBadges from './StatusBadges';
 import WidgetOutputView from './views';
+import { createLayoutScope, resolveSurface, WIDGET_SURFACE_STYLES } from './views/LayoutView';
 
 const styles = createStaticStyles(({ css }) => ({
   actions: css`
@@ -56,7 +58,7 @@ const styles = createStaticStyles(({ css }) => ({
 
     height: 100%;
     padding-block: 14px 12px;
-    padding-inline: 16px;
+    padding-inline: ${densityVars.cardPadding};
     border: 1px solid ${cssVar.colorBorderSecondary};
     border-radius: ${cssVar.borderRadiusLG};
 
@@ -136,7 +138,15 @@ const WidgetCard = memo<WidgetCardProps>(
 
     // Lists and tables are the only outputs taller than their card; the rest size to it.
     const scrollable =
-      bodyState === 'output' && (output?.type === 'list' || output?.type === 'table');
+      bodyState === 'output' &&
+      !view?.html &&
+      !view?.layout &&
+      (output?.type === 'list' || output?.type === 'table');
+    // A layout may paint the whole card; header and footer then follow its text color.
+    const surface =
+      !view?.html && view?.layout && output
+        ? WIDGET_SURFACE_STYLES[resolveSurface(view.surface, createLayoutScope(output))]
+        : undefined;
 
     let body: ReactNode;
     if (bodyState === 'output' && output) {
@@ -176,13 +186,21 @@ const WidgetCard = memo<WidgetCardProps>(
         className={cx(styles.card, onOpen && styles.clickable, className)}
         data-widget-id={widget.id}
         data-widget-running={health.running}
+        data-widget-surface={surface ? 'custom' : undefined}
         gap={10}
+        style={surface}
         onClick={onOpen}
       >
         <Flexbox horizontal align={'center'} className={styles.header} gap={6}>
           {handle}
           {title ?? (
-            <Text ellipsis className={styles.title} title={widget.title} weight={500}>
+            <Text
+              ellipsis
+              className={styles.title}
+              style={surface && { color: 'inherit' }}
+              title={widget.title}
+              weight={500}
+            >
               {widget.title}
             </Text>
           )}
@@ -202,7 +220,13 @@ const WidgetCard = memo<WidgetCardProps>(
         </Flexbox>
         <div className={cx(styles.body, scrollable && styles.bodyScrollable)}>{body}</div>
         {updatedAt && (
-          <Flexbox horizontal align={'center'} className={styles.footer} gap={6}>
+          <Flexbox
+            horizontal
+            align={'center'}
+            className={styles.footer}
+            gap={6}
+            style={surface && { color: 'inherit', opacity: 0.72 }}
+          >
             <HealthDot health={health} />
             <Tooltip title={dayjs(updatedAt).format('YYYY-MM-DD HH:mm:ss')}>
               <span data-widget-updated>

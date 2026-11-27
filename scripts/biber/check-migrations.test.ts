@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -11,18 +11,18 @@ const dirs: string[] = [];
 
 /** A migrations folder holding the given journal entries, with SQL and snapshot files for each. */
 const folder = (entries: { tag: string; when: number }[], extraSql: string[] = []) => {
-  const dir = mkdtempSync(join(tmpdir(), 'migrations-'));
+  const dir = mkdtempSync(path.join(tmpdir(), 'migrations-'));
   dirs.push(dir);
-  mkdirSync(join(dir, 'meta'));
+  mkdirSync(path.join(dir, 'meta'));
   writeFileSync(
-    join(dir, 'meta', '_journal.json'),
+    path.join(dir, 'meta', '_journal.json'),
     JSON.stringify({ entries: entries.map((entry, idx) => ({ idx, ...entry })) }),
   );
   for (const { tag } of entries) {
-    writeFileSync(join(dir, `${tag}.sql`), 'select 1;');
-    writeFileSync(join(dir, 'meta', `${tag.slice(0, 4)}_snapshot.json`), '{}');
+    writeFileSync(path.join(dir, `${tag}.sql`), 'select 1;');
+    writeFileSync(path.join(dir, 'meta', `${tag.slice(0, 4)}_snapshot.json`), '{}');
   }
-  for (const file of extraSql) writeFileSync(join(dir, file), 'select 1;');
+  for (const file of extraSql) writeFileSync(path.join(dir, file), 'select 1;');
   return dir;
 };
 
@@ -63,6 +63,18 @@ describe('checkMigrations', () => {
     ]);
   });
 
+  it('needs only the newest snapshot, since older ones are pruned', () => {
+    const dir = folder([
+      { tag: '0000_init', when: 1 },
+      { tag: '0001_add_users', when: 2 },
+    ]);
+    rmSync(path.join(dir, 'meta', '0000_snapshot.json'));
+    expect(checkMigrations(dir)).toEqual([]);
+
+    rmSync(path.join(dir, 'meta', '0001_snapshot.json'));
+    expect(checkMigrations(dir)).toEqual(['0001_add_users: meta/0001_snapshot.json is missing']);
+  });
+
   it('reports a SQL file the journal does not list', () => {
     const dir = folder([{ tag: '0000_init', when: 1 }], ['0001_forgotten.sql']);
 
@@ -72,6 +84,6 @@ describe('checkMigrations', () => {
   });
 
   it('passes on the repository migrations', () => {
-    expect(checkMigrations(join(__dirname, '../../packages/database/migrations'))).toEqual([]);
+    expect(checkMigrations(path.join(__dirname, '../../packages/database/migrations'))).toEqual([]);
   });
 });

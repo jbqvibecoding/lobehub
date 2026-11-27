@@ -11,6 +11,7 @@ import { agentOperations, messages, messagesFiles, pushTokens, topics } from '@/
 import type { LobeChatDatabase } from '@/database/type';
 import { assertCanUseWorkspaceAgent } from '@/server/routers/lambda/_helpers/workspaceAgentGuard';
 import { AiAgentService } from '@/server/services/aiAgent';
+import { ForeignLiveRunError } from '@/server/services/aiAgent/topicStartReservation';
 import { FileService } from '@/server/services/file';
 
 import { BaseService } from '../common/base.service';
@@ -18,11 +19,13 @@ import type { ServiceResult } from '../types';
 import type {
   ImMessage,
   ImReadRequest,
+  ImReadResult,
   ImSendRequest,
   ImSendResult,
   ImSyncQuery,
   ImSyncResult,
   PushTokenRegisterRequest,
+  PushTokenRegistration,
 } from '../types/im.type';
 import { IM_SYNC_MAX_WAIT_MS } from '../types/im.type';
 
@@ -238,6 +241,12 @@ export class ImRestService extends BaseService {
       // receipt that won instead of failing a request the client will retry.
       const raced = await this.idempotentReceipt(input.clientMessageId);
       if (raced) return raced;
+      // Another member's run drives the topic; nothing was written.
+      if (error instanceof ForeignLiveRunError) {
+        throw this.createConflictError(
+          'Another member is running this conversation; wait until their turn finishes.',
+        );
+      }
       throw error;
     }
 
@@ -279,7 +288,7 @@ export class ImRestService extends BaseService {
     }
   }
 
-  async markRead(topicId: string, input: ImReadRequest): ServiceResult<{ unread: number }> {
+  async markRead(topicId: string, input: ImReadRequest): ServiceResult<ImReadResult> {
     await this.requireTopic(topicId);
 
     const message = await this.findOwnMessage(input.messageId);
@@ -312,10 +321,7 @@ export class ImRestService extends BaseService {
   async registerPushToken(
     deviceId: string,
     input: PushTokenRegisterRequest,
-  ): ServiceResult<{
-    deviceId: string;
-    platform: string;
-  }> {
+  ): ServiceResult<PushTokenRegistration> {
     this.assertPersonalPushScope();
 
     const row = await new PushTokenModel(this.db, this.userId).upsert({

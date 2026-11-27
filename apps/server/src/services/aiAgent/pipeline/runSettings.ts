@@ -1,4 +1,10 @@
+import {
+  onDemandBuiltinToolIds,
+  resolveUninstalledBuiltinTools,
+  type UninstalledBuiltinToolsScope,
+} from '@lobechat/builtin-tools';
 import type { LobeChatDatabase } from '@lobechat/database';
+import { legacyBuiltinSkillIds } from '@lobechat/mecha/builtinSkillGate';
 import type { UserToolConfig } from '@lobechat/types';
 import debug from 'debug';
 
@@ -16,6 +22,7 @@ export interface RunSettingsInput {
   runFacts: RunFacts;
   shareGate?: AgentShareGate;
   userId: string;
+  workspaceId?: string;
 }
 
 export interface RunSettings {
@@ -26,6 +33,7 @@ export interface RunSettings {
    * visitor's: the creator's choices are not theirs to use.
    */
   storedAllowList?: string[];
+  uninstalledBuiltinIds: string[];
   userTimezone?: string;
 }
 
@@ -36,15 +44,22 @@ export const resolveRunSettings = async ({
   runFacts,
   shareGate,
   userId,
+  workspaceId,
 }: RunSettingsInput): Promise<RunSettings> => {
   // Agent-level memory config takes priority; fallback to user-level setting
   const agentMemoryEnabled = agentConfig.chatConfig?.memory?.enabled;
   let globalMemoryEnabled = agentMemoryEnabled ?? false;
   let enableExpertise = false;
+  // A failed settings read cannot confirm any optional builtin is installed.
+  let uninstalledBuiltinIds = [...onDemandBuiltinToolIds, ...legacyBuiltinSkillIds];
   let userTimezone: string | undefined;
   let storedAllowList: string[] | undefined;
   try {
     const settings = await runFacts.userSettings();
+    uninstalledBuiltinIds = resolveUninstalledBuiltinTools(
+      settings?.tool as UninstalledBuiltinToolsScope | undefined,
+      workspaceId,
+    );
     const memorySettings = settings?.memory as { enabled?: boolean } | undefined;
 
     globalMemoryEnabled = agentMemoryEnabled ?? memorySettings?.enabled !== false;
@@ -85,5 +100,11 @@ export const resolveRunSettings = async ({
     enableExpertise = false;
   }
 
-  return { enableExpertise, globalMemoryEnabled, storedAllowList, userTimezone };
+  return {
+    enableExpertise,
+    globalMemoryEnabled,
+    storedAllowList,
+    uninstalledBuiltinIds,
+    userTimezone,
+  };
 };

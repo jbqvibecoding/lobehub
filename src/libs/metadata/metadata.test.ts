@@ -1,7 +1,8 @@
 // @vitest-environment node
+import type * as BusinessConst from '@lobechat/business-const';
 import { BRANDING_NAME, ORG_NAME } from '@lobechat/business-const';
 import { OG_URL } from '@lobechat/const';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { isCustomORG } from '@/const/version';
 
@@ -135,5 +136,45 @@ describe('Metadata', () => {
         ]),
       });
     });
+  });
+});
+
+describe('Metadata default description and branding', () => {
+  const loadMeta = async (branding?: Partial<typeof BusinessConst>) => {
+    vi.resetModules();
+    if (branding) {
+      vi.doMock('@lobechat/business-const', async (importOriginal) => ({
+        ...(await importOriginal<typeof BusinessConst>()),
+        ...branding,
+      }));
+      // Under vitest 5 a `doMock` only lands once the test file itself imports
+      // something, so pull the mocked module in before the one under test.
+      await import('@lobechat/business-const');
+    }
+    const { Meta: FreshMeta } = await import('./metadata');
+    return new FreshMeta();
+  };
+
+  afterEach(() => {
+    vi.doUnmock('@lobechat/business-const');
+    vi.resetModules();
+  });
+
+  it('names Biber under its own branding', async () => {
+    const result = (await loadMeta()).generate({ title: 'Home', url: 'https://example.com' });
+
+    expect(result.description).toContain(
+      'Biber offers you the best ChatGPT, OLLaMA, Gemini, Claude WebUI user experience',
+    );
+  });
+
+  it("names the deployment's own app under custom branding", async () => {
+    const result = (await loadMeta({ BRANDING_NAME: 'Acme', ORG_NAME: 'Acme Inc' })).generate({
+      title: 'Home',
+      url: 'https://example.com',
+    });
+
+    expect(result.description).toContain('Acme offers you the best');
+    expect(result.description).not.toMatch(/LobeChat|LobeHub/);
   });
 });

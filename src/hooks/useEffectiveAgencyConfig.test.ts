@@ -47,6 +47,8 @@ vi.mock('@/store/agent/selectors', () => ({
         agentMap: Record<string, { visibility?: 'private' | 'public'; workspaceId?: string }>;
       }) =>
         s.agentMap[id],
+    getAgentModelById: (id: string) => (s: { agentMap: Record<string, { model?: string }> }) =>
+      s.agentMap[id]?.model ?? 'gpt-4o',
   },
 }));
 vi.mock('@/store/user', () => ({ useUserStore: vi.fn() }));
@@ -152,6 +154,7 @@ describe('useEffectiveAgencyConfig', () => {
       agencyConfig: { boundDeviceId: 'owner-desktop', executionTarget: 'local' },
       canDisplayExecutionTarget: true,
       canSelectExecutionTarget: true,
+      executionTargetOverridden: true,
       isPreferenceLoading: false,
       topicDeviceUnknown: false,
       workspaceScoped: false,
@@ -191,10 +194,29 @@ describe('useEffectiveAgencyConfig', () => {
       agencyConfig: { boundDeviceId: 'manager-desktop', executionTarget: 'local' },
       canDisplayExecutionTarget: true,
       canSelectExecutionTarget: true,
+      executionTargetOverridden: true,
       isPreferenceLoading: false,
       topicDeviceUnknown: false,
       workspaceScoped: false,
     });
+  });
+
+  // A fixed policy constrains members, not the shared default: the author or a
+  // Workspace admin must still be able to repoint it (e.g. off a deleted or
+  // offline device) from the profile picker.
+  it("keeps a fixed public Workspace Agent's target selectable for its author or admin", () => {
+    managementAccess.canManageAgent = true;
+    setupStores({
+      agencyConfig: { ...sharedConfig, executionTargetSelectionPolicy: 'fixed' },
+      visibility: 'public',
+      workspaceId: 'ws-1',
+    });
+
+    const { result } = renderHook(() => useEffectiveAgencyConfig('agent-1', { topicId: null }));
+
+    expect(result.current.agencyConfig).toEqual(sharedConfig);
+    expect(result.current.canSelectExecutionTarget).toBe(true);
+    expect(result.current.executionTargetOverridden).toBe(false);
   });
 
   it('shows a read-only execution summary when an ordinary member is fixed to the shared target', () => {
@@ -214,6 +236,46 @@ describe('useEffectiveAgencyConfig', () => {
       canDisplayExecutionTarget: true,
       canSelectExecutionTarget: false,
     });
+  });
+
+  it('reports that a member override applies instead of the shared default', () => {
+    setupStores({
+      override: { boundDeviceId: 'my-device', executionTarget: 'device' },
+      visibility: 'public',
+      workspaceId: 'ws-1',
+    });
+
+    const { result } = renderHook(() => useEffectiveAgencyConfig('agent-1'));
+
+    expect(result.current.executionTargetOverridden).toBe(true);
+  });
+
+  it('does not report an override that a fixed policy shelves for a member', () => {
+    setupStores({
+      agencyConfig: { ...sharedConfig, executionTargetSelectionPolicy: 'fixed' },
+      override: { boundDeviceId: 'my-device', executionTarget: 'device' },
+      visibility: 'public',
+      workspaceId: 'ws-1',
+    });
+
+    const { result } = renderHook(() => useEffectiveAgencyConfig('agent-1'));
+
+    expect(result.current.agencyConfig?.boundDeviceId).toBe('creator-device');
+    expect(result.current.executionTargetOverridden).toBe(false);
+  });
+
+  it('never reports an override for a personal agent or a device-only override', () => {
+    setupStores({ override: { boundDeviceId: 'my-device', executionTarget: 'device' } });
+    expect(
+      renderHook(() => useEffectiveAgencyConfig('agent-1')).result.current
+        .executionTargetOverridden,
+    ).toBe(false);
+
+    setupStores({ override: { boundDeviceId: 'my-device' }, workspaceId: 'ws-1' });
+    expect(
+      renderHook(() => useEffectiveAgencyConfig('agent-1')).result.current
+        .executionTargetOverridden,
+    ).toBe(false);
   });
 
   it('preserves workspace scope when an override has no explicit execution target', () => {

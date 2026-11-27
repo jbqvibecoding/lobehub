@@ -21,6 +21,7 @@ import {
 import { openRequestChangesModal } from '@/features/AgentGoals/ProcessControl/RequestChangesModal';
 import { useGoalResultData } from '@/features/AgentGoals/ProcessControl/useGoalResultData';
 import { goalSelectors, useGoalStore } from '@/store/goal';
+import { densityTokens } from '@/styles/density.stylex';
 
 import { useGoalSignOff } from './useGoalSignOff';
 
@@ -34,8 +35,8 @@ const styles = stylex.create({
     borderBlockStartStyle: 'solid',
     borderBlockStartWidth: 1,
     display: 'flex',
-    gap: 12,
-    paddingBlock: 12,
+    gap: densityTokens['--lobe-density-content-gap'],
+    paddingBlock: densityTokens['--lobe-density-content-gap'],
     paddingInline: 24,
   },
   frame: {
@@ -51,7 +52,7 @@ const styles = stylex.create({
     borderBlockEndWidth: 1,
     display: 'flex',
     gap: 8,
-    paddingBlock: 12,
+    paddingBlock: densityTokens['--lobe-density-content-gap'],
     paddingInline: 24,
   },
   // Sized by its content and shrunk to the frame's max height: a zero basis
@@ -105,6 +106,8 @@ const GoalSignOffReport = ({
   useFetchGoalGraph(goalId);
   const snapshot = useGoalStore(goalSelectors.goalGraph(goalId));
   const graph = useMemo(() => (snapshot ? buildGoalGraphView(snapshot) : undefined), [snapshot]);
+  // An archived goal stays put, so the server refuses a change request on it.
+  const archived = !!snapshot?.goal.archivedAt;
 
   const { accept, pending, requestChanges } = useGoalSignOff({
     acceptanceId,
@@ -158,8 +161,9 @@ const GoalSignOffReport = ({
           {t('goalProcess.signOff.description')}
         </Text>
         <Button
-          disabled={!!pending}
+          disabled={!!pending || archived}
           loading={pending === 'changes'}
+          title={archived ? t('goalProcess.signOff.archivedBlocked') : undefined}
           onClick={() => openRequestChangesModal({ onConfirm: requestChanges })}
         >
           {t('goalProcess.signOff.requestChanges')}

@@ -4,7 +4,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { AgentModel } from '@/database/models/agent';
 import { agents } from '@/database/schemas';
 import type { LobeChatDatabase } from '@/database/type';
-import { getSandboxProviderKind } from '@/server/services/sandbox/factory';
+import { getSandboxProviderKind } from '@/server/services/sandbox/deployment';
 
 import {
   EXPERT_CHAT_CONFIG,

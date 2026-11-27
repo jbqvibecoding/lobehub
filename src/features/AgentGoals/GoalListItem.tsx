@@ -6,10 +6,13 @@ import { memo } from 'react';
 
 import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
 import { useActiveRouteParams } from '@/hooks/useActiveRouteParams';
+import { DENSITY_TOKENS, useInterfaceDensity } from '@/styles/density';
 
 import GoalAgentLabel from './GoalAgentLabel';
+import GoalArchivedMark from './GoalArchivedMark';
 import GoalItemMoreButton from './GoalItemMoreButton';
 import { goalItemPath } from './goalItemPath';
+import GoalPrivateMark from './GoalPrivateMark';
 import { GoalProgress } from './GoalProgress';
 import GoalStatusGlyph from './GoalStatusGlyph';
 import type { GoalItemProps } from './types';
@@ -47,6 +50,8 @@ const styles = createStaticStyles(({ css }) => ({
 }));
 
 export const GoalListItem = memo<GoalItemProps>(({ globalScopeId, goal: item, projectId }) => {
+  const density = useInterfaceDensity();
+  const { listRowHeight } = DENSITY_TOKENS[density];
   const navigate = useWorkspaceAwareNavigate();
   const { aid } = useActiveRouteParams<{ aid?: string }>();
   const { goal } = item;
@@ -79,7 +84,7 @@ export const GoalListItem = memo<GoalItemProps>(({ globalScopeId, goal: item, pr
         className={styles.row}
         gap={12}
         justify={'space-between'}
-        paddingBlock={10}
+        paddingBlock={(listRowHeight - 28) / 2}
         paddingInline={12}
         role={'link'}
         tabIndex={0}
@@ -90,9 +95,11 @@ export const GoalListItem = memo<GoalItemProps>(({ globalScopeId, goal: item, pr
         <Flexbox className={styles.title} gap={4}>
           <Flexbox horizontal align={'center'} gap={7}>
             <GoalStatusGlyph size={13} status={goal.status} />
-            <Text ellipsis fontSize={15} weight={600}>
+            <Text ellipsis fontSize={density === 'compact' ? 14 : 15} weight={600}>
               {goal.title}
             </Text>
+            <GoalPrivateMark goal={goal} />
+            <GoalArchivedMark goal={goal} />
           </Flexbox>
           {goal.requirement && goal.requirement !== goal.title && (
             <Text ellipsis fontSize={12} type={'secondary'}>

@@ -12,7 +12,7 @@
  * skills are left alone, as the Biber rebrand did.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,6 +28,8 @@ const SKIPPED = [
   /^changelog\//,
   // This script names what it replaces
   /^scripts\/brand\/rename-assistant\.mjs$/,
+  // Upstream's runtime rewrite names the upstream literals it replaces
+  /^packages\/locales\/src\/brandPostProcessor(\.test)?\.ts$/,
 ];
 
 const RULES = [
@@ -44,7 +46,9 @@ const files = execFileSync('git', ['ls-files', '-z'], {
   maxBuffer: 256 * 1024 * 1024,
 })
   .split('\0')
-  .filter((file) => TEXT_FILE.test(file) && !SKIPPED.some((pattern) => pattern.test(file)));
+  .filter((file) => TEXT_FILE.test(file) && !SKIPPED.some((pattern) => pattern.test(file)))
+  // Deleted in the working tree but still in the index, as in the middle of a merge
+  .filter((file) => existsSync(path.join(root, file)));
 
 const check = process.argv.includes('--check');
 let changedFiles = 0;

@@ -8,18 +8,12 @@ import AsyncError from '@/components/AsyncError';
 import { openPickWorkingDirModal } from '@/features/WorkingDirectory';
 import type { DeviceListResult } from '@/store/device/useDeviceList';
 
-import type { ChannelAgentIssue } from './agentEnvironment';
+import { channelAgentIssueKey } from './agentEnvironment';
 import type { useChannelAgentDraft } from './useChannelAgentDraft';
 
 const styles = stylex.create({
   directory: { maxWidth: '100%', overflow: 'hidden' },
 });
-
-/** Device issues of an inherited environment are fixed in the Agent's settings, not here. */
-const INHERITED_ISSUES = ['deviceOffline', 'deviceRequired', 'deviceUnavailable'] as const;
-
-const isInheritedIssue = (issue: ChannelAgentIssue): issue is (typeof INHERITED_ISSUES)[number] =>
-  (INHERITED_ISSUES as readonly ChannelAgentIssue[]).includes(issue);
 
 export const deviceLabel = (device: DeviceListItem) =>
   device.friendlyName || device.hostname || device.deviceId;
@@ -28,7 +22,7 @@ type DraftControls = ReturnType<typeof useChannelAgentDraft>;
 
 /** Device and working directory for one Agent in one Channel. */
 export const EnvironmentFields = ({
-  controls: { change, changeDevice, draft, requiresDevice },
+  controls: { change, changeDevice, draft, remote },
   devices,
   name,
 }: {
@@ -46,15 +40,23 @@ export const EnvironmentFields = ({
       (item) => item.deviceId === draft.deviceId && item.online && !item.onlineUnknown,
     );
 
+  if (remote)
+    return (
+      <Text fontSize={12} type="secondary">
+        {t('environment.remoteHost')}
+      </Text>
+    );
+
   return (
     <>
       <Select
         aria-describedby={draft.issue ? `channel-agent-${draft.agentId}-issue` : undefined}
         aria-label={t('environment.deviceLabel', { name })}
-        placeholder={t(requiresDevice ? 'environment.chooseDevice' : 'noDevice')}
+        placeholder={t('environment.followAgent')}
         value={draft.deviceId ?? ''}
         options={[
-          ...(!requiresDevice ? [{ label: t('noDevice'), value: '' }] : []),
+          // No device is the default: the Agent runs where its own settings say.
+          { label: t('environment.followAgent'), value: '' },
           ...(missingDevice
             ? [
                 {
@@ -127,9 +129,7 @@ export const EnvironmentIssue = ({
       role="status"
       type={checking ? 'secondary' : 'danger'}
     >
-      {inherited && isInheritedIssue(draft.issue)
-        ? t(`environment.inherited.${draft.issue}`)
-        : t(`environment.${draft.issue}`)}
+      {t(channelAgentIssueKey(draft.issue, inherited))}
     </Text>
   );
 };

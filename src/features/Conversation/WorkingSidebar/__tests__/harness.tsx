@@ -28,6 +28,8 @@ const rightPanel = vi.hoisted(() => ({
 
 const agentStore = vi.hoisted(() => ({
   activeAgentId: undefined as string | undefined,
+  heterogeneousType: undefined as string | undefined,
+  isChatMode: false,
   isHeterogeneous: false,
   rawAgencyConfig: undefined as
     { boundDeviceId?: string; executionTarget?: 'device' | 'local' } | undefined,
@@ -85,6 +87,8 @@ const filesPrefetchProps = vi.hoisted(() => ({
 const reviewState = vi.hoisted(() => ({
   repoType: undefined as string | undefined,
   setRepoType: undefined as ((repoType?: string) => void) | undefined,
+  /** The directory only comes from the desktop home fallback, not a user choice. */
+  isHomeFallback: false,
   showTree: false,
   workingDirectory: undefined as string | undefined,
 }));
@@ -127,7 +131,12 @@ const chatStore = vi.hoisted(() => ({
   activeGroupId: undefined as string | undefined,
   activeThreadId: undefined as string | undefined,
   activeTopicId: undefined as string | undefined,
+  // useSandboxPlacement reads the topics a first send is creating
+  creatingTopicIds: [] as string[],
   openTopicComments: vi.fn(),
+  // useSandboxPlacement reads an unlisted topic by id and reads it back after a pick
+  refreshTopicDetail: vi.fn(),
+  useFetchTopicDetail: vi.fn(),
   portalStack: [] as Array<{ startMessageId?: string; threadId?: string; type: string }>,
   showPortal: false,
   threadMaps: {} as Record<string, any[]>,
@@ -141,6 +150,7 @@ const globalStore = vi.hoisted(() => ({
   updateSystemStatus: vi.fn(),
   toggleRightPanel: vi.fn(),
   toggleTerminalPanel: vi.fn(),
+  setWorkingSidebarPullRequestUrl: vi.fn(),
   setWorkingSidebarTab: vi.fn(),
   status: {
     portalWidth: 400 as number | undefined,
@@ -205,6 +215,7 @@ vi.mock('../ParamsSection', () => ({
     return <div data-testid="params-section" />;
   },
 }));
+vi.mock('../ToolsSection', () => ({ default: () => <div data-testid="tools-section" /> }));
 vi.mock('../WorksSection', () => ({ default: () => <div /> }));
 vi.mock('../Search', () => ({
   TopicSearchPane: ({ topicId }: { topicId: string }) => (
@@ -258,10 +269,11 @@ vi.mock('@/store/agent/selectors', () => ({
     isWorkspaceAgentById: () => () => false,
   },
   agentSelectors: {
+    currentAgentHeterogeneousProviderType: () => agentStore.heterogeneousType,
     isCurrentAgentHeterogeneous: () => agentStore.isHeterogeneous,
   },
   chatConfigByIdSelectors: {
-    isChatModeById: () => () => false,
+    isChatModeById: () => () => agentStore.isChatMode,
   },
 }));
 vi.mock('@/store/global', () => ({
@@ -286,6 +298,12 @@ vi.mock('@/business/client/hooks/useActiveWorkspaceId', () => ({
   useActiveWorkspaceId: () => workspace.id,
 }));
 
+vi.mock('@/features/Conversation/WorkingSidebar/Memory/MemoryPane', () => ({
+  MemoryPane: (props: { deviceId?: string; workingDirectory: string }) => (
+    <div data-testid="memory-pane">{props.workingDirectory}</div>
+  ),
+}));
+
 vi.mock('@/business/client/features/WorkingSidebarTabs', () => ({
   useBusinessWorkingSidebarTabs: () => businessTabs.current,
 }));
@@ -302,7 +320,10 @@ vi.mock('@/features/ChatInput/ControlBar/useRepoType', async () => {
   };
 });
 vi.mock('@/hooks/useEffectiveWorkingDirectory', () => ({
-  useEffectiveWorkingDirectory: () => reviewState.workingDirectory,
+  useEffectiveWorkingDirectory: (_agentId?: string, options?: { homeFallback?: boolean }) =>
+    options?.homeFallback === false && reviewState.isHomeFallback
+      ? undefined
+      : reviewState.workingDirectory,
 }));
 vi.mock('@/hooks/useEffectiveAgencyConfig', () => ({
   useEffectiveAgencyConfig: () => ({
@@ -337,6 +358,19 @@ vi.mock('@/helpers/executionTarget', () => ({
   },
 }));
 vi.mock('@/helpers/gatewayMode', () => ({ useIsGatewayModeEnabled: () => false }));
+// Every suite renders the sidebar with MCP Apps off: the flag lives in the
+// server-config store, which needs its provider, and app discovery is covered
+// on its own (it would pull the whole tool store into the sidebar's import)
+vi.mock('@/store/serverConfig', () => ({
+  getServerConfigStoreState: () => undefined,
+  serverConfigSelectors: { enableMcpApps: () => false },
+  useServerConfigStore: () => false,
+}));
+vi.mock('@/features/MCPApp/useMcpAppEntrypoints', () => ({ useMcpAppEntrypoints: () => [] }));
+vi.mock('../McpEntryTabLabel', () => ({
+  McpEntryTabIcon: () => null,
+  McpEntryTabLabel: () => null,
+}));
 vi.mock('@/const/version', () => ({
   get isDesktop() {
     return platform.isDesktop;
@@ -455,6 +489,8 @@ beforeEach(() => {
   chatStore.threadMaps = {};
   chatStore.openTopicComments.mockReset();
   agentStore.activeAgentId = undefined;
+  agentStore.heterogeneousType = undefined;
+  agentStore.isChatMode = false;
   agentStore.isHeterogeneous = false;
   agentStore.rawAgencyConfig = undefined;
   effectiveConfig.agencyConfig = undefined;
@@ -474,6 +510,7 @@ beforeEach(() => {
   reviewState.setRepoType = undefined;
   reviewState.showTree = false;
   reviewState.workingDirectory = undefined;
+  reviewState.isHomeFallback = false;
   dropdownMenuState.onOpenChangeComplete = undefined;
   dropdownMenuState.items = [];
   globalStore.status.workingSidebarWidth = 360;

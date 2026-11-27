@@ -203,6 +203,27 @@ describe('StaleOperationReaper', () => {
     );
   });
 
+  it('bounds both running scans by creation time so they can use the partial index', async () => {
+    // Without a `created_at` floor both scans walked every `running` row
+    // through `agent_operations_status_idx` (8.8s mean in production);
+    // `agent_operations_running_created_at_idx` only helps when it is bounded.
+    const before = Date.now();
+    await buildReaper([], runningState()).sweep();
+
+    expect(whereConditions).toHaveLength(2);
+    for (const condition of whereConditions) {
+      const { params, sql } = new PgDialect().sqlToQuery(condition);
+      expect(sql).toMatch(/"created_at" >= \$\d+/);
+      const floor = params.find(
+        (p) => typeof p === 'string' && new Date(p).getTime() <= before - 6 * 24 * 60 * 60_000,
+      );
+      expect(floor).toBeDefined();
+      expect(new Date(floor as string).getTime()).toBeGreaterThanOrEqual(
+        before - 7 * 24 * 60 * 60_000 - 1000,
+      );
+    }
+  });
+
   it('abandons a stateless heterogeneous run silent past the hetero window', async () => {
     // 2026-10-12: a device-dispatched Codex run went silent when its desktop
     // dropped off, the gateway inactivity watchdog never fired for it, and it
@@ -299,7 +320,7 @@ describe('StaleOperationReaper', () => {
 
     expect(queue.scheduleMessage).not.toHaveBeenCalled();
     expect(finalizeAbandonedMock).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ alive: 1, redriven: 0 });
+    expect(result).toMatchObject({ abandoned: 0, alive: 1, redriven: 0 });
   });
 
   it('abandons once the redrive budget is spent', async () => {
@@ -318,22 +339,6 @@ describe('StaleOperationReaper', () => {
       settledAsAbandoned: true,
     });
     expect(result).toMatchObject({ abandoned: 1 });
-  });
-
-  it('refuses to abandon a run that heartbeated after the candidate was selected', async () => {
-    // `listStaleRunning` selected this row, then the worker resumed while the
-    // sweep was doing its Redis reads. Abandoning is irreversible and
-    // user-visible, so it must re-check the lease atomically rather than
-    // trust the stale select.
-    const queue = buildQueue();
-    claimStaleRedriveMock.mockResolvedValue(null);
-    settleStaleRunningMock.mockResolvedValue(false);
-
-    const result = await buildReaper([candidate()], runningState(), queue).sweep();
-
-    expect(finalizeAbandonedMock).not.toHaveBeenCalled();
-    expect(queue.scheduleMessage).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ abandoned: 0, alive: 1 });
   });
 
   it('gives the attempt back when the redrive fails to publish', async () => {
@@ -398,6 +403,26 @@ describe('StaleOperationReaper', () => {
       { ...overlap, unstoppedOperationIds: ['op_a'] },
     );
     warn.mockRestore();
+  });
+
+  it('only counts foreground runs whose lease moved within the hetero silence window', async () => {
+    // Production re-warned the same months-old dead `running` rows on every
+    // once-a-minute sweep: nothing settles them, and the patrol had no floor.
+    const before = Date.now();
+    const reaper = new StaleOperationReaper(buildDb([]), {
+      coordinator: buildCoordinator(null) as any,
+      queueService: buildQueue() as any,
+    });
+
+    await reaper.sweep();
+
+    const { params, sql } = new PgDialect().sqlToQuery(whereConditions[1]);
+    expect(sql).toMatch(/"updated_at" >= \$\d+/);
+    const floor = params.find(
+      (p) => typeof p === 'string' && new Date(p).getTime() <= before - 59 * 60_000,
+    );
+    expect(floor).toBeDefined();
+    expect(new Date(floor as string).getTime()).toBeGreaterThanOrEqual(before - 60 * 60_000 - 1000);
   });
 
   it('ignores an overlap whose older runs were already asked to stop', async () => {

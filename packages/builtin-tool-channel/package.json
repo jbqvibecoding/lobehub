@@ -9,10 +9,12 @@
   },
   "main": "./src/index.ts",
   "devDependencies": {
+    "@lobechat/prompts": "workspace:*",
     "@lobechat/types": "workspace:*"
   },
   "peerDependencies": {
     "@lobehub/ui": "^6.0.4",
+    "lucide-react": "*",
     "react": "*",
     "react-i18next": "*"
   }

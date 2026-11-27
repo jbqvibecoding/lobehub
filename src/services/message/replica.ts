@@ -1,7 +1,7 @@
 import type { ConversationContext, UIChatMessage } from '@lobechat/types';
 
-import { AppIndexedDBStorage } from '@/libs/replica';
 import {
+  AppIndexedDBStorage,
   cacheScope,
   defineReplica,
   isReplicaSyncKey,
@@ -151,8 +151,7 @@ export const conversationMessagesResource = defineReplica<
   persistKey: (key) => key.startsWith('p:'),
   storage: 'indexedDB',
   // A `replica:sync` key, so `slice.revalidate` and the predicate revalidation
-  // below match it; a `message:` key would hit the SWR persistence tier and
-  // store every transcript (shared and scoped ones included) a second time.
+  // below match it.
   // Its params are the conversation, not the full sync params: one read per
   // entry, so two responses never settle out of order into one transcript.
   syncKey: (params) => {

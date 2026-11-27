@@ -5,6 +5,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { __resetOperationStatesForTesting } from '.';
 import { buildEvent, createHarness } from './testUtils';
 
+const conversationAnchor = () => ({
+  assistantMessageId: 'asst-1',
+  operationId: 'op-1',
+  topicId: 'topic-1',
+});
+
+const staleIngestInput = () => ({
+  assistantMessageId: 'asst-1',
+  events: [buildEvent('stream_chunk', 0, { chunkType: 'text', content: 'x' })],
+  operationId: 'op-1',
+  topicId: 'topic-1',
+});
+
 describe('HeterogeneousPersistenceHandler', () => {
   beforeEach(() => {
     __resetOperationStatesForTesting();
@@ -41,11 +54,7 @@ describe('HeterogeneousPersistenceHandler', () => {
     });
 
     it('throws when the topic has no matching runningOperation', async () => {
-      const h = createHarness({
-        assistantMessageId: 'asst-1',
-        operationId: 'op-1',
-        topicId: 'topic-1',
-      });
+      const h = createHarness(conversationAnchor());
       h.topicModel.findById.mockResolvedValueOnce({
         agentId: null,
         id: 'topic-1',
@@ -188,25 +197,16 @@ describe('HeterogeneousPersistenceHandler', () => {
     });
 
     it('rejects seeded assistant ids once runningOperation has been cleared', async () => {
-      const h = createHarness({
-        assistantMessageId: 'asst-1',
-        operationId: 'op-1',
-        topicId: 'topic-1',
-      });
+      const h = createHarness(conversationAnchor());
       h.topicModel.findById.mockResolvedValueOnce({
         agentId: null,
         id: 'topic-1',
         metadata: {} as any,
       });
 
-      await expect(
-        h.handler.ingest({
-          assistantMessageId: 'asst-1',
-          events: [buildEvent('stream_chunk', 0, { chunkType: 'text', content: 'x' })],
-          operationId: 'op-1',
-          topicId: 'topic-1',
-        }),
-      ).rejects.toThrow(/no active runningOperation/);
+      await expect(h.handler.ingest(staleIngestInput())).rejects.toThrow(
+        /no active runningOperation/,
+      );
     });
 
     it('keeps persisting when the marker is gone but the operation is still running', async () => {
@@ -282,14 +282,9 @@ describe('HeterogeneousPersistenceHandler', () => {
         metadata: {} as any,
       });
 
-      await expect(
-        h.handler.ingest({
-          assistantMessageId: 'asst-1',
-          events: [buildEvent('stream_chunk', 0, { chunkType: 'text', content: 'x' })],
-          operationId: 'op-1',
-          topicId: 'topic-1',
-        }),
-      ).rejects.toThrow(/no active runningOperation/);
+      await expect(h.handler.ingest(staleIngestInput())).rejects.toThrow(
+        /no active runningOperation/,
+      );
     });
 
     it('refuses a superseded batch even while its own operation row is alive', async () => {
@@ -310,23 +305,14 @@ describe('HeterogeneousPersistenceHandler', () => {
         },
       });
 
-      await expect(
-        h.handler.ingest({
-          assistantMessageId: 'asst-1',
-          events: [buildEvent('stream_chunk', 0, { chunkType: 'text', content: 'x' })],
-          operationId: 'op-1',
-          topicId: 'topic-1',
-        }),
-      ).rejects.toThrow(/current operation is op-OTHER/);
+      await expect(h.handler.ingest(staleIngestInput())).rejects.toThrow(
+        /current operation is op-OTHER/,
+      );
       expect(isOperationLiveOnTopic).not.toHaveBeenCalled();
     });
 
     it('validates seeded assistant ids belong to the current topic', async () => {
-      const h = createHarness({
-        assistantMessageId: 'asst-1',
-        operationId: 'op-1',
-        topicId: 'topic-1',
-      });
+      const h = createHarness(conversationAnchor());
 
       h.messages.set('asst-other-topic', {
         agentId: null,
@@ -347,11 +333,7 @@ describe('HeterogeneousPersistenceHandler', () => {
     });
 
     it('rejects mid-flight topic mismatch on the same operationId', async () => {
-      const h = createHarness({
-        assistantMessageId: 'asst-1',
-        operationId: 'op-1',
-        topicId: 'topic-1',
-      });
+      const h = createHarness(conversationAnchor());
 
       await h.handler.ingest({
         events: [buildEvent('stream_chunk', 0, { chunkType: 'text', content: 'x' })],
@@ -371,11 +353,7 @@ describe('HeterogeneousPersistenceHandler', () => {
 
   describe('idempotency', () => {
     it('replaces text with the latest full snapshot and ignores older snapshot seq values', async () => {
-      const h = createHarness({
-        assistantMessageId: 'asst-1',
-        operationId: 'op-1',
-        topicId: 'topic-1',
-      });
+      const h = createHarness(conversationAnchor());
 
       await h.handler.ingest({
         events: [
@@ -414,11 +392,7 @@ describe('HeterogeneousPersistenceHandler', () => {
     });
 
     it('replaces reasoning snapshots idempotently instead of re-appending on redelivery', async () => {
-      const h = createHarness({
-        assistantMessageId: 'asst-1',
-        operationId: 'op-1',
-        topicId: 'topic-1',
-      });
+      const h = createHarness(conversationAnchor());
 
       await h.handler.ingest({
         events: [
@@ -461,11 +435,7 @@ describe('HeterogeneousPersistenceHandler', () => {
     });
 
     it('drops events with the same (stepIndex, type, timestamp, dataFingerprint) key', async () => {
-      const h = createHarness({
-        assistantMessageId: 'asst-1',
-        operationId: 'op-1',
-        topicId: 'topic-1',
-      });
+      const h = createHarness(conversationAnchor());
 
       const tools = [
         {
@@ -491,11 +461,7 @@ describe('HeterogeneousPersistenceHandler', () => {
     });
 
     it('gates publishing per operation and releases the gate when the operation finishes', async () => {
-      const h = createHarness({
-        assistantMessageId: 'asst-1',
-        operationId: 'op-1',
-        topicId: 'topic-1',
-      });
+      const h = createHarness(conversationAnchor());
       const first = buildEvent('stream_chunk', 0, { chunkType: 'text', content: 'x' });
       const second = buildEvent('stream_chunk', 1, { chunkType: 'text', content: 'y' });
 
@@ -524,11 +490,7 @@ describe('HeterogeneousPersistenceHandler', () => {
       // so multiple `stream_chunk` events within the same step burst through
       // a single millisecond. Without a content fingerprint in the dedupe
       // key, all but the first would be dropped → truncated assistant text.
-      const h = createHarness({
-        assistantMessageId: 'asst-1',
-        operationId: 'op-1',
-        topicId: 'topic-1',
-      });
+      const h = createHarness(conversationAnchor());
 
       const sameTimestamp = 1_700_000_000_000;
       const events: AgentStreamEvent[] = [
@@ -554,11 +516,7 @@ describe('HeterogeneousPersistenceHandler', () => {
     });
 
     it('mark-processed-AFTER-success contract: a thrown handler leaves the event un-marked so retry replays it', async () => {
-      const h = createHarness({
-        assistantMessageId: 'asst-1',
-        operationId: 'op-1',
-        topicId: 'topic-1',
-      });
+      const h = createHarness(conversationAnchor());
 
       // First call to messageModel.update on asst-1 throws once.
       let updateAttempts = 0;
@@ -644,11 +602,7 @@ describe('HeterogeneousPersistenceHandler', () => {
     });
 
     it('writes assistant.tools[] then tool message then backfilled result_msg_id in order', async () => {
-      const h = createHarness({
-        assistantMessageId: 'asst-1',
-        operationId: 'op-1',
-        topicId: 'topic-1',
-      });
+      const h = createHarness(conversationAnchor());
 
       // Capture call order across both methods so we can assert phase
       // sequence (renderer mutates the tools[] array in place across phases,
@@ -707,11 +661,7 @@ describe('HeterogeneousPersistenceHandler', () => {
     });
 
     it('skips tool_use that have already been persisted in the same turn', async () => {
-      const h = createHarness({
-        assistantMessageId: 'asst-1',
-        operationId: 'op-1',
-        topicId: 'topic-1',
-      });
+      const h = createHarness(conversationAnchor());
 
       const tool = {
         apiName: 'Bash',

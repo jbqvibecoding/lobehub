@@ -36,6 +36,7 @@ export const PLAN_CATALOG: Record<Plans, PlanDefinition> = {
   // Legacy bring-your-own-key plan: kept so stored rows still resolve, not sold
   [Plans.Hobby]: { monthlyCredits: 0 },
   // LobeHub Cloud's own plans, in the shared enum: Biber neither sells nor assigns them
+  [Plans.Basic]: { monthlyCredits: 0 },
   [Plans.Plus]: { monthlyCredits: 0 },
   [Plans.Pro]: { monthlyCredits: 0 },
   [Plans.Max]: { monthlyCredits: 0 },

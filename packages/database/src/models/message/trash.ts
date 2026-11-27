@@ -1,6 +1,5 @@
 import type { ChatToolPayload } from '@lobechat/types';
-import type { SQL } from 'drizzle-orm';
-import { and, eq, inArray, isNull, not, or } from 'drizzle-orm';
+import { and, eq, inArray, isNull, not } from 'drizzle-orm';
 
 import { messagePlugins, messages, topics } from '../../schemas';
 import {
@@ -11,6 +10,7 @@ import {
 } from '../../utils/softDelete';
 import { buildWorkspaceWhere } from '../../utils/workspace';
 import { recomputeTopicUsage } from '../topicUsage';
+import { nonNull } from '../utils/rows';
 import type { MessageBranchSnapshots } from './branchSnapshots';
 import type { MessageScopeArgs } from './scope';
 import { MessageScope } from './scope';
@@ -84,8 +84,8 @@ export class MessageTrashMutations extends MessageScope {
           .from(messagePlugins)
           .where(inArray(messagePlugins.toolCallId, toolCallIds));
         for (const row of companionRows) {
-          /* v8 ignore next -- unreachable: `toolCallId` is never null: `inArray(messagePlugins.toolCallId, …)` excludes NULL */
-          const owner = row.toolCallId ? toolCallOwner.get(row.toolCallId) : undefined;
+          // `inArray(messagePlugins.toolCallId, …)` excludes NULL.
+          const owner = toolCallOwner.get(nonNull(row.toolCallId, 'message_plugins.tool_call_id'));
           if (owner && !requestedIds.has(row.id)) companionOwner.set(row.id, owner);
         }
         const companionIds = [...companionOwner.keys()];
@@ -284,26 +284,24 @@ export class MessageTrashMutations extends MessageScope {
 
   /**
    * Cascade helper for trashing an agent: stamps the live messages that hang
-   * off the given agents or their legacy session shells WITHOUT a topic. Rows
-   * inside a topic are hidden by that topic's own stamp; topic-less rows have
+   * off the given agents WITHOUT a topic. Rows inside a topic are hidden by that topic's own stamp; topic-less rows have
    * no parent to hide them (`workspaceScope()` treats them as live), so they
    * are stamped directly and registered as the agent's children. Their branch
    * stays intact, so a plain restore of the same ids brings them back.
    */
-  softDeleteTopicless = async (
-    parents: { agentIds?: string[]; sessionIds?: string[] },
-    options: SoftDeleteOptions,
-  ) => {
-    const conditions: SQL[] = [];
-    if (parents.agentIds?.length) conditions.push(inArray(messages.agentId, parents.agentIds));
-    if (parents.sessionIds?.length)
-      conditions.push(inArray(messages.sessionId, parents.sessionIds));
-    if (conditions.length === 0) return [];
+  softDeleteTopicless = async (parents: { agentIds?: string[] }, options: SoftDeleteOptions) => {
+    if (!parents.agentIds?.length) return [];
 
     return this.db
       .update(messages)
       .set(trashStamp(options.deletedAt))
-      .where(and(isNull(messages.topicId), or(...conditions), this.ownership()))
+      .where(
+        and(
+          isNull(messages.topicId),
+          inArray(messages.agentId, parents.agentIds),
+          this.ownership(),
+        ),
+      )
       .returning({ content: messages.content, id: messages.id, role: messages.role });
   };
 

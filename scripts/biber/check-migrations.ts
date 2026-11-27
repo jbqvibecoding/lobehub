@@ -5,13 +5,14 @@
  *   bunx tsx scripts/biber/check-migrations.ts [migrations-dir]
  *
  * - journal entries are numbered 0, 1, 2… with no gap or repeat, and each tag starts with its number;
- * - every journal entry has its SQL file and its snapshot;
+ * - every journal entry has its SQL file, and the newest one its snapshot (drizzle-kit diffs only
+ *   against that one; upstream prunes the older snapshots after `db:generate`);
  * - every SQL file is in the journal (a file drizzle would never run is a lost migration);
  * - the journal's timestamps only increase, since drizzle applies a migration only when it is newer
  *   than the last one the database recorded.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import path from 'node:path';
 
 /** SQL files upstream left behind outside the journal; they are not migrations and never run. */
 const KNOWN_STRAY_SQL = new Set(['0065_add_document_fields.sql']);
@@ -24,7 +25,7 @@ interface JournalEntry {
 
 export const checkMigrations = (dir: string): string[] => {
   const problems: string[] = [];
-  const journalPath = join(dir, 'meta', '_journal.json');
+  const journalPath = path.join(dir, 'meta', '_journal.json');
   if (!existsSync(journalPath)) return [`no journal at ${journalPath}`];
 
   const entries = (JSON.parse(readFileSync(journalPath, 'utf8')) as { entries: JournalEntry[] })
@@ -38,10 +39,13 @@ export const checkMigrations = (dir: string): string[] => {
     if (!entry.tag.startsWith(`${number}_`)) {
       problems.push(`journal entry ${position} is tagged ${entry.tag}, expected ${number}_…`);
     }
-    if (!existsSync(join(dir, `${entry.tag}.sql`))) {
+    if (!existsSync(path.join(dir, `${entry.tag}.sql`))) {
       problems.push(`${entry.tag}: the SQL file is missing`);
     }
-    if (!existsSync(join(dir, 'meta', `${number}_snapshot.json`))) {
+    if (
+      position === entries.length - 1 &&
+      !existsSync(path.join(dir, 'meta', `${number}_snapshot.json`))
+    ) {
       problems.push(`${entry.tag}: meta/${number}_snapshot.json is missing`);
     }
     const previous = entries[position - 1];
@@ -65,8 +69,8 @@ export const checkMigrations = (dir: string): string[] => {
   return problems;
 };
 
-if (process.argv[1] && resolve(process.argv[1]) === resolve(__filename)) {
-  const dir = resolve(process.argv[2] ?? 'packages/database/migrations');
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename)) {
+  const dir = path.resolve(process.argv[2] ?? 'packages/database/migrations');
   const problems = checkMigrations(dir);
   if (problems.length === 0) {
     console.log(`Migrations line up (${dir}).`);

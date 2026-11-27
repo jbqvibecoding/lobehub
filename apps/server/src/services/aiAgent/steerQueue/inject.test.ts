@@ -64,6 +64,27 @@ describe('canJoinRunningTurn', () => {
     expect(canJoinRunningTurn(followUp('a', 1), state)).toBe(true);
   });
 
+  it('does not join a turn that has a different artboard stream capability', () => {
+    expect(canJoinRunningTurn(followUp('a', 1, { acceptsArtboardWorks: true }), state)).toBe(false);
+  });
+
+  it('takes a parent’s steer instruction whatever the sub-agent run’s settings', () => {
+    const subAgentRun = {
+      ...state,
+      host: { acceptsFileWorks: true, clientProtocol: 2 },
+    } as AgentState;
+    const steer = { ...followUp('a', 1), subAgentSteer: true };
+
+    expect(canJoinRunningTurn(followUp('a', 1), subAgentRun)).toBe(false);
+    expect(canJoinRunningTurn(steer, subAgentRun)).toBe(true);
+    expect(
+      canJoinRunningTurn(
+        { ...steer, request: { ...steer.request, agentId: 'agt-2' } },
+        subAgentRun,
+      ),
+    ).toBe(false);
+  });
+
   it.each([
     ['an attachment', { fileIds: ['f1'] }],
     [
@@ -188,6 +209,27 @@ describe('injectQueuedFollowUp', () => {
       expect.any(String),
       held.map((e) => e.id),
     );
+  });
+
+  it('joins an agent’s follow-up under that agent, and leaves another author’s for later', async () => {
+    const writer = { agentId: 'agt-writer', hop: 1, topicId: 'tpc-writer' };
+    const fromWriter = [
+      { ...followUp('one', 1), agentSender: writer },
+      { ...followUp('two', 2), agentSender: writer },
+    ];
+    const typed = followUp('typed', 3);
+    mocks.drain.mockResolvedValue([...fromWriter, typed]);
+
+    await expect(inject()).resolves.toEqual({ messageId: 'msg-steer' });
+
+    // One message, one author: the person's text must not read as the agent's.
+    expect(mocks.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: 'one\n\ntwo',
+        metadata: expect.objectContaining({ agentSender: writer, steer: true }),
+      }),
+    );
+    expect(mocks.settle).toHaveBeenCalledWith(scope, expect.any(String), [typed.id]);
   });
 
   it('joins nothing when the first follow-up needs a turn of its own', async () => {

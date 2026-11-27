@@ -4,6 +4,7 @@ import { isBotPlatformAvailable } from '@lobechat/region';
 
 import { regionEnv } from '@/envs/region';
 
+import { dingtalk } from './dingtalk/definition';
 import { discord } from './discord/definition';
 import { feishu } from './feishu/definitions/feishu';
 import { lark } from './feishu/definitions/lark';
@@ -14,6 +15,7 @@ import { PlatformRegistry } from './registry';
 import { slack } from './slack/definition';
 import { telegram } from './telegram/definition';
 import { wechat } from './wechat/definition';
+import { wecom } from './wecom/definition';
 
 export {
   allowFromField,
@@ -48,10 +50,12 @@ export {
   makeServerIdField,
   makeUserIdField,
   messageMatchesWatchKeyword,
+  NEW_BOT_REACTION_MODE,
   normalizeAllowFromEntries,
   normalizeBotReactionMode,
   normalizeBotReplyLocale,
   normalizeBotReplyPlacementMode,
+  processingMessageField,
   reactionModeField,
   RECEIVED_REACTION_EMOJI,
   replyPlacementField,
@@ -60,6 +64,7 @@ export {
   shouldHandleDm,
   shouldHandleGroup,
   shouldHandleGuest,
+  shouldPostProcessingMessage,
   THINKING_REACTION_EMOJI,
   type UserAllowlist,
   validateAccessSettings,
@@ -112,12 +117,14 @@ export {
   resolveBotConcurrency,
   resolveBotProviderConfig,
   resolveConnectionMode,
+  restrictPlatformToWebhook,
   withResolvedConcurrencySettings,
 } from './utils';
 export type { BotProviderFieldValues, FieldFormatViolation } from './validateFieldFormats';
 export { collectFieldFormatViolations, formatFieldFormatViolations } from './validateFieldFormats';
 
 // --------------- Platform definitions ---------------
+export { dingtalk } from './dingtalk/definition';
 export { discord } from './discord/definition';
 export { feishu } from './feishu/definitions/feishu';
 export { lark } from './feishu/definitions/lark';
@@ -127,11 +134,24 @@ export { qq } from './qq/definition';
 export { slack } from './slack/definition';
 export { telegram } from './telegram/definition';
 export { wechat } from './wechat/definition';
+export { wecom } from './wecom/definition';
 
 export const platformRegistry = new PlatformRegistry();
 
 // The mainland edition only offers the platforms reachable from mainland China.
-for (const definition of [discord, telegram, slack, feishu, imessage, lark, qq, wechat, line]) {
+for (const definition of [
+  discord,
+  telegram,
+  slack,
+  feishu,
+  imessage,
+  lark,
+  qq,
+  wechat,
+  line,
+  wecom,
+  dingtalk,
+]) {
   if (isBotPlatformAvailable(regionEnv.APP_REGION, definition.id)) {
     platformRegistry.register(definition);
   }

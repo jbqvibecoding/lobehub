@@ -34,6 +34,8 @@ import { isDesktop } from '@/const/version';
 import { createMoveTopicsModal } from '@/features/AgentTopicManager/MoveTopicsModal';
 import { createTopicForwardModal } from '@/features/Conversation/MessageForward/TopicForwardModal';
 import { confirmRemoveTopic } from '@/features/DeleteTopicConfirm';
+import { useFavoriteMenuItem } from '@/features/Favorites';
+import { usePrivateAgentLinkNotice } from '@/features/PrivateAgentLinkNotice';
 import { getProjectTopicPath } from '@/features/Projects/Layout/navigation';
 import { openShareModal } from '@/features/ShareModal';
 import { openTopicDoctorModal } from '@/features/TopicDoctorModal';
@@ -81,6 +83,7 @@ export const useTopicItemDropdownMenu = ({
   const routeTopicIdRef = useLatest(routeTopicId);
   const unmountedRef = useUnmountedRef();
   const activeWorkspaceSlug = useActiveWorkspaceSlug();
+  const notifyPrivateAgentLink = usePrivateAgentLinkNotice();
   const { allowed: canCreateTopic } = usePermission('create_content');
   const { allowed: canEditTopic } = usePermission('edit_own_content');
 
@@ -102,6 +105,21 @@ export const useTopicItemDropdownMenu = ({
   const appOrigin = useAppOrigin();
   const enableTopicBugReport = useUserStore(labPreferSelectors.enableTopicBugReport);
   const bugReportItem = useTopicBugReportMenuItem({ agentId: activeAgentId, topicId: id });
+  // Pin (`fav`) orders the topic list; a favorite adds the topic to the home
+  // sidebar's Favorites section. A topic still titled `...` is being named, so
+  // it waits for its real title before it can be added.
+  const favoriteMenuItem = useFavoriteMenuItem(
+    id && activeAgentId
+      ? {
+          path: AGENT_CHAT_TOPIC_URL(activeAgentId, id),
+          snapshotReady: !!title && title !== '...',
+          targetId: id,
+          title,
+          type: 'topic',
+        }
+      : undefined,
+    { showHotkey: false },
+  );
 
   const [
     autoRenameTopicTitle,
@@ -174,6 +192,7 @@ export const useTopicItemDropdownMenu = ({
         },
         sfSymbol: fav ? 'pin.slash' : 'pin',
       },
+      ...(favoriteMenuItem ? [favoriteMenuItem] : []),
       {
         type: 'divider' as const,
       },
@@ -278,7 +297,9 @@ export const useTopicItemDropdownMenu = ({
             activeWorkspaceSlug,
           )}`;
           await copyToClipboard(url);
-          toast.success(t('actions.copyLinkSuccess'));
+          // A private agent's topic link opens for nobody else in the workspace.
+          if (!(await notifyPrivateAgentLink(activeAgentId)))
+            toast.success(t('actions.copyLinkSuccess'));
         },
       },
       {
@@ -407,6 +428,7 @@ export const useTopicItemDropdownMenu = ({
     enableTopicBugReport,
     autoRenameTopicTitle,
     duplicateTopic,
+    favoriteMenuItem,
     favoriteTopic,
     toggleCompleted,
     removeTopic,
@@ -415,6 +437,7 @@ export const useTopicItemDropdownMenu = ({
     openTopicInPortal,
     addTab,
     navigate,
+    notifyPrivateAgentLink,
     t,
     handleOpenShareModal,
   ]);

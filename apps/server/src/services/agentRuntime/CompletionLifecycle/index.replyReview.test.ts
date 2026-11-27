@@ -43,7 +43,7 @@ describe('CompletionLifecycle.dispatchHooks — mainland content safety on the r
 
   const setup = (verdict: 'allowed' | 'hidden') => {
     const lifecycle = buildLifecycle();
-    vi.spyOn(lifecycle as any, 'persistCompletion').mockResolvedValue(undefined);
+    vi.spyOn(lifecycle as any, 'persistCompletion').mockResolvedValue({});
     vi.spyOn(lifecycle as any, 'createVerifyMessage').mockResolvedValue(undefined);
     vi.spyOn(verifyServices, 'runVerifyOnCompletion').mockResolvedValue(undefined);
     vi.spyOn(hookDispatcher, 'unregister').mockImplementation(() => {});

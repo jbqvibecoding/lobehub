@@ -1,10 +1,12 @@
 import type {
   AgentBuilderContext,
   AgentContextDocument,
+  AgentDocumentChangesByMessage,
   AgentGroupConfig,
   AgentManagementContext,
   BotPlatformContext,
   DiscordContext,
+  DocumentReferenceItem,
   EvalContext,
   FileContextConfig,
   GroupAgentBuilderContext,
@@ -14,6 +16,7 @@ import type {
   OnboardingContext,
   PlanTodoConfig,
   ProjectInstructionFile,
+  RevokedDocumentReads,
   SkillMeta,
   ToolDiscoveryConfig,
   TopicReferenceItem,
@@ -21,8 +24,9 @@ import type {
   UserProfileConfig,
   WorkspaceContext,
 } from '@lobechat/context-engine';
-import type { AgentIdentityContext, PageContentContext } from '@lobechat/prompts';
+import type { AgentIdentityContext } from '@lobechat/prompts';
 import type {
+  AgentAccountContext,
   ExpertiseContextSnapshot,
   RuntimeAdditionalContextFragment,
   RuntimeInitialContext,
@@ -41,6 +45,8 @@ export type ContextVariables = Record<string, string | (() => string)>;
  * host (`resolveAgentConfig`) and frozen.
  */
 export interface ContextAgentSnapshot {
+  /** Change notes for the documents index, keyed by the user message each belongs to. */
+  documentChanges?: AgentDocumentChangesByMessage;
   /** Agent documents the agent may consult. */
   documents?: AgentContextDocument[];
   enableHistoryCount?: boolean;
@@ -52,6 +58,8 @@ export interface ContextAgentSnapshot {
   inputTemplate?: string;
   /** Files and knowledge bases attached to the agent. */
   knowledge?: KnowledgeConfig;
+  /** Documents deleted or disabled since earlier turns read them, per reading agent. */
+  revokedDocumentReads?: RevokedDocumentReads[];
   systemRole?: string;
 }
 
@@ -78,6 +86,7 @@ export interface ContextRunSnapshot {
    */
   enableAgentMode?: boolean;
   enableExpertise?: boolean;
+  enableMcpAppContext?: boolean;
   expertise?: ExpertiseContextSnapshot;
   /** maxSteps exceeded: tools are stripped and a summary prompt is injected. */
   forceFinish?: boolean;
@@ -129,11 +138,17 @@ export interface ContextWorldSnapshot {
  * state. The host decides how to fetch them; the core only places them.
  */
 export interface ContextStepSnapshot {
+  /**
+   * The agent's own accounts and inbox, gathered fresh this step. First-class
+   * identity state — it is what lets the runtime stop carrying an always-on
+   * mailbox tool.
+   */
+  agentAccountContext?: AgentAccountContext;
   agentBuilderContext?: AgentBuilderContext;
   agentManagementContext?: AgentManagementContext;
+  documentReferences?: DocumentReferenceItem[];
   groupAgentBuilderContext?: GroupAgentBuilderContext;
   onboardingContext?: OnboardingContext;
-  pageContentContext?: PageContentContext;
   planTodo?: PlanTodoConfig;
   topicReferences?: TopicReferenceItem[];
   /** The user's profile, and the "About you" interview's state (Biber). */

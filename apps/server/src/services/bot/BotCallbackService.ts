@@ -4,6 +4,7 @@ import type {
   BotNoReplyResult,
   BotWakeKind,
   ChatErrorBudgetContext,
+  ChatErrorDispatchContext,
   ChatErrorHeterogeneousContext,
 } from '@lobechat/types';
 import debug from 'debug';
@@ -15,6 +16,7 @@ import { TopicModel } from '@/database/models/topic';
 import { type LobeChatDatabase } from '@/database/type';
 import { getAgentRuntimeRedisClient } from '@/server/modules/AgentRuntime/redis';
 import { KeyVaultsGateKeeper } from '@/server/modules/KeyVaultsEncrypt';
+import { detectNoReply, extractStandDown } from '@/server/services/conversationWake/noReply';
 import { getMessageGatewayClient } from '@/server/services/gateway/MessageGatewayClient';
 import {
   getInstallationStore,
@@ -28,7 +30,6 @@ import { describeApprovalCall } from '@/server/services/toolApproval/describe';
 
 import { AgentBridgeService } from './AgentBridgeService';
 import { runDeferredReplay, scheduleDeferredReplay } from './deferredReplay';
-import { detectNoReply, extractStandDown } from './noReply';
 import { recordNoReplyLabel } from './noReplyLabel';
 import type {
   BotMessageAttachment,
@@ -114,6 +115,7 @@ export interface BotCallbackBody {
    * Forwarded verbatim from the agent lifecycle event.
    */
   errorBudget?: ChatErrorBudgetContext;
+  errorDispatch?: ChatErrorDispatchContext;
   errorHeterogeneous?: ChatErrorHeterogeneousContext;
   errorMessage?: string;
   errorType?: string;
@@ -643,6 +645,7 @@ export class BotCallbackService {
       lastAssistantContent,
       errorAttribution,
       errorBudget,
+      errorDispatch,
       errorHeterogeneous,
       errorMessage,
       errorType,
@@ -665,6 +668,7 @@ export class BotCallbackService {
         errorAttribution,
         errorBudget,
         errorHeterogeneous,
+        errorDispatch,
       );
       const errorText = client.formatMarkdown?.(errorBody) ?? errorBody;
       if (deliveredChunkCount < 1) {

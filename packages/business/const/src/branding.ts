@@ -8,6 +8,17 @@ export const BRANDING_NAME: string = 'Biber';
 /** Generated with the rest of the icons by `scripts/brand/generate-icons.mjs`. */
 export const BRANDING_LOGO_URL = '/icons/icon-512x512.png';
 
+/**
+ * Display name of the built-in default assistant (the inbox agent).
+ *
+ * Kept separate from `BRANDING_NAME` because it reads as a persona, not a
+ * product: white-label deployments usually want something like
+ * `'<Brand> AI'` rather than the bare product name. Drives
+ * `DEFAULT_INBOX_TITLE` and the i18n brand post-processor, so overriding this
+ * one constant renames the assistant everywhere.
+ */
+export const BRANDING_INBOX_TITLE = 'Biber';
+
 export const ORG_NAME = 'Biber';
 
 export const BRANDING_URL = {

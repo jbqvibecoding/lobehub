@@ -1,22 +1,9 @@
-import { defaultSandboxProviderForRegion } from '@lobechat/region';
-
-import { regionEnv } from '@/envs/region';
-import { sandboxEnv } from '@/envs/sandbox';
-
+import { getSandboxProviderKind } from './deployment';
 import { MarketSandboxProvider } from './providers/market';
 import { OnlyboxesSandboxProvider } from './providers/onlyboxes';
 import { OpenBotSandboxProvider } from './providers/openbot';
 import { SandboxMiddlewareService } from './service';
-import type {
-  SandboxProvider,
-  SandboxProviderKind,
-  SandboxService,
-  SandboxServiceOptions,
-} from './types';
-
-export const getSandboxProviderKind = (): SandboxProviderKind => {
-  return sandboxEnv.SANDBOX_PROVIDER || defaultSandboxProviderForRegion(regionEnv.APP_REGION);
-};
+import type { SandboxProvider, SandboxService, SandboxServiceOptions } from './types';
 
 const createSandboxProvider = (options: SandboxServiceOptions): SandboxProvider => {
   switch (getSandboxProviderKind()) {

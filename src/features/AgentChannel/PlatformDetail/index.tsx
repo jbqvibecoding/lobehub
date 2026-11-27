@@ -25,8 +25,9 @@ import { useClientDataSWR } from '@/libs/swr';
 import type { SerializedPlatformDefinition } from '@/server/services/bot/platforms/types';
 import { agentBotProviderService } from '@/services/agentBotProvider';
 import { useAgentStore } from '@/store/agent';
-import { agentSelectors } from '@/store/agent/selectors';
+import { agentByIdSelectors, agentSelectors } from '@/store/agent/selectors';
 import { useServerConfigStore } from '@/store/serverConfig';
+import { densityVars } from '@/styles/densityVars';
 import { BOT_RUNTIME_STATUSES, type BotRuntimeStatusSnapshot } from '@/types/botRuntimeStatus';
 
 import { platformCredentialBodyMap } from '../platform/registry';
@@ -37,8 +38,10 @@ import { ChannelHero } from './ChannelHero';
 import { ChannelTabBar } from './ChannelTabBar';
 import {
   type ChannelTab,
+  type ChannelValues,
   defaultTab,
   footerSaveHidden,
+  isRecordTab,
   resolveTabs,
   tabsWithIssues,
 } from './channelTabs';
@@ -46,17 +49,19 @@ import { FooterActions, FooterNotices } from './Footer';
 import {
   findOverLimitSettings,
   getChannelFormValues,
-  isWakeMasterReleased,
   mergeCredentialsForSave,
   mergeSettingsWithDefaults,
   shouldAdoptIncomingConfig,
-  withWakeMasterOn,
+  WAKE_MASTER_KEY,
+  withHeterogeneousWakeOff,
+  withNewBotReactionOff,
 } from './formState';
 import { type ChannelPostSave, ChannelPostSaveContext } from './postSaveContext';
 import { QuickView } from './QuickView';
 import { hasPendingChanges, pickKeys, replyDiffers } from './replySettings';
 import { createSaveCoordinator } from './saveCoordinator';
 import {
+  clearEditedModuleErrors,
   dirtyModuleIds,
   discardPatch,
   resolveSaveModules,
@@ -65,6 +70,7 @@ import {
   tabOfModule,
 } from './saveModules';
 import { getSchemaFields, groupSettingsFields, REPLY_KEYS } from './settingsGroups';
+import { useFoldPreviewOnRecords } from './useFoldPreviewOnRecords';
 import { useNarrowLayout } from './useNarrowLayout';
 
 const styles = createStaticStyles(({ css, cssVar }) => ({
@@ -103,7 +109,7 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
     align-items: center;
 
     min-width: 0;
-    padding-block: 16px 24px;
+    padding-block: ${densityVars.cardPadding} 24px;
     padding-inline-end: 32px;
 
     &[data-preview='closed'],
@@ -114,7 +120,7 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
   hero: css`
     width: 100%;
     max-width: 1024px;
-    padding-block-end: 16px;
+    padding-block-end: ${densityVars.cardPadding};
   `,
   tabs: css`
     width: 100%;
@@ -150,14 +156,20 @@ const omitUndefinedValues = <T extends Record<string, unknown>>(record: T) =>
 const getFormValues = (
   schema: SerializedPlatformDefinition['schema'],
   config?: CurrentConfig,
-  wakeReleased = false,
+  heterogeneous = false,
 ): ChannelFormValues => {
   const values = config ? getChannelFormValues(config) : { credentials: {}, settings: {} };
-  const settings = mergeSettingsWithDefaults(schema, omitUndefinedValues(values.settings));
-  return {
-    ...values,
-    settings: withWakeMasterOn(settings, wakeReleased) as Record<string, {} | undefined>,
-  };
+  const stored = omitUndefinedValues(values.settings);
+  // A bot being created starts with status reactions off (and, for a heterogeneous agent, bot wake
+  // off); a saved bot shows what it stored.
+  const seeded = config
+    ? stored
+    : withNewBotReactionOff(
+        schema,
+        heterogeneous ? withHeterogeneousWakeOff(schema, stored) : stored,
+      );
+  const settings = mergeSettingsWithDefaults(schema, seeded);
+  return { ...values, settings: settings as Record<string, {} | undefined> };
 };
 
 export interface CurrentConfig {
@@ -204,16 +216,17 @@ const PlatformDetail = memo<PlatformDetailProps>(
       (s) => agentSelectors.getAgentMetaById(agentId)(s).backgroundColor,
     );
 
+    // A heterogeneous agent (Claude Code, Codex) has to opt in to speaking up on its own.
+    const heterogeneous = useAgentStore(agentByIdSelectors.isAgentHeterogeneousById(agentId));
     // Options behind a rollout flag are left out of the tabs until the flag is on.
     const featureFlags = useServerConfigStore((state) => state.featureFlags) as
       Record<string, unknown> | undefined;
-    const wakeReleased = isWakeMasterReleased(platformDef.schema, featureFlags);
     // What is stored, in form shape. The reply settings are compared against it
     // to decide what to save on the spot, everything else to decide what still
     // waits for the Save button.
     const storedValues = useMemo(
-      () => getFormValues(platformDef.schema, currentConfig, wakeReleased),
-      [platformDef.schema, currentConfig, wakeReleased],
+      () => getFormValues(platformDef.schema, currentConfig, heterogeneous),
+      [platformDef.schema, currentConfig, heterogeneous],
     );
     const storedRef = useRef(storedValues);
     useEffect(() => {
@@ -225,14 +238,18 @@ const PlatformDetail = memo<PlatformDetailProps>(
     const [previewOpen, setPreviewOpen] = useState(true);
     const [drawerOpen, setDrawerOpen] = useState(false);
     const previewInline = !narrow && previewOpen;
+    // The settings that save as soon as they change: how a reply looks, and the wake switch.
     const replyKeys = useMemo(
       () =>
-        REPLY_KEYS.filter((key) =>
+        [...REPLY_KEYS, WAKE_MASTER_KEY].filter((key) =>
           getSchemaFields(platformDef.schema, 'settings').some((field) => field.key === key),
         ),
       [platformDef.schema],
     );
-    const valuesChangedRef = useRef<() => void>(undefined);
+    /** Recomputes pending state; `userEdit` is true only for a real edit (FormKit's user source). */
+    const valuesChangedRef = useRef<(userEdit?: boolean) => void>(undefined);
+    /** Form values seen by the last change, to tell which module an edit touched */
+    const lastValuesRef = useRef<ChannelValues>(undefined);
     const autoSavingRef = useRef(false);
     // Reply autosaves and the Save button both write the whole settings column;
     // this keeps them from overlapping (see `createSaveCoordinator`).
@@ -244,8 +261,8 @@ const PlatformDetail = memo<PlatformDetailProps>(
     const [savingModule, setSavingModule] = useState<SaveModuleId>();
     const saveQueueRef = useRef<Promise<void>>(undefined);
     const form = useForm<ChannelFormValues>({
-      initialValues: getFormValues(platformDef.schema, currentConfig, wakeReleased),
-      onValuesChange: () => valuesChangedRef.current?.(),
+      initialValues: getFormValues(platformDef.schema, currentConfig, heterogeneous),
+      onValuesChange: () => valuesChangedRef.current?.(true),
     });
 
     // Which tab is open, kept in `?tab=` so a reload or a shared link lands on it. No value
@@ -271,11 +288,13 @@ const PlatformDetail = memo<PlatformDetailProps>(
           groupSettingsFields(getSchemaFields(platformDef.schema, 'settings', featureFlags)).map(
             (group) => group.key,
           ),
+          { hasConfig: !!currentConfig },
         ),
-      [featureFlags, platformDef.schema],
+      [featureFlags, platformDef.schema, currentConfig],
     );
     const activeTab =
       pickedTab && tabs.includes(pickedTab) ? pickedTab : defaultTab(tabs, !!currentConfig);
+    useFoldPreviewOnRecords(activeTab, previewOpen, setPreviewOpen);
     // The blocks the page saves one by one. A platform with its own credential body (WeChat)
     // connects through its own flow, so it has no credentials block.
     const saveModules = useMemo(() => {
@@ -330,6 +349,8 @@ const PlatformDetail = memo<PlatformDetailProps>(
     const [showConnected, setShowConnected] = useState(false);
     const [testing, setTesting] = useState(false);
     const [testResult, setTestResult] = useState<TestResult>();
+    // A block's failed Save is shown beside that block's Save button, not as a toast: the page stays open.
+    const [moduleErrors, setModuleErrors] = useState<Partial<Record<SaveModuleId, string>>>({});
 
     // Platform-specific extras (e.g. iMessage's BlueBubbles bridge) register a
     // side-effect here so it runs as part of the single "Save Configuration"
@@ -469,14 +490,15 @@ const PlatformDetail = memo<PlatformDetailProps>(
       // person's latest toggle yet, and adopting it would flip the toggle back.
       if (autoSavingRef.current) return;
 
-      form.reset(getFormValues(platformDef.schema, currentConfig, wakeReleased));
+      form.reset(getFormValues(platformDef.schema, currentConfig, heterogeneous));
       setIsDirty(false);
       setDirtyModules([]);
-    }, [currentConfig, wakeReleased, form, platformDef.schema, isDirty]);
+    }, [currentConfig, form, heterogeneous, platformDef.schema, isDirty]);
 
     // Reply settings are switches and choices whose effect is seen at once in
-    // the chat, so they are stored as soon as they change instead of waiting for
-    // the Save button. Only the reply keys are written, on top of what is stored:
+    // the chat, and the wake switch is a plain on/off, so they are stored as soon
+    // as they change instead of waiting for the Save button. Only the reply keys
+    // are written, on top of what is stored:
     // a half-finished edit on another tab is neither saved nor lost.
     const saveReplySettings = useCallback(async () => {
       if (!currentConfig || writeDisabled || replyKeys.length === 0) return;
@@ -503,7 +525,8 @@ const PlatformDetail = memo<PlatformDetailProps>(
         storedRef.current = { ...stored, settings: settings as ChannelFormValues['settings'] };
         toast.success(t('channel.saved'));
       } catch {
-        toast.error(t('channel.updateFailed'));
+        // Autosaved switches have no Save button; the top notice is where save failures show
+        setSaveResult({ hint: t('channel.updateFailedRetry'), type: 'error' });
         form.setValues({
           settings: {
             ...form.getValues().settings,
@@ -527,24 +550,35 @@ const PlatformDetail = memo<PlatformDetailProps>(
       writeDisabled,
     ]);
 
-    const handleValuesChange = useCallback(() => {
-      const values = form.getValues();
-      setIsDirty(hasPendingChanges(values, storedRef.current, replyKeys));
-      setDirtyModules(dirtyModuleIds(saveModules, values, storedRef.current));
+    const handleValuesChange = useCallback(
+      (userEdit?: boolean) => {
+        const values = form.getValues();
+        setIsDirty(hasPendingChanges(values, storedRef.current, replyKeys));
+        setDirtyModules(dirtyModuleIds(saveModules, values, storedRef.current));
+        // An edit after a failed save makes that failure stale; the next save reports afresh.
+        // Post-save recomputes (no user edit) must keep the failure they just reported.
+        const previous = lastValuesRef.current;
+        lastValuesRef.current = values;
+        if (userEdit) {
+          setSaveResult((current) => (current?.type === 'error' ? undefined : current));
+          setModuleErrors((prev) => clearEditedModuleErrors(prev, saveModules, values, previous));
+        }
 
-      if (!currentConfig || writeDisabled || replyKeys.length === 0) return;
-      if (!replyDiffers(values.settings, storedRef.current.settings, replyKeys)) return;
+        if (!currentConfig || writeDisabled || replyKeys.length === 0) return;
+        if (!replyDiffers(values.settings, storedRef.current.settings, replyKeys)) return;
 
-      saveCoordinator.scheduleAuto(saveReplySettings, 400);
-    }, [
-      currentConfig,
-      form,
-      replyKeys,
-      saveCoordinator,
-      saveModules,
-      saveReplySettings,
-      writeDisabled,
-    ]);
+        saveCoordinator.scheduleAuto(saveReplySettings, 400);
+      },
+      [
+        currentConfig,
+        form,
+        replyKeys,
+        saveCoordinator,
+        saveModules,
+        saveReplySettings,
+        writeDisabled,
+      ],
+    );
     useEffect(() => {
       valuesChangedRef.current = handleValuesChange;
     }, [handleValuesChange]);
@@ -605,7 +639,10 @@ const PlatformDetail = memo<PlatformDetailProps>(
         const overLimit = findOverLimitSettings(platformDef.schema, settings);
         if (overLimit.length > 0) {
           const max = Math.min(...overLimit.map((entry) => entry.max));
-          toast.error(t('channel.channelListLimit').replace('{{max}}', String(max)));
+          setSaveResult({
+            hint: t('channel.channelListLimit').replace('{{max}}', String(max)),
+            type: 'error',
+          });
           setSaving(false);
           return;
         }
@@ -753,7 +790,7 @@ const PlatformDetail = memo<PlatformDetailProps>(
           try {
             await deleteBotProvider(currentConfig.id, agentId);
             toast.success(t('channel.removed'));
-            form.reset(getFormValues(platformDef.schema, undefined, wakeReleased));
+            form.reset(getFormValues(platformDef.schema, undefined, heterogeneous));
           } catch {
             toast.error(t('channel.removeFailed'));
           }
@@ -767,8 +804,8 @@ const PlatformDetail = memo<PlatformDetailProps>(
       deleteBotProvider,
       t,
       form,
+      heterogeneous,
       platformDef.schema,
-      wakeReleased,
     ]);
 
     const handleTestConnection = useCallback(async () => {
@@ -805,19 +842,23 @@ const PlatformDetail = memo<PlatformDetailProps>(
     }, [writeDisabled, currentConfig, connectResult, platformDef.id, testConnection, t]);
 
     const handleDiscard = useCallback(() => {
-      form.reset(getFormValues(platformDef.schema, currentConfig, wakeReleased));
+      form.reset(getFormValues(platformDef.schema, currentConfig, heterogeneous));
       setIsDirty(false);
       setSaveResult(undefined);
       setTestResult(undefined);
-    }, [currentConfig, wakeReleased, form, platformDef.schema]);
+    }, [currentConfig, form, heterogeneous, platformDef.schema]);
 
-    const handleFormValuesChange = handleValuesChange;
+    const handleFormValuesChange = useCallback(
+      () => handleValuesChange(true),
+      [handleValuesChange],
+    );
 
     // Put one block back as stored; every other block keeps its edits.
     const discardModule = useCallback(
       (id: SaveModuleId) => {
         const block = saveModules.find((m) => m.id === id);
         if (!block) return;
+        setModuleErrors((prev) => ({ ...prev, [id]: undefined }));
         const stored = storedRef.current;
 
         if (block.kind === 'credentials') {
@@ -849,9 +890,13 @@ const PlatformDetail = memo<PlatformDetailProps>(
         const block = saveModules.find((m) => m.id === id);
         if (!block || !currentConfig || writeDisabled) return Promise.resolve();
 
+        const setModuleError = (message?: string) =>
+          setModuleErrors((prev) => ({ ...prev, [id]: message }));
+
         const run = async () => {
           await saveCoordinator.beginExplicit();
           setSavingModule(id);
+          setModuleError();
 
           try {
             const paths =
@@ -901,7 +946,7 @@ const PlatformDetail = memo<PlatformDetailProps>(
             const overLimit = findOverLimitSettings(platformDef.schema, settings);
             if (overLimit.length > 0) {
               const max = Math.min(...overLimit.map((entry) => entry.max));
-              toast.error(t('channel.channelListLimit').replace('{{max}}', String(max)));
+              setModuleError(t('channel.channelListLimit').replace('{{max}}', String(max)));
               return;
             }
 
@@ -914,7 +959,7 @@ const PlatformDetail = memo<PlatformDetailProps>(
               setSaveResult({ errorDetail: e?.message || String(e), type: 'error' });
               setSaving(false);
             } else {
-              toast.error(t('channel.updateFailed'));
+              setModuleError(t('channel.updateFailedRetry'));
             }
           } finally {
             saveCoordinator.endExplicit();
@@ -949,13 +994,22 @@ const PlatformDetail = memo<PlatformDetailProps>(
         currentConfig
           ? {
               dirty: dirtyModules,
+              errors: moduleErrors,
               ids: saveModules.map((module) => module.id),
               onDiscard: discardModule,
               onSave: (id) => void saveModule(id),
               saving: savingModule,
             }
           : undefined,
-      [currentConfig, dirtyModules, discardModule, saveModule, saveModules, savingModule],
+      [
+        currentConfig,
+        dirtyModules,
+        discardModule,
+        moduleErrors,
+        saveModule,
+        saveModules,
+        savingModule,
+      ],
     );
 
     const handlePaidFeatureUpgrade = useCallback(() => {
@@ -1036,6 +1090,7 @@ const PlatformDetail = memo<PlatformDetailProps>(
                   currentConfig={currentConfig}
                   form={form}
                   hasConfig={!!currentConfig}
+                  hideSetupHints={isRecordTab(activeTab)}
                   platformDef={platformDef}
                   saveResult={saveResult}
                   testResult={testResult}
@@ -1057,6 +1112,7 @@ const PlatformDetail = memo<PlatformDetailProps>(
                 />
                 <FooterActions
                   connecting={connecting}
+                  connectionActions={activeTab === 'connect'}
                   disabled={readOnly}
                   form={form}
                   hasConfig={!!currentConfig}

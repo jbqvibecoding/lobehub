@@ -1,3 +1,4 @@
+import { isHeterogeneousAgentModelId } from '@lobechat/const';
 import type { LobeAgentAgencyConfig } from '@lobechat/types';
 import { resolveAgentAgencyConfig } from '@lobechat/types';
 
@@ -26,6 +27,12 @@ export interface UseEffectiveAgencyConfigResult {
   canDisplayExecutionTarget: boolean;
   /** Whether this caller may open the execution-target selector. */
   canSelectExecutionTarget: boolean;
+  /**
+   * The caller's own per-agent execution target applies instead of the shared
+   * default: a member's pick under the member-selection policy, or a manager's
+   * this-machine pick (always kept per user). Ignores the topic binding.
+   */
+  executionTargetOverridden: boolean;
   /**
    * The workspace preference fetch is still in flight. Until it settles, a
    * workspace agent's `agencyConfig` may reflect only the shared row — callers
@@ -86,6 +93,10 @@ export const useEffectiveAgencyConfig = (
   const agent = useAgentStore((s) =>
     agentId ? agentByIdSelectors.getAgentById(agentId)(s) : undefined,
   );
+  const isModelOnlyHetero = useAgentStore(
+    (s) =>
+      !!agentId && isHeterogeneousAgentModelId(agentByIdSelectors.getAgentModelById(agentId)(s)),
+  );
   const { canManageAgent, isAccessLoading } = useAgentManagementAccess(agentId);
   const usesWorkspaceMemberSelection =
     !!agent?.workspaceId && agent.visibility !== 'private' && !canManageAgent;
@@ -109,6 +120,14 @@ export const useEffectiveAgencyConfig = (
     visibility: agent?.visibility,
     workspaceId: agent?.workspaceId,
   });
+  // Mirrors `resolveAgentAgencyConfig`: a fixed policy shelves a member's
+  // override, while managers and private-agent owners keep theirs.
+  const executionTargetOverridden =
+    !!agent?.workspaceId &&
+    override?.executionTarget !== undefined &&
+    !(
+      usesWorkspaceMemberSelection && sharedAgencyConfig?.executionTargetSelectionPolicy === 'fixed'
+    );
   const activeTopicId = useChatStore((s) => s.activeTopicId);
   const bindingTopicId = topicId === undefined ? activeTopicId : topicId;
   const topicDeviceId = useChatStore((s) =>
@@ -139,6 +158,7 @@ export const useEffectiveAgencyConfig = (
     },
     topicDeviceId,
     currentDeviceId,
+    { isHetero: isModelOnlyHetero },
   );
   // Managers and private-agent owners also keep their `local` pick in the
   // per-user override, so any workspace agent must wait for the preference
@@ -153,6 +173,7 @@ export const useEffectiveAgencyConfig = (
       !isProjectDirectoryTopic &&
       !isPreferenceLoading &&
       agencyConfig?.executionTargetSelectionPolicy !== 'fixed',
+    executionTargetOverridden,
     isPreferenceLoading,
     topicDeviceUnknown,
     workspaceScoped,

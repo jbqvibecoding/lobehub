@@ -75,6 +75,11 @@ export interface TaskRunTarget {
   /** Where the run lands: the task's pin if it has one, else the agent's own target. */
   effectiveTarget: DeviceExecutionTarget;
   /**
+   * The machine the assignee agent's own target lands on, when it names one. The
+   * "follow the agent" state starts from it, and the device list marks it.
+   */
+  inheritedDeviceId?: string;
+  /**
    * The directory the run will start in when the task does not choose one,
    * resolved through the same chain the runtime uses. Shown as the greyed hint
    * so inheritance is legible instead of a black box.
@@ -120,7 +125,12 @@ export interface TaskRunTarget {
  * policy is the exception — the run side drops the requested device for it, so
  * this reports the inherited target instead of the stored pin.
  */
-export const useTaskRunTarget = (agentId: string, pinnedDeviceId?: string): TaskRunTarget => {
+export const useTaskRunTarget = (
+  agentId: string,
+  pinnedDeviceId: string | undefined,
+  /** The caller is the task's creator, so their own private devices are pinnable. */
+  { canPinPrivateDevices }: { canPinPrivateDevices: boolean },
+): TaskRunTarget => {
   const { t } = useTranslation('chat');
   const {
     data: devices,
@@ -149,11 +159,12 @@ export const useTaskRunTarget = (agentId: string, pinnedDeviceId?: string): Task
   // under the workspace principal, not under whoever is looking at it, so a pin
   // outside the pool is one automation can never resolve. Same rule the chat
   // picker applies, shared through `devicePoolForAgent` so the two cannot drift.
-  // A task narrows it further to public workspace devices: its automated runs
-  // execute as the task's creator, who cannot resolve a colleague's private
-  // machine (see `devicePoolForTask`).
+  // The caller's own private rows only when they are the task's creator, whose
+  // identity the scheduled runs use (see `devicePoolForTask`).
   const agentPool = devicePoolForAgent(devices, !!agentWorkspaceId);
-  const pool = devicePoolForTask(devices, !!agentWorkspaceId);
+  const pool = devicePoolForTask(devices, !!agentWorkspaceId, {
+    includeOwnPrivate: canPinPrivateDevices,
+  });
 
   const inheritedTarget = resolveExecutionTarget(agencyConfig, {
     clientExecutionAvailable: isDesktop,
@@ -171,9 +182,9 @@ export const useTaskRunTarget = (agentId: string, pinnedDeviceId?: string): Task
   const pinApplies = !!pinnedDeviceId && canSelectExecutionTarget;
   const isDeviceTarget = pinApplies;
   const effectiveTarget: DeviceExecutionTarget = pinApplies ? 'device' : inheritedTarget;
-  // A workspace agent's `local` target is the member's own machine, which the
-  // task's automation and collaborators cannot resolve unless it is in the task
-  // pool (public workspace devices); offering it would pin an unreachable device.
+  // A workspace agent's `local` target is the member's own personal machine,
+  // which is never in a workspace task pool; offering it would pin a device the
+  // task's runs cannot resolve.
   const localCandidate = agencyConfig?.boundDeviceId || currentDeviceId;
   const localDeviceId =
     localCandidate &&
@@ -188,13 +199,13 @@ export const useTaskRunTarget = (agentId: string, pinnedDeviceId?: string): Task
   // dead "Follow agent" hint, although the run starts in a path on a machine.
   // Picking a directory then pins this machine (`applyTaskDirectorySelection`),
   // so the run is routed to where the path exists.
-  const deviceId = pinApplies
-    ? pinnedDeviceId
-    : inheritedTarget === 'device'
+  const inheritedDeviceId =
+    inheritedTarget === 'device'
       ? agencyConfig?.boundDeviceId
       : inheritedTarget === 'local'
         ? localDeviceId
         : undefined;
+  const deviceId = pinApplies ? pinnedDeviceId : inheritedDeviceId;
 
   // From the device list this hook already fetched, not the device store,
   // which a task page may never populate.
@@ -263,6 +274,7 @@ export const useTaskRunTarget = (agentId: string, pinnedDeviceId?: string): Task
     devicesFailed,
     directoryKind,
     effectiveTarget,
+    inheritedDeviceId,
     inheritedDirectory,
     inheritedLabel,
     inheritedTarget,

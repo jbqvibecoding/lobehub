@@ -1,24 +1,43 @@
 import { randomUUID } from 'node:crypto';
 
 import type { ExecAgentResult } from '@lobechat/types';
-import { RequestTrigger } from '@lobechat/types';
+import {
+  ComposerUserMessageSchema,
+  entityIdPattern,
+  firstSendWorktreeSchema,
+  RequestTrigger,
+  UserInterventionConfigSchema,
+} from '@lobechat/types';
 import { TRPCError } from '@trpc/server';
 import debug from 'debug';
 import pMap from 'p-map';
+import { z } from 'zod';
 
 import {
   type AgentInterventionShareVisitorScope,
   type AgentInterventionSourceAction,
   resolveAgentInterventionBySource,
 } from '@/business/server/agent-run/agentInterventionReview';
+import { AgentOperationModel } from '@/database/models/agentOperation';
 import type { MessageModel } from '@/database/models/message';
 import { HumanApprovalAlreadyResolvedError } from '@/database/models/message';
+import { TopicRepository } from '@/database/repositories/topic';
 import { router } from '@/libs/trpc/lambda';
 import { unwrapPgError } from '@/server/modules/AgentRuntime/pgError';
 import { toClientExecAgentResult } from '@/server/routers/lambda/_helpers/groupMemberContinuationResult';
 import { assertCanUseWorkspaceAgent } from '@/server/routers/lambda/_helpers/workspaceAgentGuard';
 import { startComposerRun } from '@/server/services/aiAgent/composerRun';
+import { createAgentConfigResolver } from '@/server/services/aiAgent/pipeline/precreatedTopic';
+import { wakeWorktreeTurn } from '@/server/services/aiAgent/pipeline/scheduledTopicDispatch';
+import { submitWorktreeTurn } from '@/server/services/aiAgent/pipeline/submitWorktreeTurn';
+import { RequestedDeviceIgnoredError } from '@/server/services/aiAgent/pipeline/turnSetup';
+import { AgentRelayHopLimitError } from '@/server/services/aiAgent/sourceAttribution';
+import {
+  ForeignLiveRunError,
+  TopicStartReservationError,
+} from '@/server/services/aiAgent/topicStartReservation';
 import { backgroundInterventionConfig } from '@/server/services/toolApproval/background';
+import { afterUnscoped } from '@/server/utils/scheduleAfterResponse';
 
 import type { ExecAgentInput } from './execSchemas';
 import {
@@ -33,9 +52,26 @@ import { assertCanUseAgentRunConversation } from './guards';
 import type { AgentInterventionDispatchContext } from './interventionDispatch';
 import { dispatchClaimedAgentIntervention } from './interventionDispatch';
 import { aiAgentWriteProcedure } from './procedures';
-import { acceptsFileWorksOf, acceptsMemberRuntimeEndOf } from './utils';
+import { acceptsArtboardWorksOf, acceptsFileWorksOf, acceptsMemberRuntimeEndOf } from './utils';
 
 const log = debug('lobe-server:ai-agent-router');
+
+const SubmitWorktreeTurnSchema = z.object({
+  agentId: z.string().min(1),
+  assistantMessageId: z.string().regex(entityIdPattern('messages')),
+  fileIds: z.array(z.string()).optional(),
+  mentionedAgents: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
+  prompt: z.string(),
+  projectId: z.string().optional(),
+  projectWorkingDirectoryId: z.string().optional(),
+  selectedSkillIds: z.array(z.string()).optional(),
+  selectedToolIds: z.array(z.string()).optional(),
+  topicId: z.string().regex(entityIdPattern('topics')),
+  userInterventionConfig: UserInterventionConfigSchema.optional(),
+  userMessage: ComposerUserMessageSchema.optional(),
+  userMessageId: z.string().regex(entityIdPattern('messages')),
+  worktree: firstSendWorktreeSchema,
+});
 
 /**
  * Cross-version bridge: older Web clients call execAgent directly with resume
@@ -59,7 +95,11 @@ export const bridgeLegacyResumeToSourceIntervention = async (
   },
   ctx: AgentInterventionDispatchContext,
   /** Forwarded to {@link dispatchClaimedAgentIntervention}; see its `options`. */
-  options: { acceptsFileWorks?: boolean; acceptsMemberRuntimeEnd?: boolean } = {},
+  options: {
+    acceptsArtboardWorks?: boolean;
+    acceptsFileWorks?: boolean;
+    acceptsMemberRuntimeEnd?: boolean;
+  } = {},
 ): Promise<ExecAgentResult | undefined> => {
   const {
     messageModel,
@@ -215,6 +255,7 @@ export const execRouter = router({
       resumeApproval,
       resumeApprovals,
       resumeToolResult,
+      supersedeLiveRun = true,
     } = input;
 
     log('execAgent: identifier=%s, prompt=%s', agentId || slug, prompt.slice(0, 50));
@@ -242,6 +283,8 @@ export const execRouter = router({
           ...(resumeApprovals ?? []).map((decision) => decision.parentMessageId),
           resumeToolResult?.parentMessageId,
         ],
+        // The topic this one is opened from receives its reports: authorize it too.
+        openedByTopicId: input.openedByTopicId,
         topicId: appContext?.topicId,
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
@@ -257,23 +300,27 @@ export const execRouter = router({
         },
         ctx,
         {
+          acceptsArtboardWorks: acceptsArtboardWorksOf(input.streamFeatures),
           acceptsFileWorks: acceptsFileWorksOf(input.streamFeatures),
           acceptsMemberRuntimeEnd: acceptsMemberRuntimeEndOf(input.streamFeatures),
         },
       );
       if (bridged) return bridged;
 
+      const { supersedeLiveRun: _supersede, ...request } = foldLegacyUserMessageFields(input);
       const result = await startComposerRun(
         {
           aiAgentService: ctx.aiAgentService,
           clientIp: ctx.clientIp ?? undefined,
           db: ctx.serverDB,
+          supersedeLiveRun,
           userAgent: ctx.userAgent ?? undefined,
           userId: ctx.userId,
           workspaceId: ctx.workspaceId,
         },
         {
-          ...foldLegacyUserMessageFields(input),
+          ...request,
+          acceptsArtboardWorks: acceptsArtboardWorksOf(input.streamFeatures),
           acceptsFileWorks: acceptsFileWorksOf(input.streamFeatures),
           acceptsMemberRuntimeEnd: acceptsMemberRuntimeEndOf(input.streamFeatures),
           // The web and phone apps always say how to approve; a caller that does not (an API
@@ -282,6 +329,9 @@ export const execRouter = router({
           userInterventionConfig:
             input.userInterventionConfig ??
             (await backgroundInterventionConfig(ctx.serverDB, ctx.userId)),
+          // A non-superseding start waits on the surface like a server-started
+          // follow-up, so a thread's live run is refused as well.
+          ...(supersedeLiveRun ? {} : { queuedSuccessor: true }),
         },
       );
 
@@ -291,6 +341,38 @@ export const execRouter = router({
 
       if (error instanceof TRPCError) {
         throw error;
+      }
+
+      // A send that must not interrupt found the topic owned by a live run;
+      // nothing was written, so the caller can queue it behind that run.
+      if (!supersedeLiveRun && error instanceof TopicStartReservationError) {
+        throw new TRPCError({
+          cause: error,
+          code: 'CONFLICT',
+          message: 'The conversation is busy with a running turn; queue the message behind it.',
+        });
+      }
+
+      // Another member's run drives the topic; a send never interrupts it, and
+      // nothing was written.
+      if (error instanceof ForeignLiveRunError) {
+        throw new TRPCError({
+          cause: error,
+          code: 'CONFLICT',
+          message: 'Another member is running this conversation; wait until their turn finishes.',
+        });
+      }
+
+      // A device the caller required would be dropped by the agent's fixed
+      // execution target; nothing was written.
+      if (error instanceof RequestedDeviceIgnoredError) {
+        throw new TRPCError({ cause: error, code: 'PRECONDITION_FAILED', message: error.message });
+      }
+
+      // An agent → agent send past the relay bound: the sending agent has to
+      // hand back to a person, so the reason travels to it verbatim.
+      if (error instanceof AgentRelayHopLimitError) {
+        throw new TRPCError({ cause: error, code: 'TOO_MANY_REQUESTS', message: error.message });
       }
 
       if (error instanceof HumanApprovalAlreadyResolvedError) {
@@ -354,6 +436,84 @@ export const execRouter = router({
         });
       }
     }),
+
+  submitWorktreeTurn: aiAgentWriteProcedure
+    .input(SubmitWorktreeTurnSchema)
+    .mutation(async ({ ctx, input }) => {
+      const workspaceId = ctx.workspaceId ?? undefined;
+      await assertCanUseWorkspaceAgent({
+        agentId: input.agentId,
+        db: ctx.serverDB,
+        userId: ctx.userId,
+        workspaceId,
+      });
+
+      const result = await submitWorktreeTurn(
+        {
+          db: ctx.serverDB,
+          resolveAgentConfigOrThrow: createAgentConfigResolver(
+            ctx.serverDB,
+            ctx.userId,
+            workspaceId,
+          ),
+          userId: ctx.userId,
+          workspaceId,
+        },
+        input,
+      );
+      if (result.topic.status === 'scheduled') {
+        afterUnscoped(() =>
+          wakeWorktreeTurn(result.topic.id).catch((error) => {
+            console.error('[aiAgent:submitWorktreeTurn] wakeup failed', error);
+          }),
+        );
+      }
+      return result;
+    }),
+
+  cancelWorktreeTurn: aiAgentWriteProcedure
+    .input(z.object({ topicId: z.string() }))
+    .mutation(({ ctx, input }) =>
+      new TopicRepository(
+        ctx.serverDB,
+        ctx.userId,
+        ctx.workspaceId ?? undefined,
+      ).cancelWorktreeStart(input.topicId),
+    ),
+
+  retryWorktreeTurn: aiAgentWriteProcedure
+    .input(z.object({ topicId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const topic = await ctx.topicModel.findOwnTopicById(input.topicId);
+      const run = topic?.metadata?.scheduledRun;
+      if (!topic || run?.kind !== 'worktree_start' || !topic.agentId)
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Worktree send not found.' });
+      const workspaceId = ctx.workspaceId ?? undefined;
+      await assertCanUseWorkspaceAgent({
+        agentId: topic.agentId,
+        db: ctx.serverDB,
+        userId: ctx.userId,
+        workspaceId,
+      });
+      const operation = await new AgentOperationModel(
+        ctx.serverDB,
+        ctx.userId,
+        workspaceId,
+      ).findById(run.operationId);
+      if (operation?.status !== 'idle' || operation.topicId !== topic.id)
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'The worktree send has already been dispatched.',
+        });
+      const scheduledRun = await ctx.topicModel.retryWorktreeStart(topic.id);
+      if (!scheduledRun) return false;
+      afterUnscoped(() =>
+        wakeWorktreeTurn(topic.id, scheduledRun.runAt).catch((error) => {
+          console.error('[aiAgent:retryWorktreeTurn] wakeup failed', error);
+        }),
+      );
+      return true;
+    }),
   /**
    * Batch execute multiple agents
    * Supports parallel or sequential execution
@@ -409,6 +569,7 @@ export const execRouter = router({
           workspaceId: ctx.workspaceId,
         });
         const result = await ctx.aiAgentService.execAgent({
+          acceptsArtboardWorks: acceptsArtboardWorksOf(task.streamFeatures),
           acceptsFileWorks: acceptsFileWorksOf(task.streamFeatures),
           acceptsMemberRuntimeEnd: acceptsMemberRuntimeEndOf(task.streamFeatures),
           clientProtocol: task.clientProtocol,

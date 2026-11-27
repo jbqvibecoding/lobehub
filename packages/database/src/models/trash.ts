@@ -9,7 +9,21 @@ import type {
   TrashRootFilter,
 } from '@lobechat/types';
 import type { SQL } from 'drizzle-orm';
-import { and, asc, count, desc, eq, inArray, isNull, lt, lte, not, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  not,
+  notInArray,
+  or,
+  sql,
+} from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 
 import type { NewTrashItemRow, TrashItemRow } from '../schemas';
@@ -21,6 +35,7 @@ import {
   dashboards,
   messages,
   projects,
+  tasks,
   topics,
   trashItems,
   widgets,
@@ -64,6 +79,7 @@ const ROOT_TABLES: Record<TrashResourceType, { id: any; isDeleted: any; table: a
   },
   dashboard: { id: dashboards.id, isDeleted: dashboards.isDeleted, table: dashboards },
   message: { id: messages.id, isDeleted: messages.isDeleted, table: messages },
+  task: { id: tasks.id, isDeleted: tasks.isDeleted, table: tasks },
   topic: { id: topics.id, isDeleted: topics.isDeleted, table: topics },
   widget: { id: widgets.id, isDeleted: widgets.isDeleted, table: widgets },
 };
@@ -126,6 +142,11 @@ const livePrivateWhere = (): SQL =>
       eq(trashItems.resourceType, 'message'),
       sql`EXISTS (SELECT 1 FROM ${messages} WHERE ${messages.id} = ${trashItems.resourceId} AND (${privateAgent(messages.agentId)} OR ${privateGroup(messages.groupId)} OR ${privateTopic(messages.topicId)}))`,
     ),
+    // A task is private on its own (`visibility`), or under a private project.
+    and(
+      eq(trashItems.resourceType, 'task'),
+      sql`EXISTS (SELECT 1 FROM ${tasks} WHERE ${tasks.id} = ${trashItems.resourceId} AND (${tasks.visibility} = 'private' OR ${privateProject(tasks.projectId)}))`,
+    ),
     and(
       eq(trashItems.resourceType, 'widget'),
       sql`EXISTS (SELECT 1 FROM ${widgets} WHERE ${widgets.id} = ${uuidResourceId('widget')} AND (${widgets.visibility} = 'private' OR ${privateAgent(widgets.agentId)} OR ${privateProject(widgets.projectId)}))`,
@@ -142,10 +163,11 @@ const livePrivateWhere = (): SQL =>
  * `registerMany`), so making a still-live parent public later does not expose
  * it.
  *
- * It fails closed: a root that cannot prove it was shared stays on its
- * deleter's private side — one registered before the snapshot existed (its
- * parents may have changed since), or one whose source row or recorded
- * project was removed outside the trash (a hard delete or an FK cascade).
+ * A root registered before the snapshot existed has no `meta.private`; it
+ * falls back to the live check, like every other workspace list. Otherwise it
+ * fails closed: a root whose source row or recorded project was removed
+ * outside the trash (a hard delete or an FK cascade) cannot prove it was
+ * shared, so it stays on its deleter's private side.
  */
 const privateRootWhere = (): SQL =>
   or(
@@ -156,7 +178,7 @@ const privateRootWhere = (): SQL =>
     ),
     // COALESCE: a NULL here would turn the whole OR, and its NOT, into NULL.
     sql`COALESCE((${trashItems.meta} ->> 'private') = 'true', false)`,
-    sql`NOT COALESCE(jsonb_exists(${trashItems.meta}, 'private'), false)`,
+    and(sql`NOT COALESCE(jsonb_exists(${trashItems.meta}, 'private'), false)`, livePrivateWhere()),
   ) as SQL;
 
 const toTrashItem = (row: TrashItemRow): TrashItem => ({
@@ -355,29 +377,65 @@ export class TrashModel {
   };
 
   /**
+   * Children registered under an agent root that its FK cascade will not reach:
+   * rows an earlier cascade stamped through a legacy session shell. The bin
+   * already promised to delete them, so the purge has to remove them itself.
+   */
+  findChildrenOutsideAgents = async (rootId: string, agentIds: string[]) => {
+    const childIds = (resourceType: 'message' | 'topic') =>
+      this.db
+        .select({ id: trashItems.resourceId })
+        .from(trashItems)
+        .where(
+          and(
+            this.ownership(),
+            eq(trashItems.rootId, rootId),
+            eq(trashItems.resourceType, resourceType),
+          ),
+        );
+    const topicRows = await this.db
+      .select({ id: topics.id })
+      .from(topics)
+      .where(
+        and(
+          inArray(topics.id, childIds('topic')),
+          or(isNull(topics.agentId), notInArray(topics.agentId, agentIds)),
+        ),
+      );
+    const messageRows = await this.db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(
+        and(
+          inArray(messages.id, childIds('message')),
+          or(isNull(messages.agentId), notInArray(messages.agentId, agentIds)),
+        ),
+      );
+    return {
+      messageIds: messageRows.map((row) => row.id),
+      topicIds: topicRows.map((row) => row.id),
+    };
+  };
+
+  /**
    * Drop the roots of topics / messages that were trashed on their own before
-   * the agent they belong to (directly or through its legacy session shells),
-   * and so kept separate registry rows. Called while that agent is being
-   * purged: the FK cascade deletes those resources, so their rows would
-   * otherwise linger in the bin pointing at nothing.
+   * the agent they belong to, and so kept separate registry rows. `topicIds`
+   * adds the topics the purge removes by id ({@link findChildrenOutsideAgents}).
+   * Called while that agent is being purged: those resources are deleted, so
+   * their rows would otherwise linger in the bin pointing at nothing.
    */
   removeRootsUnderAgents = async (
-    parents: { agentIds: string[]; sessionIds: string[] },
+    parents: { agentIds: string[]; topicIds?: string[] },
     trx?: Transaction,
   ) => {
     if (parents.agentIds.length === 0) return;
     const db = trx ?? this.db;
-    const topicOwner =
-      parents.sessionIds.length > 0
-        ? or(
-            inArray(topics.agentId, parents.agentIds),
-            inArray(topics.sessionId, parents.sessionIds),
-          )
-        : inArray(topics.agentId, parents.agentIds);
+    const topicOwner = parents.topicIds?.length
+      ? or(inArray(topics.agentId, parents.agentIds), inArray(topics.id, parents.topicIds))
+      : inArray(topics.agentId, parents.agentIds);
     const ownedTopicIds = db.select({ id: topics.id }).from(topics).where(topicOwner);
     const messageOwner = or(
       inArray(messages.agentId, parents.agentIds),
-      parents.sessionIds.length > 0 ? inArray(messages.sessionId, parents.sessionIds) : undefined,
       inArray(messages.topicId, ownedTopicIds),
     );
 
@@ -514,6 +572,25 @@ export class TrashModel {
     });
   };
 
+  /** The roots (not cascaded children) registered for these resources of one kind. */
+  findRootsByResources = async (
+    resourceType: TrashResourceType,
+    resourceIds: string[],
+  ): Promise<TrashItemRow[]> => {
+    if (resourceIds.length === 0) return [];
+    return this.db
+      .select()
+      .from(trashItems)
+      .where(
+        and(
+          eq(trashItems.resourceType, resourceType),
+          inArray(trashItems.resourceId, resourceIds),
+          isNull(trashItems.rootId),
+          this.ownership(),
+        ),
+      );
+  };
+
   /** Registry rows cascaded under a root (any type). */
   findChildren = async (rootId: string, trx?: Transaction): Promise<TrashItemRow[]> => {
     const db = trx ?? this.db;
@@ -599,7 +676,6 @@ const decodeCursor = (cursor?: string | null): { deletedAt: Date; id: string } |
     if (!Number.isFinite(ms) || !id) return null;
     return { deletedAt: new Date(ms), id };
   } catch {
-    /* v8 ignore next -- unreachable: Buffer.from(string, 'base64url') and Number() never throw */
     return null;
   }
 };

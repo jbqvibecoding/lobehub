@@ -2,6 +2,7 @@ import type { UIChatMessage } from '@lobechat/types';
 
 import { type MessageListQueryContext, normalizeMessageListQueryContext } from '@/libs/swr/keys';
 import { lambdaClient } from '@/libs/trpc/client';
+import { workTypeOptIn } from '@/services/workTypeOptIn';
 
 import type { MessageListPage, MessageRoundCursor } from './cache';
 
@@ -12,7 +13,7 @@ import type { MessageListPage, MessageRoundCursor } from './cache';
 export const MESSAGE_PAGE_ROW_BUDGET = 1000;
 
 // Client-mode reads keep the full budget: the client runtime replays the loaded rows as model history.
-export const GATEWAY_PAGE_ROW_BUDGET = 50;
+export const GATEWAY_PAGE_ROW_BUDGET = 500;
 
 /** Page sizes for reading a topic forward from its first round. */
 export interface ForwardPageSize {
@@ -40,7 +41,7 @@ export const toRoundCursorQueryInput = (
   countBudget: params.projectToolPayloads ? GATEWAY_PAGE_ROW_BUDGET : MESSAGE_PAGE_ROW_BUDGET,
   cursor,
   groupId: params.groupId,
-  includeFileWorks: true,
+  ...workTypeOptIn(),
   projectToolPayloads: params.projectToolPayloads,
   // The row budget is the real bound; ask for as many whole rounds as it holds.
   roundLimit: MESSAGE_PAGE_ROW_BUDGET,
@@ -93,7 +94,7 @@ export const toForwardRoundCursorQueryInput = (
   cursor,
   direction: 'forward' as const,
   groupId: params.groupId,
-  includeFileWorks: true,
+  ...workTypeOptIn(),
   roundLimit: size.roundLimit,
   topicId: params.topicId,
   topicShareId: params.topicShareId,

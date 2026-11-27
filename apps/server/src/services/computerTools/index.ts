@@ -19,7 +19,7 @@ import type { LobeChatDatabase } from '@/database/type';
 import { sandboxEnv } from '@/envs/sandbox';
 import { expiringCache } from '@/server/services/messenger/expiringCache';
 import { PushChannel } from '@/server/services/push/PushChannel';
-import { getSandboxProviderKind } from '@/server/services/sandbox/factory';
+import { getSandboxProviderKind } from '@/server/services/sandbox/deployment';
 import {
   OpenBotComputer,
   OpenBotRequestError,

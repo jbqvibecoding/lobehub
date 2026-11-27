@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+import type { IEditor } from '@lobehub/editor';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,6 +14,7 @@ import InternalEditor from './InternalEditor';
 
 const handleContentChangeStore = vi.fn();
 const performSave = vi.fn();
+const saveVersion = vi.fn();
 const flushSave = vi.fn();
 const onEditorInit = vi.fn().mockResolvedValue(undefined);
 const createFetchDocumentResult = (
@@ -32,6 +34,7 @@ const mockDocumentStore = {
   handleContentChange: handleContentChangeStore,
   onEditorInit,
   performSave,
+  saveVersion,
   useFetchDocument,
 };
 
@@ -65,6 +68,7 @@ vi.mock('@/store/document', () => ({
 
 vi.mock('@/store/document/slices/editor', () => ({
   editorSelectors: {
+    content: vi.fn(() => () => ''),
     isDirty: vi.fn(() => () => false),
     isDocumentLoading: vi.fn(() => () => false),
   },
@@ -82,10 +86,12 @@ describe('DocumentIdMode', () => {
   beforeEach(() => {
     handleContentChangeStore.mockClear();
     performSave.mockClear();
+    saveVersion.mockClear();
     flushSave.mockClear();
     onEditorInit.mockClear();
     useFetchDocument.mockClear();
     vi.mocked(editorSelectors.isDocumentLoading).mockReturnValue(() => false);
+    vi.mocked(editorSelectors.content).mockImplementation(() => () => '');
     saveHotkeyHandler = undefined;
   });
 
@@ -109,7 +115,7 @@ describe('DocumentIdMode', () => {
     });
 
     expect(handleContentChangeStore).toHaveBeenCalledTimes(1);
-    expect(performSave).toHaveBeenCalledWith('doc-1', undefined, { saveSource: 'manual' });
+    expect(saveVersion).toHaveBeenCalledWith('doc-1');
     expect(flushSave).not.toHaveBeenCalled();
   });
 
@@ -277,5 +283,74 @@ describe('DocumentIdMode', () => {
 
     expect(screen.getByTestId('not-found')).toBeInTheDocument();
     expect(screen.queryByTestId('internal-editor')).not.toBeInTheDocument();
+  });
+  it('shows the pending body over the mounted editor until the room body arrives', () => {
+    const editor = { getLexicalEditor: vi.fn(() => ({})) } as any;
+    const { rerender } = render(
+      <DocumentIdMode
+        collab
+        documentId="doc-1"
+        editor={editor}
+        pendingBody={<div data-testid="pending-body" />}
+      />,
+    );
+
+    expect(screen.getByTestId('pending-body')).toBeInTheDocument();
+    expect(screen.getByTestId('internal-editor')).not.toBeVisible();
+
+    rerender(<DocumentIdMode collab documentId="doc-1" editor={editor} />);
+
+    expect(screen.queryByTestId('pending-body')).not.toBeInTheDocument();
+    expect(screen.getByTestId('internal-editor')).toBeVisible();
+  });
+
+  describe('long bodies', () => {
+    const LONG_BODY = 'x'.repeat(50_000);
+    // Only readiness is read on these paths.
+    const editor = { getLexicalEditor: vi.fn(() => ({})) } as unknown as IEditor;
+    const sleep = (ms: number) => {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      setTimeout(resolve, ms);
+      return promise;
+    };
+
+    beforeEach(() => {
+      vi.mocked(editorSelectors.content).mockImplementation(
+        (id) => () => (id === 'doc-long' ? LONG_BODY : ''),
+      );
+    });
+
+    it('loads a long body after the switch paints, behind a skeleton', async () => {
+      render(<DocumentIdMode documentId="doc-long" editor={editor} />);
+
+      // The switch commits without building the body; the previous one stays hidden.
+      expect(onEditorInit).not.toHaveBeenCalled();
+      expect(screen.getByTestId('internal-editor')).not.toBeVisible();
+
+      await waitFor(() => expect(onEditorInit).toHaveBeenCalledWith(editor, 'doc-long'));
+      await waitFor(() => expect(screen.getByTestId('internal-editor')).toBeVisible());
+    });
+
+    it('keeps the atomic swap for a short body', () => {
+      render(<DocumentIdMode documentId="doc-short" editor={editor} />);
+
+      expect(onEditorInit).toHaveBeenCalledWith(editor, 'doc-short');
+      expect(screen.getByTestId('internal-editor')).toBeVisible();
+    });
+
+    it('drops a long body left before it loaded, and loads it on return', async () => {
+      const { rerender } = render(<DocumentIdMode documentId="doc-long" editor={editor} />);
+      rerender(<DocumentIdMode documentId="doc-short" editor={editor} />);
+
+      // Wait past the frame the long body was scheduled for.
+      await act(() => sleep(50));
+      expect(onEditorInit).toHaveBeenCalledTimes(1);
+      expect(onEditorInit).toHaveBeenLastCalledWith(editor, 'doc-short');
+
+      rerender(<DocumentIdMode documentId="doc-long" editor={editor} />);
+
+      await waitFor(() => expect(onEditorInit).toHaveBeenLastCalledWith(editor, 'doc-long'));
+      expect(onEditorInit).toHaveBeenCalledTimes(2);
+    });
   });
 });

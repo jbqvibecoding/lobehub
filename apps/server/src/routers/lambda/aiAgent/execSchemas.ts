@@ -200,6 +200,12 @@ export const ExecAgentFieldsSchema = z.object({
   clientIds: execAgentClientIdsSchema,
   /** Explicit device ID to bind to the topic and activate for this run */
   deviceId: z.string().optional(),
+  /**
+   * The run must take place on `deviceId`: refuse it (`PRECONDITION_FAILED`,
+   * nothing written) when the agent's effective execution target would drop
+   * that device. Sent by `lh topic send --new --device`.
+   */
+  requireDevice: z.boolean().optional(),
   /** Current desktop device hint, honored only for an effective local target */
   localDeviceId: z.string().optional(),
   /** Optional existing message IDs to include in context */
@@ -304,6 +310,20 @@ export const ExecAgentFieldsSchema = z.object({
    * waited in queue and starts a turn of its own is not marked.
    */
   steer: z.boolean().optional(),
+  /**
+   * Whether this send may take the topic over from a run that still owns it,
+   * as a person at the composer does (default). `false` — another agent
+   * delivering through `lh topic send` — never interrupts: a live run makes the
+   * call fail with `CONFLICT` before anything is written, and the caller queues
+   * the message behind that run instead.
+   */
+  supersedeLiveRun: z.boolean().optional(),
+  /**
+   * Title of the topic this send creates (`lh topic send --new --title`).
+   * Ignored when the send continues an existing topic; without it the topic is
+   * named after the prompt.
+   */
+  title: z.string().max(255).optional(),
   trigger: z
     .string()
     .refine((value) => value !== RequestTrigger.Bot, {
@@ -320,6 +340,13 @@ export const ExecAgentFieldsSchema = z.object({
    * or topic-less operation simply resolves to nothing.
    */
   sourceOperationId: z.string().optional(),
+  /**
+   * The conversation this new topic is opened from (its parent topic;
+   * `lh topic send --new` passes `--parent-topic-id` or its own
+   * `LOBEHUB_TOPIC_ID`): the topic records it as `metadata.openedBy` and lists
+   * under it. Needs `use` on that topic.
+   */
+  openedByTopicId: z.string().optional(),
   /**
    * User intervention configuration for tool approvals.
    * Pass `{ approvalMode: 'headless' }` from headless clients (CLI, cron, bots)

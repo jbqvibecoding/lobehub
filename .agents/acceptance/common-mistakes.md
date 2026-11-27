@@ -25,7 +25,7 @@ the next free number of that prefix.
 - **L-E1** A replacing check declares `supersedes`; a visible-UI check passes only on opened visual evidence asserting the full spatial outcome, overlap included.
 - **L-E2** A passing layout screenshot shows the settled real transition — never a DOM under a synthetic transform.
 - **L-E3** An authoring flow is proven end to end: entry, completed input and preview, the created item in its pre-verification state.
-- **L-E4** Verify in the requested product container at representative scale, on both sides of every behavior-changing threshold; a harness is supporting evidence only.
+- **L-E4** Verify in the requested product container, on both sides of every behavior-changing threshold; a harness is supporting evidence only. Representative fixture data is skill M31.
 - **L-E5** Every criterion maps to its verifier, its own inspectable evidence, and a verdict — never an aggregate "all passed".
 - **L-E6** When the Task requires a durable document, create and pin the real artifact; evidence explains a verdict, it is not the deliverable.
 - **L-E9** Check the acceptance's status before ingest; new scoped work on an accepted acceptance goes to a new subject.
@@ -113,9 +113,9 @@ editable pre-verification state, independent of unrelated rubric loading.
 is a Task drawer, or with a small fixture for behavior that changes at a
 list-size threshold.
 
-**Rule:** capture the requested container with representative titles, state mix
-and item count, on both sides of every threshold. Harnesses are supporting
-evidence only.
+**Rule:** capture the requested container on both sides of every threshold.
+Harnesses are supporting evidence only. Fixture counts, title lengths and state
+mix follow skill M31.
 
 ### L-E5 — Replacing per-check evidence with a verification summary
 
@@ -567,7 +567,7 @@ account has been checked; do not debug it as product behaviour.
 `since 2026-09-18` · `holds-while: pnpm-workspace.yaml sets lockfile: false, and Turbopack resolves next/package.json from the workspace root it detects`
 
 **Trap:** a new worktree has no `node_modules`, and a farm of symlinks into a
-working checkout is quick and makes `vitest` and `tsgo` pass — so the tree looks
+working checkout is quick and makes `vitest` and `tsrs` pass — so the tree looks
 ready. The dev server then dies on `Could not find the Next.js package
 (next/package.json)`, every route 500s, and the visible errors point elsewhere
 (`Failed to resolve import "anser"` from a package-level dependency the farm

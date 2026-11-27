@@ -24,7 +24,7 @@ interface SharedBotDetailProps {
   appId?: string;
   botUsername?: string;
   name: string;
-  onBack: () => void;
+  onBack?: () => void;
   phoneNumber?: string;
   platform: SharedBotPlatform;
   qrCodeUrl?: string;
@@ -40,16 +40,12 @@ const SharedBotDetail = memo<SharedBotDetailProps>(
     const { allowed: canEdit } = usePermission('edit_own_content');
 
     const data = useMessengerData(platform);
-    const { handleSetActive, handleUnlink } = useLinkActions({
-      installationsMutate: data.installationsMutate,
-      linksMutate: data.linksMutate,
-      name,
-      platform,
-    });
+    const { handleSetActive, handleUnlink } = useLinkActions({ name, platform });
 
     if (data.error && data.isInitialLoading)
       return <AsyncError error={data.error} variant={'block'} onRetry={data.mutate} />;
-    if (data.isInitialLoading) return <IntegrationDetailSkeleton withNestedContent />;
+    if (data.isInitialLoading)
+      return <IntegrationDetailSkeleton withNestedContent platform={platform} />;
 
     const { links } = data;
     const hasLinks = links.length > 0;

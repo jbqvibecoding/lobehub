@@ -42,6 +42,34 @@ vi.mock('../AgentBridgeService', async () =>
 );
 vi.mock('../platforms', async () => (await import('./testUtils')).platformsModule());
 
+const guestTelegramGroup = () => ({
+  channelId: '-100123',
+  id: 'telegram:guest:-100123',
+  isDM: false,
+  post: vi.fn().mockResolvedValue(undefined),
+  setState: vi.fn().mockResolvedValue(undefined),
+});
+
+const telegramGroup = () => ({
+  id: 'telegram:group-1',
+  isDM: false,
+  post: vi.fn().mockResolvedValue(undefined),
+});
+
+const discordAutoThread = () => ({
+  channelId: 'auto-thread-id',
+  id: 'discord:guild-1:parent-channel:auto-thread-id',
+  isDM: false,
+  post: vi.fn().mockResolvedValue(undefined),
+  setState: vi.fn().mockResolvedValue(undefined),
+});
+
+const aliceOnlyOpenPolicies = () => ({
+  allowFrom: 'alice-id',
+  dmPolicy: 'open',
+  groupPolicy: 'open',
+});
+
 describe('BotMessageRouter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -68,11 +96,7 @@ describe('BotMessageRouter', () => {
 
     it('should allow group @-mentions regardless of DM policy', async () => {
       const handler = await loadMentionHandler({ dmPolicy: 'disabled' });
-      const thread = {
-        id: 'telegram:group-1',
-        isDM: false,
-        post: vi.fn().mockResolvedValue(undefined),
-      };
+      const thread = telegramGroup();
       const message = {
         author: { isBot: false, userId: 'alice-id', userName: 'alice' },
         isMention: true,
@@ -106,11 +130,7 @@ describe('BotMessageRouter', () => {
 
     it('should propagate sender + isOwner=true on botContext when the owner @s the bot', async () => {
       const handler = await loadMentionHandler({ dmPolicy: 'open', userId: 'owner-platform-id' });
-      const thread = {
-        id: 'telegram:group-1',
-        isDM: false,
-        post: vi.fn().mockResolvedValue(undefined),
-      };
+      const thread = telegramGroup();
       const message = {
         author: { isBot: false, userId: 'owner-platform-id', userName: 'owner' },
         isMention: true,
@@ -127,11 +147,7 @@ describe('BotMessageRouter', () => {
 
     it('should propagate sender + isOwner=false on botContext when an external user @s the bot', async () => {
       const handler = await loadMentionHandler({ dmPolicy: 'open', userId: 'owner-platform-id' });
-      const thread = {
-        id: 'telegram:group-1',
-        isDM: false,
-        post: vi.fn().mockResolvedValue(undefined),
-      };
+      const thread = telegramGroup();
       const message = {
         author: { isBot: false, userId: 'random-user-id', userName: 'random' },
         isMention: true,
@@ -154,11 +170,7 @@ describe('BotMessageRouter', () => {
         dmPolicy: 'open',
         userId: 'owner-platform-id',
       });
-      const thread = {
-        id: 'telegram:group-1',
-        isDM: false,
-        post: vi.fn().mockResolvedValue(undefined),
-      };
+      const thread = telegramGroup();
       const message = {
         author: { isBot: false, userId: 'friend-id', userName: 'ada' },
         isMention: true,
@@ -173,15 +185,125 @@ describe('BotMessageRouter', () => {
       expect(opts.botContext.isDeviceTrusted).toBe(true);
     });
 
+    describe('device channel scope', () => {
+      const channelScoped = {
+        deviceChannelAllowFrom: [{ id: 'dev-channel', name: '#dev' }],
+        deviceChannelPolicy: 'allowlist',
+        dmPolicy: 'open',
+        userId: 'owner-platform-id',
+      };
+      const ownerMessage = {
+        author: { isBot: false, userId: 'owner-platform-id', userName: 'owner' },
+        isMention: true,
+        text: '@bot run the build',
+      };
+      const mention = async (
+        settings: Record<string, unknown>,
+        thread: Record<string, unknown>,
+      ) => {
+        const handler = await loadMentionHandler(settings);
+        await handler({ post: vi.fn().mockResolvedValue(undefined), ...thread }, ownerMessage);
+        expect(mockHandleMention).toHaveBeenCalledTimes(1);
+        return mockHandleMention.mock.calls[0][2].botContext;
+      };
+
+      it('leaves a listed channel unrestricted', async () => {
+        const botContext = await mention(channelScoped, {
+          id: 'telegram:dev-channel',
+          isDM: false,
+        });
+        expect(botContext.isOwner).toBe(true);
+        expect(botContext.isDeviceChannelRestricted).toBeUndefined();
+      });
+
+      it('restricts any other channel, even for the owner', async () => {
+        const botContext = await mention(channelScoped, { id: 'telegram:random', isDM: false });
+        expect(botContext.isOwner).toBe(true);
+        expect(botContext.isDeviceChannelRestricted).toBe(true);
+      });
+
+      it('never restricts a DM', async () => {
+        const botContext = await mention(channelScoped, { id: 'telegram:owner-dm', isDM: true });
+        expect(botContext.isDeviceChannelRestricted).toBeUndefined();
+      });
+
+      it('keeps the previous behavior when no channel scope is configured', async () => {
+        const botContext = await mention(
+          { dmPolicy: 'open', userId: 'owner-platform-id' },
+          { id: 'telegram:random', isDM: false },
+        );
+        expect(botContext.isDeviceChannelRestricted).toBeUndefined();
+      });
+    });
+
+    describe('device channel grant', () => {
+      const channelGranted = {
+        // The "Where" choice does not apply under the grant: the list grants, it never restricts.
+        deviceChannelAllowFrom: [{ id: 'dev-channel', name: '#dev' }],
+        deviceChannelPolicy: 'allowlist',
+        devicePolicy: 'channel',
+        dmPolicy: 'open',
+        userId: 'owner-platform-id',
+      };
+      const mentionAs = async (
+        settings: Record<string, unknown>,
+        thread: Record<string, unknown>,
+        userId: string,
+      ) => {
+        const handler = await loadMentionHandler(settings);
+        await handler(
+          { post: vi.fn().mockResolvedValue(undefined), ...thread },
+          { author: { isBot: false, userId, userName: userId }, isMention: true, text: '@bot run' },
+        );
+        expect(mockHandleMention).toHaveBeenCalledTimes(1);
+        return mockHandleMention.mock.calls[0][2].botContext;
+      };
+
+      it('grants a channel member in a listed channel', async () => {
+        const botContext = await mentionAs(
+          channelGranted,
+          { id: 'telegram:dev-channel', isDM: false },
+          'team-mate',
+        );
+        expect(botContext.isOwner).toBe(false);
+        expect(botContext.isDeviceChannelGranted).toBe(true);
+        expect(botContext.isDeviceChannelRestricted).toBeUndefined();
+      });
+
+      it('does not grant a member in any other channel', async () => {
+        const botContext = await mentionAs(
+          channelGranted,
+          { id: 'telegram:random', isDM: false },
+          'team-mate',
+        );
+        expect(botContext.isDeviceChannelGranted).toBeUndefined();
+      });
+
+      it('leaves the owner unrestricted outside the listed channels', async () => {
+        const botContext = await mentionAs(
+          channelGranted,
+          { id: 'telegram:random', isDM: false },
+          'owner-platform-id',
+        );
+        expect(botContext.isOwner).toBe(true);
+        expect(botContext.isDeviceChannelRestricted).toBeUndefined();
+      });
+
+      it('never grants a DM', async () => {
+        const botContext = await mentionAs(
+          channelGranted,
+          { id: 'telegram:dev-channel', isDM: true },
+          'team-mate',
+        );
+        expect(botContext.isDeviceChannelGranted).toBeUndefined();
+      });
+    });
+
     it('should fall back to isOwner=false when settings.userId is missing (fail-closed)', async () => {
       // No `userId` configured on the bot — even a sender who happens to
       // share an ID with the operator can't claim owner status.
       const handler = await loadMentionHandler({ dmPolicy: 'open' });
-      const thread = {
-        id: 'telegram:group-1',
-        isDM: false,
-        post: vi.fn().mockResolvedValue(undefined),
-      };
+      const thread = telegramGroup();
       const message = {
         author: { isBot: false, userId: 'someone', userName: 'someone' },
         isMention: true,
@@ -269,7 +391,7 @@ describe('BotMessageRouter', () => {
 
       expect(mockHandleSubscribedMessage).not.toHaveBeenCalled();
       expect(thread.post).toHaveBeenCalledTimes(1);
-      expect(thread.post.mock.calls[0][0]).toContain("doesn't respond in groups or channels");
+      expect(thread.post.mock.calls[0][0]).toContain("don't have permission to talk to this bot");
     });
 
     it('blocks @-mentions on the new-mention path when group policy is disabled', async () => {
@@ -280,18 +402,28 @@ describe('BotMessageRouter', () => {
 
       expect(mockHandleMention).not.toHaveBeenCalled();
       expect(thread.post).toHaveBeenCalledTimes(1);
-      expect(thread.post.mock.calls[0][0]).toContain("doesn't respond in groups or channels");
+      expect(thread.post.mock.calls[0][0]).toContain("don't have permission to talk to this bot");
+    });
+
+    it('still lets the owner @-mention the bot in groups when group policy is disabled', async () => {
+      // `disabled` means "only the owner here", not "the bot can't talk in
+      // groups" — which is why the rejection copy names the missing permission.
+      const { mention } = await loadHandlers({ groupPolicy: 'disabled', userId: 'owner-id' });
+      const thread = makeGroupThread('channel-1');
+
+      await mention(thread, {
+        author: { isBot: false, userId: 'owner-id', userName: 'owner' },
+        isMention: true,
+        text: '@bot hi',
+      });
+
+      expect(mockHandleMention).toHaveBeenCalledTimes(1);
+      expect(thread.post).not.toHaveBeenCalled();
     });
 
     it('allows open Telegram Guest Mode summons even when group policy is disabled', async () => {
       const { mention } = await loadHandlers({ groupPolicy: 'disabled' });
-      const thread = {
-        channelId: '-100123',
-        id: 'telegram:guest:-100123',
-        isDM: false,
-        post: vi.fn().mockResolvedValue(undefined),
-        setState: vi.fn().mockResolvedValue(undefined),
-      };
+      const thread = guestTelegramGroup();
 
       await mention(thread, makeMentionMessage());
 
@@ -322,13 +454,7 @@ describe('BotMessageRouter', () => {
         groupPolicy: 'open',
         guestPolicy: 'disabled',
       });
-      const thread = {
-        channelId: '-100123',
-        id: 'telegram:guest:-100123',
-        isDM: false,
-        post: vi.fn().mockResolvedValue(undefined),
-        setState: vi.fn().mockResolvedValue(undefined),
-      };
+      const thread = guestTelegramGroup();
 
       await mention(thread, makeMentionMessage());
 
@@ -338,13 +464,7 @@ describe('BotMessageRouter', () => {
 
     it('fails closed when Guest Policy is allowlist and Allowed Users is empty', async () => {
       const { mention } = await loadHandlers({ guestPolicy: 'allowlist' });
-      const thread = {
-        channelId: '-100123',
-        id: 'telegram:guest:-100123',
-        isDM: false,
-        post: vi.fn().mockResolvedValue(undefined),
-        setState: vi.fn().mockResolvedValue(undefined),
-      };
+      const thread = guestTelegramGroup();
 
       await mention(thread, makeMentionMessage());
 
@@ -357,13 +477,7 @@ describe('BotMessageRouter', () => {
         allowFrom: [{ id: 'alice-id' }],
         guestPolicy: 'allowlist',
       });
-      const thread = {
-        channelId: '-100123',
-        id: 'telegram:guest:-100123',
-        isDM: false,
-        post: vi.fn().mockResolvedValue(undefined),
-        setState: vi.fn().mockResolvedValue(undefined),
-      };
+      const thread = guestTelegramGroup();
 
       await mention(thread, makeMentionMessage());
 
@@ -380,13 +494,7 @@ describe('BotMessageRouter', () => {
         guestPolicy: 'pairing',
         userId: 'owner-id',
       });
-      const thread = {
-        channelId: '-100123',
-        id: 'telegram:guest:-100123',
-        isDM: false,
-        post: vi.fn().mockResolvedValue(undefined),
-        setState: vi.fn().mockResolvedValue(undefined),
-      };
+      const thread = guestTelegramGroup();
 
       await mention(thread, makeMentionMessage());
 
@@ -431,13 +539,7 @@ describe('BotMessageRouter', () => {
         groupAllowFrom: 'auto-thread-id',
         groupPolicy: 'allowlist',
       });
-      const thread = {
-        channelId: 'auto-thread-id',
-        id: 'discord:guild-1:parent-channel:auto-thread-id',
-        isDM: false,
-        post: vi.fn().mockResolvedValue(undefined),
-        setState: vi.fn().mockResolvedValue(undefined),
-      };
+      const thread = discordAutoThread();
 
       await mention(thread, makeMentionMessage());
 
@@ -456,13 +558,7 @@ describe('BotMessageRouter', () => {
         groupAllowFrom: 'parent-channel',
         groupPolicy: 'allowlist',
       });
-      const thread = {
-        channelId: 'auto-thread-id',
-        id: 'discord:guild-1:parent-channel:auto-thread-id',
-        isDM: false,
-        post: vi.fn().mockResolvedValue(undefined),
-        setState: vi.fn().mockResolvedValue(undefined),
-      };
+      const thread = discordAutoThread();
 
       await mention(thread, makeMentionMessage());
 
@@ -475,13 +571,7 @@ describe('BotMessageRouter', () => {
         groupAllowFrom: 'some-other-channel',
         groupPolicy: 'allowlist',
       });
-      const thread = {
-        channelId: 'auto-thread-id',
-        id: 'discord:guild-1:parent-channel:auto-thread-id',
-        isDM: false,
-        post: vi.fn().mockResolvedValue(undefined),
-        setState: vi.fn().mockResolvedValue(undefined),
-      };
+      const thread = discordAutoThread();
 
       await mention(thread, makeMentionMessage());
 
@@ -544,11 +634,7 @@ describe('BotMessageRouter', () => {
     };
 
     it('pulls an allowFrom-rejected sender into the reply thread before posting the notice', async () => {
-      const mention = await loadMention({
-        allowFrom: 'alice-id',
-        dmPolicy: 'open',
-        groupPolicy: 'open',
-      });
+      const mention = await loadMention(aliceOnlyOpenPolicies());
       const thread = groupThread();
 
       await mention(thread, strangerMessage);
@@ -584,11 +670,7 @@ describe('BotMessageRouter', () => {
     });
 
     it('does not touch thread membership for DM rejections', async () => {
-      const mention = await loadMention({
-        allowFrom: 'alice-id',
-        dmPolicy: 'open',
-        groupPolicy: 'open',
-      });
+      const mention = await loadMention(aliceOnlyOpenPolicies());
       const thread = {
         id: 'discord:@me:dm-1',
         isDM: true,
@@ -603,11 +685,7 @@ describe('BotMessageRouter', () => {
 
     it('still posts the rejection notice when ensureThreadMember fails', async () => {
       mockEnsureThreadMember.mockRejectedValueOnce(new Error('missing permission'));
-      const mention = await loadMention({
-        allowFrom: 'alice-id',
-        dmPolicy: 'open',
-        groupPolicy: 'open',
-      });
+      const mention = await loadMention(aliceOnlyOpenPolicies());
       const thread = groupThread();
 
       await mention(thread, strangerMessage);
@@ -617,15 +695,12 @@ describe('BotMessageRouter', () => {
     });
   });
 
-  describe('regression: nested settings.dm.policy is ignored', () => {
+  describe('DM policy gating', () => {
     /**
-     * Original bug: the form persisted `settings.dmPolicy` (flat) but the
-     * router read `settings.dm.policy` (nested), so every saved policy
-     * silently fell back to `'open'` and DMs were never blocked. Lock that
-     * direction in: the *flat* key is authoritative; the legacy nested
-     * shape is dead.
+     * The real flat/nested-key parser is covered in platforms/__tests__/const.test.ts.
+     * This suite uses a parser double and verifies the router's policy gate.
      */
-    it('a saved dmPolicy=disabled at the flat key blocks DMs end-to-end', async () => {
+    it('blocks DMs when the resolved policy is disabled', async () => {
       mockFindEnabledByPlatform.mockResolvedValue([
         makeProvider({ applicationId: 'app-1', settings: { dmPolicy: 'disabled' } }),
       ]);
@@ -654,7 +729,7 @@ describe('BotMessageRouter', () => {
       expect(thread.post.mock.calls[0][0]).toContain("isn't accepting direct messages");
     });
 
-    it('a legacy nested settings.dm.policy=disabled is IGNORED and DMs pass through', async () => {
+    it('allows DMs when the parser resolves the legacy input to open', async () => {
       mockFindEnabledByPlatform.mockResolvedValue([
         makeProvider({
           applicationId: 'app-1',

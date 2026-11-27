@@ -22,7 +22,7 @@ interface IntegrationDetailProps {
   installUrl?: string;
   /** Brand-name label (e.g. `"Slack"`) sourced from the registry. */
   name: string;
-  onBack: () => void;
+  onBack?: () => void;
   /** The iMessage line's number. */
   phoneNumber?: string;
   platform: MessengerPlatform;

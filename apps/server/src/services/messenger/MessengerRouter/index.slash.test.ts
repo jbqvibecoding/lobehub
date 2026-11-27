@@ -30,7 +30,9 @@ vi.mock('@/business/server/bot/featureAccess', async () =>
 vi.mock('@/envs/gateway', async () => (await import('./testUtils')).gatewayEnvModule());
 vi.mock('../installations', async () => (await import('./testUtils')).installationsModule());
 vi.mock('../oauth/slackOAuth', async () => (await import('./testUtils')).slackOAuthModule());
-vi.mock('@/server/featureFlags', async () => (await import('./testUtils')).featureFlagsModule());
+vi.mock('@lobechat/business-const', async () =>
+  (await import('./testUtils')).businessConstModule(),
+);
 vi.mock('@/config/messenger', async () => (await import('./testUtils')).messengerConfigModule());
 vi.mock('chat', async () => (await import('./testUtils')).chatModule());
 vi.mock('@chat-adapter/state-ioredis', async () =>
@@ -83,6 +85,21 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+const createPersonalSlackLink = (activeAgentId: string) => ({
+  activeAgentId,
+  id: 'link_1',
+  platformUserId: 'U_ALICE',
+  tenantId: 'T_ACME',
+  userId: 'user_alice',
+});
+
+const createStatefulSlackDmThread = <T>(state: T) => ({
+  id: 'slack:D_DM:',
+  isDM: true,
+  setState: vi.fn(),
+  state: Promise.resolve(state),
 });
 
 describe('MessengerRouter slash command dispatch', () => {
@@ -181,13 +198,7 @@ describe('MessengerRouter slash command dispatch', () => {
 
   it('renders the picker as ephemeral when /agents is invoked from a public channel', async () => {
     await loadSlackBot();
-    mockFindLink.mockResolvedValue({
-      activeAgentId: 'agt_a',
-      id: 'link_1',
-      platformUserId: 'U_ALICE',
-      tenantId: 'T_ACME',
-      userId: 'user_alice',
-    });
+    mockFindLink.mockResolvedValue(createPersonalSlackLink('agt_a'));
 
     // `onSlashCommand(paths, handler)` — second arg is the handler.
     const handler = mockChatBot.onSlashCommand.mock.calls[0][1] as (event: any) => Promise<void>;
@@ -205,13 +216,7 @@ describe('MessengerRouter slash command dispatch', () => {
     // handleSlashCommand for the workaround). The DM here is detected
     // via the Slack channel-id prefix (`D...`).
     await loadSlackBot();
-    mockFindLink.mockResolvedValue({
-      activeAgentId: 'agt_main',
-      id: 'link_1',
-      platformUserId: 'U_ALICE',
-      tenantId: 'T_ACME',
-      userId: 'user_alice',
-    });
+    mockFindLink.mockResolvedValue(createPersonalSlackLink('agt_main'));
     const dmThread = { id: 'slack:D_DM:', isDM: true, setState: vi.fn() };
     mockOpenDM.mockResolvedValue(dmThread);
 
@@ -240,13 +245,7 @@ describe('MessengerRouter slash command dispatch', () => {
     // conversation (the DM) instead of dropping the request. The
     // confirmation is ephemeral so the channel doesn't see it.
     await loadSlackBot();
-    mockFindLink.mockResolvedValue({
-      activeAgentId: 'agt_main',
-      id: 'link_1',
-      platformUserId: 'U_ALICE',
-      tenantId: 'T_ACME',
-      userId: 'user_alice',
-    });
+    mockFindLink.mockResolvedValue(createPersonalSlackLink('agt_main'));
     const dmThread = { id: 'slack:D_DM:', isDM: true, setState: vi.fn() };
     mockOpenDM.mockResolvedValue(dmThread);
 
@@ -259,19 +258,8 @@ describe('MessengerRouter slash command dispatch', () => {
 
   it('/mode chat writes the DM thread state and confirms', async () => {
     await loadSlackBot();
-    mockFindLink.mockResolvedValue({
-      activeAgentId: 'agt_main',
-      id: 'link_1',
-      platformUserId: 'U_ALICE',
-      tenantId: 'T_ACME',
-      userId: 'user_alice',
-    });
-    const dmThread = {
-      id: 'slack:D_DM:',
-      isDM: true,
-      setState: vi.fn(),
-      state: Promise.resolve(null),
-    };
+    mockFindLink.mockResolvedValue(createPersonalSlackLink('agt_main'));
+    const dmThread = createStatefulSlackDmThread(null);
     mockOpenDM.mockResolvedValue(dmThread);
 
     const handler = mockChatBot.onSlashCommand.mock.calls[0][1] as (event: any) => Promise<void>;
@@ -294,19 +282,8 @@ describe('MessengerRouter slash command dispatch', () => {
 
   it('/mode without args renders the tap picker with the current mode marked', async () => {
     await loadSlackBot();
-    mockFindLink.mockResolvedValue({
-      activeAgentId: 'agt_main',
-      id: 'link_1',
-      platformUserId: 'U_ALICE',
-      tenantId: 'T_ACME',
-      userId: 'user_alice',
-    });
-    const dmThread = {
-      id: 'slack:D_DM:',
-      isDM: true,
-      setState: vi.fn(),
-      state: Promise.resolve({ toolMode: 'agent', topicId: 'topic-1' }),
-    };
+    mockFindLink.mockResolvedValue(createPersonalSlackLink('agt_main'));
+    const dmThread = createStatefulSlackDmThread({ toolMode: 'agent', topicId: 'topic-1' });
     mockOpenDM.mockResolvedValue(dmThread);
 
     const handler = mockChatBot.onSlashCommand.mock.calls[0][1] as (event: any) => Promise<void>;
@@ -327,22 +304,11 @@ describe('MessengerRouter slash command dispatch', () => {
 
   it('/mode without args marks the agent-config default when no override is set', async () => {
     await loadSlackBot();
-    mockFindLink.mockResolvedValue({
-      activeAgentId: 'agt_main',
-      id: 'link_1',
-      platformUserId: 'U_ALICE',
-      tenantId: 'T_ACME',
-      userId: 'user_alice',
-    });
+    mockFindLink.mockResolvedValue(createPersonalSlackLink('agt_main'));
     // Active agent configured as chat-mode (enableAgentMode=false) — the
     // picker must mark Chat Mode even though the thread has no override yet.
     mockGetAgentConfigById.mockResolvedValue({ chatConfig: { enableAgentMode: false } });
-    const dmThread = {
-      id: 'slack:D_DM:',
-      isDM: true,
-      setState: vi.fn(),
-      state: Promise.resolve(null),
-    };
+    const dmThread = createStatefulSlackDmThread(null);
     mockOpenDM.mockResolvedValue(dmThread);
 
     const handler = mockChatBot.onSlashCommand.mock.calls[0][1] as (event: any) => Promise<void>;
@@ -384,12 +350,7 @@ describe('MessengerRouter slash command dispatch', () => {
       agentModeOverrides: { agt_main: false },
     });
     mockIsResourceAuthorOrAdmin.mockResolvedValue(false);
-    const dmThread = {
-      id: 'slack:D_DM:',
-      isDM: true,
-      setState: vi.fn(),
-      state: Promise.resolve(null),
-    };
+    const dmThread = createStatefulSlackDmThread(null);
     mockOpenDM.mockResolvedValue(dmThread);
 
     const handler = mockChatBot.onSlashCommand.mock.calls[0][1] as (event: any) => Promise<void>;
@@ -429,12 +390,7 @@ describe('MessengerRouter slash command dispatch', () => {
       agentModeOverrides: { agt_main: false },
     });
     mockIsResourceAuthorOrAdmin.mockResolvedValue(true);
-    const dmThread = {
-      id: 'slack:D_DM:',
-      isDM: true,
-      setState: vi.fn(),
-      state: Promise.resolve(null),
-    };
+    const dmThread = createStatefulSlackDmThread(null);
     mockOpenDM.mockResolvedValue(dmThread);
 
     const handler = mockChatBot.onSlashCommand.mock.calls[0][1] as (event: any) => Promise<void>;
@@ -458,13 +414,7 @@ describe('MessengerRouter slash command dispatch', () => {
     // next run would still read its own state. So no picker here: text
     // status via the ephemeral reply instead.
     await loadSlackBot();
-    mockFindLink.mockResolvedValue({
-      activeAgentId: 'agt_main',
-      id: 'link_1',
-      platformUserId: 'U_ALICE',
-      tenantId: 'T_ACME',
-      userId: 'user_alice',
-    });
+    mockFindLink.mockResolvedValue(createPersonalSlackLink('agt_main'));
     mockGetAgentConfigById.mockResolvedValue({ chatConfig: { enableAgentMode: true } });
 
     const handler = mockChatBot.onNewMention.mock.calls[0][0] as (
@@ -486,13 +436,7 @@ describe('MessengerRouter slash command dispatch', () => {
 
   it('mode picker tap writes toolMode to the DM thread and re-renders the picker', async () => {
     const router = new MessengerRouter();
-    mockFindLink.mockResolvedValue({
-      activeAgentId: 'agt_main',
-      id: 'link_1',
-      platformUserId: 'U_ALICE',
-      tenantId: 'T_ACME',
-      userId: 'user_alice',
-    });
+    mockFindLink.mockResolvedValue(createPersonalSlackLink('agt_main'));
     const dmThread = { id: 'slack:D_DM:', isDM: true, setState: vi.fn() };
     const chatBot = { openDM: vi.fn().mockResolvedValue(dmThread) };
     const acknowledgeCallback = vi.fn();
@@ -559,19 +503,8 @@ describe('MessengerRouter slash command dispatch', () => {
 
   it('/new slash preserves the /mode choice while clearing topicId', async () => {
     await loadSlackBot();
-    mockFindLink.mockResolvedValue({
-      activeAgentId: 'agt_main',
-      id: 'link_1',
-      platformUserId: 'U_ALICE',
-      tenantId: 'T_ACME',
-      userId: 'user_alice',
-    });
-    const dmThread = {
-      id: 'slack:D_DM:',
-      isDM: true,
-      setState: vi.fn(),
-      state: Promise.resolve({ toolMode: 'chat', topicId: 'topic-1' }),
-    };
+    mockFindLink.mockResolvedValue(createPersonalSlackLink('agt_main'));
+    const dmThread = createStatefulSlackDmThread({ toolMode: 'chat', topicId: 'topic-1' });
     mockOpenDM.mockResolvedValue(dmThread);
 
     const handler = mockChatBot.onSlashCommand.mock.calls[0][1] as (event: any) => Promise<void>;
@@ -585,13 +518,7 @@ describe('MessengerRouter slash command dispatch', () => {
 
   it('renders the picker as a regular DM message when /agents is invoked from a DM', async () => {
     await loadSlackBot();
-    mockFindLink.mockResolvedValue({
-      activeAgentId: 'agt_a',
-      id: 'link_1',
-      platformUserId: 'U_ALICE',
-      tenantId: 'T_ACME',
-      userId: 'user_alice',
-    });
+    mockFindLink.mockResolvedValue(createPersonalSlackLink('agt_a'));
 
     const handler = mockChatBot.onSlashCommand.mock.calls[0][1] as (event: any) => Promise<void>;
     await handler(fakeSlashEvent({ channel: { id: 'slack:D_DM', isDM: true } }));

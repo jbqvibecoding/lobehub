@@ -23,7 +23,7 @@ interface LarkDetailProps {
   appId?: string;
   installUrl?: string;
   name: string;
-  onBack: () => void;
+  onBack?: () => void;
   platform: LarkFamilyPlatform;
 }
 
@@ -36,15 +36,14 @@ const LarkDetail = memo<LarkDetailProps>(({ appId, installUrl, name, onBack, pla
 
   const data = useMessengerData(platform);
   const { handleSetActive, handleUnlink } = useLinkActions({
-    installationsMutate: data.installationsMutate,
-    linksMutate: data.linksMutate,
     name,
     platform,
   });
 
   if (data.error && data.isInitialLoading)
     return <AsyncError error={data.error} variant={'block'} onRetry={data.mutate} />;
-  if (data.isInitialLoading) return <IntegrationDetailSkeleton withNestedContent />;
+  if (data.isInitialLoading)
+    return <IntegrationDetailSkeleton withNestedContent platform={platform} />;
 
   const { links } = data;
   const hasLinks = links.length > 0;

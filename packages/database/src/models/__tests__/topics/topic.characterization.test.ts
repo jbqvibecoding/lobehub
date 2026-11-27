@@ -1,8 +1,18 @@
+import { ThreadType } from '@lobechat/types';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getTestDB } from '../../../core/getTestDB';
-import { agentOperations, agents, chatGroups, sessions, topics, users } from '../../../schemas';
+import {
+  agentOperations,
+  agents,
+  chatGroups,
+  messages,
+  sessions,
+  threads,
+  topics,
+  users,
+} from '../../../schemas';
 import type { LobeChatDatabase } from '../../../type';
 import * as topicModule from '../../topic';
 import { TopicModel } from '../../topic';
@@ -42,7 +52,9 @@ const PUBLIC_METHODS = [
   'batchInsert',
   'cancelRateLimitContinuation',
   'count',
-  'countBySender',
+  'countInFlightInDirectory',
+  'countLiveTopicsUsingWorktree',
+  'countMessagesBySender',
   'countShareVisitors',
   'countTopicsForMemoryExtractor',
   'create',
@@ -51,15 +63,21 @@ const PUBLIC_METHODS = [
   'findByAgentAndDocumentTrigger',
   'findById',
   'findByIds',
+  'findByWebhookThread',
   'findOwnTopicById',
   'findOwnTopicsByIds',
+  'findOwnedWorktreeTopics',
   'findOwnersByIds',
+  'findOwnersOfWorktree',
+  'findPendingOwnedWorktreeTopics',
   'findRecentByBotThread',
   'findRunInitiators',
   'findShareVisitorTopicIds',
   'findTrashedByIds',
+  'findWaitingCleanupTopicsUnder',
   'getCronTopicsGroupedByCronJob',
   'isRunningOperationAlive',
+  'listChildTopicAgentIds',
   'listTopicsForMemoryExtractor',
   'markRead',
   'patchRunningOperation',
@@ -71,11 +89,13 @@ const PUBLIC_METHODS = [
   'queryTopics',
   'rank',
   'recomputeUsage',
+  'recordFirstSendWorktreeCheckout',
   'releaseTaskCallbackReservation',
   'removeRunningOperationChild',
   'repairAgentInterventionContinuation',
   'resetMemoryExtractStatus',
   'restore',
+  'retryWorktreeStart',
   'settleRunningOperation',
   'settleRunningStatus',
   'softDelete',
@@ -91,6 +111,7 @@ const PUBLIC_METHODS = [
   // Biber: one entry of a metadata map (a group member's run or session), under a row lock
   'updateMetadataEntry',
   'updateModelPin',
+  'updateOwnedWorktree',
   'updateRunningOperationAssistantMessage',
 ];
 
@@ -200,12 +221,8 @@ describe('TopicModel - characterization', () => {
       ],
       [
         'softDeleteByParents',
-        () =>
-          topicModel.softDeleteByParents(
-            { groupIds: [groupId], sessionIds: [sessionId] },
-            { deletedAt },
-          ),
-        ['group-topic', 'session-topic'],
+        () => topicModel.softDeleteByParents({ groupIds: [groupId] }, { deletedAt }),
+        ['group-topic'],
       ],
       ['softDeleteByParents({})', () => topicModel.softDeleteByParents({}, { deletedAt }), []],
       [
@@ -243,6 +260,35 @@ describe('TopicModel - characterization', () => {
       expect(await topicModel.purge([])).toEqual([]);
     });
 
+    it('keeps subagent threads while trashed and purges them with the topic', async () => {
+      await serverDB.insert(threads).values({
+        id: 'subagent-thread',
+        metadata: { sourceToolCallId: 'toolu_1' },
+        topicId: 'agent-topic',
+        type: ThreadType.Isolation,
+        userId,
+      });
+      await serverDB.insert(messages).values({
+        id: 'subagent-message',
+        role: 'assistant',
+        threadId: 'subagent-thread',
+        topicId: 'agent-topic',
+        userId,
+      });
+      const threadIds = async () =>
+        (await serverDB.select({ id: threads.id }).from(threads)).map((row) => row.id);
+      const messageIds = async () =>
+        (await serverDB.select({ id: messages.id }).from(messages)).map((row) => row.id);
+
+      await topicModel.softDelete(['agent-topic'], { deletedAt });
+      expect(await threadIds()).toEqual(['subagent-thread']);
+      expect(await messageIds()).toEqual(['subagent-message']);
+
+      expect(await topicModel.purge(['agent-topic'])).toEqual(['agent-topic']);
+      expect(await threadIds()).toEqual([]);
+      expect(await messageIds()).toEqual([]);
+    });
+
     it('batchDeleteIncludingTrashed removes trashed rows too', async () => {
       await topicModel.softDelete(['agent-topic'], { deletedAt });
       await topicModel.batchDeleteIncludingTrashed(['agent-topic', 'visitor-topic']);
@@ -271,12 +317,37 @@ describe('TopicModel - characterization', () => {
       expect(await topicModel.findShareVisitorTopicIds(['visitor-topic', 'agent-topic'])).toEqual([
         'visitor-topic',
       ]);
-      expect(await topicModel.countBySender({ agentId, senderId: 'visitor-1' })).toBe(2);
-      expect(await topicModel.countBySender({ agentId, senderId: 'visitor-2' })).toBe(0);
       expect(await topicModel.countShareVisitors({ agentId })).toEqual({
         topicCount: 2,
         visitorCount: 1,
       });
+    });
+
+    it('countMessagesBySender counts only the visitor user messages across their topics', async () => {
+      await serverDB.insert(topics).values({
+        agentId,
+        id: 'visitor-2-topic',
+        senderId: 'visitor-2',
+        title: 'visitor 2 own',
+        userId,
+      });
+      await serverDB.insert(messages).values([
+        { id: 'v1-user-a', role: 'user', topicId: 'visitor-topic', userId },
+        { id: 'v1-reply-a', role: 'assistant', topicId: 'visitor-topic', userId },
+        { id: 'v1-user-b', role: 'user', topicId: 'visitor-topic', userId },
+        { id: 'v1-user-c', role: 'user', topicId: 'visitor-topic-2', userId },
+        { id: 'v1-tool', role: 'tool', topicId: 'visitor-topic-2', userId },
+        { id: 'v2-user', role: 'user', topicId: 'visitor-2-topic', userId },
+        { id: 'creator-user', role: 'user', topicId: 'agent-topic', userId },
+      ]);
+
+      // Replies, tool rows, other visitors and the creator's own topics never count.
+      expect(await topicModel.countMessagesBySender({ agentId, senderId: 'visitor-1' })).toBe(3);
+      expect(await topicModel.countMessagesBySender({ agentId, senderId: 'visitor-2' })).toBe(1);
+      expect(await topicModel.countMessagesBySender({ agentId, senderId: 'visitor-3' })).toBe(0);
+
+      const foreignModel = new TopicModel(serverDB, otherUserId);
+      expect(await foreignModel.countMessagesBySender({ agentId, senderId: 'visitor-1' })).toBe(0);
     });
 
     it('findRecentByBotThread matches the bot thread id, newest first, limited', async () => {

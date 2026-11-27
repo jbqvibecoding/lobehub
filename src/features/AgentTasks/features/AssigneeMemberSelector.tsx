@@ -15,6 +15,10 @@ import { usePermission } from '@/hooks/usePermission';
 import { useTaskStore } from '@/store/task';
 import { useUserStore } from '@/store/user';
 import { userProfileSelectors } from '@/store/user/selectors';
+import {
+  getWorkspaceMemberName,
+  getWorkspaceMemberSearchLabels,
+} from '@/utils/workspaceMemberName';
 
 import { hasWorkspaceMemberDirectory } from '../shared/memberAssigneeMode';
 import { partitionSelfMember } from './assigneeMemberOptions';
@@ -22,7 +26,6 @@ import { partitionSelfMember } from './assigneeMemberOptions';
 interface AssigneeMemberSelectorProps {
   children: ReactNode;
   currentUserId?: string | null;
-  disabled?: boolean;
   fullWidth?: boolean;
   onChange?: (userId: string | null) => void;
   taskCreatorId?: string | null;
@@ -64,17 +67,13 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
   `,
 }));
 
-const memberName = (member: WorkspaceMemberRow) =>
-  member.user?.fullName?.trim() ||
-  member.user?.username?.trim() ||
-  member.user?.email?.trim() ||
-  member.userId;
+const memberName = (member: WorkspaceMemberRow) => getWorkspaceMemberName(member);
 
 const toMemberOption = (member: WorkspaceMemberRow) =>
   ({ key: `member:${member.userId}`, kind: 'member', member }) as const;
 
 const matchesSearch = (member: WorkspaceMemberRow, query: string) =>
-  [member.user?.fullName, member.user?.username, member.user?.email].some((label) =>
+  getWorkspaceMemberSearchLabels(member).some((label) =>
     (label ?? '').toLowerCase().includes(query),
   );
 
@@ -96,7 +95,6 @@ const AssigneeMemberSelector = memo<AssigneeMemberSelectorProps>(
   ({
     children,
     currentUserId,
-    disabled,
     fullWidth,
     onChange,
     taskCreatorId,
@@ -186,7 +184,7 @@ const AssigneeMemberSelector = memo<AssigneeMemberSelectorProps>(
                 ? {
                     avatar: member.user?.avatar ?? null,
                     id: member.userId,
-                    name: member.user?.fullName ?? null,
+                    name: memberName(member),
                     type: 'user',
                   }
                 : undefined,
@@ -261,10 +259,13 @@ const AssigneeMemberSelector = memo<AssigneeMemberSelectorProps>(
       );
     };
 
-    const blocked = disabled || !canEditTask;
+    // Only permission blocks this picker. The member assignee is the person who
+    // owns the outcome, not the executor, so a running task can still change
+    // hands — unlike the agent assignee, which stays locked while a run is live.
+    const blocked = !canEditTask;
     const currentTriggerStyle = fullWidth ? { ...triggerStyle, width: '100%' } : triggerStyle;
     const trigger = blocked ? (
-      <Tooltip title={disabled ? t('taskDetail.reassignDisabled') : reason}>
+      <Tooltip title={reason}>
         <div
           style={{ ...currentTriggerStyle, cursor: 'not-allowed', opacity: 0.5 }}
           onClick={(event) => event.stopPropagation()}

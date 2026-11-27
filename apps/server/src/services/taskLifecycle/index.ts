@@ -25,7 +25,11 @@ import type {
   TaskSchedulerContext,
   TaskTopicHandoff,
 } from '@lobechat/types';
-import { DEFAULT_BRIEF_ACTIONS, RequestTrigger } from '@lobechat/types';
+import {
+  DEFAULT_BRIEF_ACTIONS,
+  RequestTrigger,
+  TASK_AUTOMATION_FAILURE_FUSE,
+} from '@lobechat/types';
 import debug from 'debug';
 
 import {
@@ -75,12 +79,8 @@ const log = debug('task-lifecycle');
 const TERMINAL_STATUSES = new Set(['canceled', 'completed', 'failed']);
 const isTerminal = (status: string) => TERMINAL_STATUSES.has(status);
 
-// Consecutive automation-tick 'error' reasons after which we pause the task /
-// stop re-arming and let the urgent brief surface for human attention. A single
-// transient upstream hiccup (429 / network / upstream 500) must NOT permanently
-// stop a recurring task — only this many *consecutive* failures do. Hardcoded
-// for now; move to task.config later if it needs to be tunable per-task.
-const AUTOMATION_FAILURE_FUSE = 3;
+// Hardcoded for now; move to task.config later if it needs to be tunable per-task.
+const AUTOMATION_FAILURE_FUSE = TASK_AUTOMATION_FAILURE_FUSE;
 
 export interface TopicCompleteParams {
   /** Structured terminal error type (e.g. `InsufficientBudgetForModel`) from the
@@ -145,6 +145,21 @@ export class TaskLifecycleService {
 
     log('onTopicComplete: task=%s topic=%s reason=%s', taskIdentifier, topicId, reason);
 
+    // A run a follow-up in the same conversation superseded no longer owns the
+    // Task: the follow-up took its run row over and settles it when it ends. A
+    // late report from the old run (its success arriving after the interrupt,
+    // or an error from tearing it down) must not settle the row or move the Task
+    // under the run that is still going.
+    if (topicId && (await this.isSupersededReport(topicId, params.operationId))) {
+      log(
+        'onTopicComplete: op=%s was superseded on topic=%s — ignoring its %s',
+        params.operationId,
+        topicId,
+        reason,
+      );
+      return;
+    }
+
     await this.taskModel.updateHeartbeat(taskId);
 
     // The run paused to ask the user about a tool call; nothing is settled yet. The topic stays
@@ -163,7 +178,8 @@ export class TaskLifecycleService {
 
     if (reason === 'done') {
       // 1. Update topic status
-      if (topicId) await this.taskTopicModel.updateStatus(taskId, topicId, 'completed');
+      if (topicId && !(await this.settleRunRow(taskId, topicId, params.operationId, 'completed')))
+        return;
 
       // 2. Generate handoff summary + topic title (best-effort LLM synthesis).
       //    It also says which output the run delivered: its earlier report when
@@ -227,6 +243,19 @@ export class TaskLifecycleService {
           reason,
           currentTask,
         );
+      }
+
+      // A follow-up may have reopened this run while the handoff and brief
+      // above were being written (the row was settled, so it reopens rather
+      // than takes over). The Task is then the follow-up's to settle: moving it
+      // now would pause or complete it under a run that is still going.
+      if (topicId && (await this.isSupersededReport(topicId, params.operationId))) {
+        log(
+          'onTopicComplete: op=%s was followed up on topic=%s mid-settle — leaving the Task to it',
+          params.operationId,
+          topicId,
+        );
+        return;
       }
 
       // 5. Default post-tick transition.
@@ -370,12 +399,16 @@ export class TaskLifecycleService {
         );
       }
     } else if (reason === 'error') {
-      if (topicId)
-        await this.taskTopicModel.updateStatus(
+      if (
+        topicId &&
+        !(await this.settleRunRow(
           taskId,
           topicId,
+          params.operationId,
           resolveFailedRunStatus(errorMessage),
-        );
+        ))
+      )
+        return;
 
       const errorText = errorMessage || 'Unknown error';
 
@@ -531,6 +564,45 @@ export class TaskLifecycleService {
     // next tick.
     const finalTask = await this.taskModel.findById(taskId);
     if (finalTask) await this.maybeRearmHeartbeat(finalTask, reason);
+  }
+
+  /**
+   * Write the run row's terminal status for this report, unless a newer
+   * operation took the row over — checked inside the write, so a takeover that
+   * lands after the early {@link isSupersededReport} check still wins.
+   *
+   * @returns `false` when the report was superseded and the lifecycle must stop.
+   */
+  private async settleRunRow(
+    taskId: string,
+    topicId: string,
+    operationId: string,
+    status: string,
+  ): Promise<boolean> {
+    const written = await this.taskTopicModel.updateStatus(taskId, topicId, status, {
+      reportedOperationId: operationId,
+    });
+    // Nothing written: either there is no row to keep honest (the runner has
+    // not recorded this run yet), or a newer run owns it.
+    if (written !== false) return true;
+    if (!(await this.isSupersededReport(topicId, operationId))) return true;
+
+    log('onTopicComplete: op=%s lost topic=%s to a follow-up mid-settle', operationId, topicId);
+    return false;
+  }
+
+  /**
+   * Whether this report comes from a run that a newer operation has already
+   * taken the run row over from. Fails open: a lookup failure keeps the
+   * lifecycle's previous behaviour rather than dropping a real completion.
+   */
+  private async isSupersededReport(topicId: string, operationId: string): Promise<boolean> {
+    try {
+      return await this.taskTopicModel.isSupersededOperation(topicId, operationId);
+    } catch (error) {
+      log('superseded-run check failed for op=%s (non-fatal): %O', operationId, error);
+      return false;
+    }
   }
 
   /**

@@ -5,6 +5,7 @@ import { handleLobeHubModelDeprecatedError } from '@/business/client/handleLobeH
 import { isGenerationPromptModerationError } from '@/business/client/isGenerationPromptModerationError';
 import { imageService } from '@/services/image';
 import { type StoreSetter } from '@/store/types';
+import { normalizeImageGenerationParams } from '@/utils/normalizeImageGenerationParams';
 
 import { type ImageStore } from '../../store';
 import { generationBatchSelectors } from '../generationBatch/selectors';
@@ -85,7 +86,7 @@ export class CreateImageActionImpl {
         provider,
         model,
         imageNum,
-        params: parameters as any,
+        params: normalizeImageGenerationParams(parameters, model),
       });
 
       // 6. Only refresh generation batches if it's not a new topic
@@ -142,17 +143,25 @@ export class CreateImageActionImpl {
     const imageNum = batch.generations.length;
 
     try {
-      // 1. Delete generation batch
-      await removeGenerationBatch(generationBatchId, activeGenerationTopicId);
+      if (!batch.config) throw new TypeError('Generation batch configuration is missing');
 
-      // 2. Create image via service
+      // 1. Create the replacement first: the server can reject the stored config (e.g. a param
+      // the model no longer declares), and the original batch must survive that rejection.
       await imageService.createImage({
         generationTopicId: activeGenerationTopicId,
         provider: batch.provider,
         model: batch.model,
         imageNum,
-        params: batch.config as any,
+        params: normalizeImageGenerationParams({ ...batch.config }, batch.model),
       });
+
+      // 2. Delete the batch being replaced. The replacement is already queued, so a failed
+      // cleanup must not surface as a failed regenerate: retrying would queue and charge again.
+      try {
+        await removeGenerationBatch(generationBatchId, activeGenerationTopicId);
+      } catch (error) {
+        console.error('[recreateImage] failed to remove the replaced batch', error);
+      }
 
       // 3. Refresh generation batches to show the real data
       await store.refreshGenerationBatches();

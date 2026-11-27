@@ -19,8 +19,8 @@ import { toast } from '@lobehub/ui';
 import isEqual from 'fast-deep-equal';
 import { t } from 'i18next';
 import type { AiModelReasoningConfig } from 'model-bank';
-import { type SWRResponse } from 'swr';
 import useSWR from 'swr';
+import { type SWRResponse } from 'swr';
 
 import { LOADING_FLAT } from '@/const/message';
 import {
@@ -69,7 +69,7 @@ import { type ChatTopic, type ChatTopicStatus, type CreateTopicParams } from '@/
 import { setNamespace } from '@/utils/storeDebug';
 
 import { displayMessageSelectors } from '../message/selectors';
-import { type TopicData } from './initialState';
+import { type PendingNewTopicDirectory, type TopicData } from './initialState';
 import { type PendingTopicStatusSource, PendingTopicStatusWrites } from './pendingStatusWrites';
 import {
   applyTopicDispatchToBucket,
@@ -315,10 +315,7 @@ export class ChatTopicActionImpl {
    * Without it the deferred row would be born with only a path — outside the
    * project list, the sidebar's project grouping and its execution routing.
    */
-  setPendingNewTopicDirectory = (value?: {
-    agentId: string;
-    projectWorkingDirectoryId: string;
-  }): void => {
+  setPendingNewTopicDirectory = (value?: PendingNewTopicDirectory): void => {
     this.#set({ pendingNewTopicDirectory: value }, false, n('setPendingNewTopicDirectory'));
   };
 
@@ -1205,20 +1202,9 @@ export class ChatTopicActionImpl {
   };
 
   /**
-   * Re-read a `scheduled` topic from the server and fold any dispatch back into
-   * the store. The cron dispatcher (`scheduledTopicDispatch`) mutates only the
-   * DB when `runAt` passes — status → 'running', `scheduledRun` cleared,
-   * `runningOperation` seeded, the parked error card cleared off the failed
-   * message — and no push channel tells a client that is already sitting on the
-   * topic. This is the pull side: `useScheduledRunWatch` calls it on topic entry
-   * and on a short poll around `runAt`.
-   *
-   * When the server has moved past `scheduled`, the fresh row is patched into
-   * the topic map (so `useGatewayReconnect` sees `runningOperation` and attaches
-   * to the live stream) and the message list is refetched (so the stale
-   * rate-limit card drops and the continuation's assistant row appears).
-   *
-   * Returns whether a dispatch was observed and folded in.
+   * Fold scheduled work's server-side transition into the topic map. The watcher
+   * calls this on entry and while the schedule is due. A dispatch also refreshes
+   * the transcript so gateway reconnect can anchor to the new assistant row.
    */
   syncScheduledTopicRun = async (topicId: string): Promise<boolean> => {
     const stored = topicSelectors.getTopicById(topicId)(this.#get());
@@ -1240,8 +1226,18 @@ export class ChatTopicActionImpl {
     const fresh = this.#pendingTopicStatusWrites.apply(fetched, 'server');
     if (fresh.status !== fetched.status) return false;
 
-    // Server still parked — nothing to fold in.
-    if (fresh.status === 'scheduled' && fresh.metadata?.scheduledRun) return false;
+    // A first send can wait for its device before it starts creating the checkout.
+    const stillScheduled = fresh.status === 'scheduled' && !!fresh.metadata?.scheduledRun;
+    if (stillScheduled) {
+      const pending = fresh.metadata?.scheduledRun;
+      const previous = stored.metadata?.scheduledRun;
+      if (
+        pending?.kind !== 'worktree_start' ||
+        previous?.kind !== 'worktree_start' ||
+        !!pending.waitingForDevice === !!previous.waitingForDevice
+      )
+        return false;
+    }
 
     // Re-check after the await: a topic/agent switch mid-flight means the
     // active bucket no longer holds this row — don't patch a foreign bucket.
@@ -1259,7 +1255,7 @@ export class ChatTopicActionImpl {
     // The dispatcher also rewrote messages before handing off (cleared/deleted
     // the failed step, created the continuation's placeholder), so the list
     // must be refetched before the gateway reconnect anchors on it.
-    await this.#get().refreshMessages();
+    if (!stillScheduled) await this.#get().refreshMessages();
 
     return true;
   };
@@ -1833,12 +1829,14 @@ export class ChatTopicActionImpl {
     // directory must never land on another agent's topic.
     const pending = this.#get().pendingNewTopicDirectory;
     const targetSessionId = params.sessionId ?? this.#get().activeAgentId;
-    const pendingDirectoryId =
-      pending && pending.agentId === targetSessionId
-        ? pending.projectWorkingDirectoryId
-        : undefined;
-    const createParams: CreateTopicParams = pendingDirectoryId
-      ? { ...params, projectWorkingDirectoryId: pendingDirectoryId }
+    const staged = pending?.agentId === targetSessionId ? pending : undefined;
+    const createParams: CreateTopicParams = staged
+      ? {
+          ...params,
+          ...(staged.projectWorkingDirectoryId
+            ? { projectWorkingDirectoryId: staged.projectWorkingDirectoryId }
+            : { projectId: staged.projectId }),
+        }
       : params;
 
     const tmpId = Date.now().toString();
@@ -1848,7 +1846,7 @@ export class ChatTopicActionImpl {
     );
 
     const topicId = await topicService.createTopic(createParams);
-    if (pendingDirectoryId) this.#get().setPendingNewTopicDirectory();
+    if (staged) this.#get().setPendingNewTopicDirectory();
     await this.#get().refreshTopic();
 
     return topicId;

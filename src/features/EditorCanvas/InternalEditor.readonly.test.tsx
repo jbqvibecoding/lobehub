@@ -7,6 +7,7 @@ import {
   ReactChartPlugin,
   ReactFootnotePlugin,
   ReactToolbarPlugin,
+  ReactVideoPlugin,
 } from '@lobehub/editor';
 import { act, render, screen } from '@testing-library/react';
 import { StrictMode } from 'react';
@@ -58,11 +59,19 @@ vi.mock('@lobehub/editor', () => ({
   ReactMentionPlugin: vi.fn(),
   ReactTablePlugin: vi.fn(),
   ReactToolbarPlugin: vi.fn(),
+  ReactVideoPlugin: vi.fn(),
 }));
 
 vi.mock('@/features/ChatInput/InputEditor/plugins', () => ({
   createChatInputRichPlugins: () => [],
 }));
+
+vi.mock('./richList/RichListPlugin', () => ({
+  LIST_HEADING_ATTRIBUTE: 'data-list-heading',
+  ReactRichListPlugin: vi.fn(),
+}));
+
+vi.mock('./richList/OrderedListNumberMenu', () => ({ default: () => null }));
 
 vi.mock('./rehostImage', () => ({ needsImageRehost: () => true, rehostImage: vi.fn() }));
 
@@ -137,11 +146,16 @@ describe('InternalEditor readonly state', () => {
     });
   });
 
-  it('registers the alert, footnote and chart nodes the document service can write', () => {
+  it('registers the alert, footnote, chart and video nodes the document service can write', () => {
     render(<InternalEditor editor={editor} />);
 
     expect(editorProps.last?.plugins).toEqual(
-      expect.arrayContaining([ReactAlertPlugin, ReactChartPlugin, ReactFootnotePlugin]),
+      expect.arrayContaining([
+        ReactAlertPlugin,
+        ReactChartPlugin,
+        ReactFootnotePlugin,
+        ReactVideoPlugin,
+      ]),
     );
   });
 

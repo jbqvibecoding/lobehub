@@ -1,5 +1,23 @@
-import { GOAL_ACCEPTANCE_TASK_TITLE, type GoalStatus } from '@lobechat/const/goal';
-import type { GoalGraphSnapshot, GoalMetricCriterion, GoalTickResult } from '@lobechat/types';
+import { TRACING_SCENARIOS } from '@lobechat/const';
+import {
+  GOAL_ACCEPTANCE_TASK_TITLE,
+  GOAL_TITLE_MAX_LENGTH,
+  goalClarificationIslandKey,
+  goalDecisionIslandKey,
+  goalSignOffIslandKey,
+  type GoalStatus,
+} from '@lobechat/const/goal';
+import {
+  chainSummaryTitle,
+  TOPIC_TITLE_JSON_SCHEMA,
+  TOPIC_TITLE_PROMPT_VERSION,
+} from '@lobechat/prompts';
+import {
+  type GoalGraphSnapshot,
+  type GoalMetricCriterion,
+  type GoalTickResult,
+  RequestTrigger,
+} from '@lobechat/types';
 
 import {
   createReplicaSlice,
@@ -9,12 +27,19 @@ import {
 } from '@/libs/replica';
 import { mutate, useClientDataSWR } from '@/libs/swr';
 import { goalKeys } from '@/libs/swr/keys';
+import { aiChatService } from '@/services/aiChat';
 import { type GoalListItem, goalService } from '@/services/goal';
 import { type MetricSeriesWithPoints, metricService } from '@/services/metric';
+import { userService } from '@/services/user';
+import { briefListResource } from '@/store/brief/slices/list/projection';
+import { taskGroupListResource, taskListResource } from '@/store/task/slices/list/projection';
 import type { StoreSetter } from '@/store/types';
+import { useUserStore } from '@/store/user';
+import { systemAgentSelectors, userGeneralSettingsSelectors } from '@/store/user/selectors';
 import { isTrpcErrorCode } from '@/utils/trpcError';
 
-import { goalStatusesForFilter } from './goalListFilter';
+import { goalArchivedForFilter, goalStatusesForFilter } from './goalListFilter';
+import { buildGoalTitleMessages } from './goalTitle';
 import { useGoalStore } from './index';
 import type { GoalListFilter, GoalState, GoalViewMode } from './initialState';
 import {
@@ -194,6 +219,7 @@ export class GoalActionImpl {
       fetcher: ({ agentId, filter, projectId }) =>
         goalService.list({
           agentId,
+          archived: goalArchivedForFilter(filter),
           limit: GOAL_LIST_FETCH_LIMIT,
           projectId,
           statuses: goalStatusesForFilter(filter),
@@ -307,7 +333,9 @@ export class GoalActionImpl {
       this.refreshGoalGraph(goalId),
       mutate(goalKeys.pendingForIsland()),
       revalidateReplica(homeGoalListResource),
-      mutate((key) => Array.isArray(key) && key[0] === 'brief:list'),
+      // The inbox brief carrying the same gate is a replica: an SWR key prefix
+      // (the old `brief:list`) no longer reaches it.
+      revalidateReplica(briefListResource),
     ]);
   };
 
@@ -320,14 +348,115 @@ export class GoalActionImpl {
     await Promise.all([this.refreshGoalGraph(goalId), mutate(goalKeys.pendingClarifications())]);
   };
 
+  /**
+   * Wave goal asks off the approval island on every client of this account.
+   * They leave the island at once; the ask itself stays pending on the goal
+   * page and in the Home inbox. The server keeps the keys, and the island
+   * reads leave them out, so another client drops them on its next poll.
+   *
+   * Rejects only when the server did not keep the keys; the cards then come
+   * back from the cached lists as they were, even when a re-read fails too.
+   */
+  dismissIslandItems = async (keys: string[]): Promise<void> => {
+    if (keys.length === 0) return;
+    const hidden = new Set(keys);
+    type IslandData = Awaited<ReturnType<typeof goalService.pendingForIsland>>;
+    type ClarificationData = Awaited<ReturnType<typeof goalService.pendingClarifications>>;
+
+    let islandBefore: IslandData | undefined;
+    let clarificationsBefore: ClarificationData | undefined;
+    await Promise.all([
+      mutate(
+        goalKeys.pendingForIsland(),
+        (data?: IslandData) => {
+          islandBefore = data;
+          return (
+            data && {
+              decisions: data.decisions.filter(
+                (row) => !hidden.has(goalDecisionIslandKey(row.decisionId)),
+              ),
+              signOffs: data.signOffs.filter(
+                (row) => !hidden.has(goalSignOffIslandKey(row.acceptanceId)),
+              ),
+            }
+          );
+        },
+        { revalidate: false },
+      ),
+      mutate(
+        goalKeys.pendingClarifications(),
+        (groups?: ClarificationData) => {
+          clarificationsBefore = groups;
+          return groups?.filter((group) => !hidden.has(goalClarificationIslandKey(group)));
+        },
+        { revalidate: false },
+      ),
+    ]);
+
+    // A failed re-read must not decide the outcome: the write is what counts.
+    const reread = () =>
+      Promise.all([
+        mutate(goalKeys.pendingForIsland()),
+        mutate(goalKeys.pendingClarifications()),
+      ]).catch((error) => console.error('[island] failed to re-read goal asks', error));
+
+    try {
+      await userService.addIslandDismissals(keys);
+    } catch (error) {
+      await Promise.all([
+        mutate(goalKeys.pendingForIsland(), islandBefore, { revalidate: false }),
+        mutate(goalKeys.pendingClarifications(), clarificationsBefore, { revalidate: false }),
+      ]);
+      void reread();
+      throw error;
+    }
+    void reread();
+  };
+
   pauseGoal = async (goalId: string): Promise<void> => {
     await goalService.pause(goalId);
     await this.refreshGoalGraph(goalId);
   };
 
+  /**
+   * Archive a goal, or restore it. The row moves between every list's ordinary
+   * tabs and its Archived tab, so it leaves every list it is held in at once
+   * and each list — loaded tabs, the home rail — re-reads where it belongs now.
+   * The goal's Tasks are archived and restored with it, so the task lists and
+   * boards re-read too.
+   */
+  archiveGoal = async (goalId: string, archived: boolean): Promise<void> => {
+    await goalService.archive(goalId, archived);
+    this.#goalListRows.remove(goalId);
+    // The archive has landed; a refresh that fails afterwards is a stale view,
+    // not a failed archive, so it is logged rather than reported as one.
+    const refreshes = await Promise.allSettled([
+      this.refreshGoalGraph(goalId),
+      revalidateReplica(goalListResource),
+      revalidateReplica(homeGoalListResource),
+      revalidateReplica(topicGoalListResource),
+      revalidateReplica(taskListResource),
+      revalidateReplica(taskGroupListResource),
+    ]);
+    for (const result of refreshes) {
+      if (result.status === 'rejected')
+        console.error('[goal:archive] refresh failed after archiving', result.reason);
+    }
+  };
+
   closeGoal = async (goalId: string, status: 'achieved' | 'canceled'): Promise<void> => {
-    await goalService.close(goalId, status);
-    await this.refreshGoalGraph(goalId);
+    let refused: unknown;
+    try {
+      await goalService.close(goalId, status);
+    } catch (error) {
+      refused = error;
+    }
+    // Refresh either way — a refused close has still paused the goal on the
+    // server — but a failed refresh must not read as a failed close.
+    await this.refreshGoalGraph(goalId).catch((error) =>
+      console.error('[goal:close] refresh failed after closing', error),
+    );
+    if (refused) throw refused;
   };
 
   refreshGoalGraph = async (goalId: string): Promise<void> => {
@@ -375,6 +504,16 @@ export class GoalActionImpl {
     await this.refreshGoalGraph(goalId);
   };
 
+  /** The goal leaves (or joins) other members' lists, and its Tasks move with it. */
+  setGoalVisibility = async (goalId: string, visibility: 'private' | 'public'): Promise<void> => {
+    await goalService.setVisibility(goalId, visibility);
+    await Promise.all([
+      this.refreshGoalGraph(goalId),
+      revalidateReplica(goalListResource),
+      revalidateReplica(homeGoalListResource),
+    ]);
+  };
+
   setGoalModel = async (
     goalId: string,
     modelConfig: { model: string; provider: string } | null,
@@ -395,6 +534,134 @@ export class GoalActionImpl {
   updateGoalRequirement = async (goalId: string, requirement: string): Promise<void> => {
     await goalService.updateRequirement(goalId, requirement);
     await this.refreshGoalGraph(goalId);
+  };
+
+  /** Each goal's latest title write, so writes reach the server in the order they were made. */
+  #titleWrites = new Map<string, Promise<unknown>>();
+
+  /**
+   * Rename a goal everywhere it is shown — the page header, every list tab,
+   * the home rail and the conversation that created it — before the server
+   * answers. A rejected rename re-reads them all from the server and rethrows,
+   * so the caller can say why. Writes run one at a time per goal, so the latest
+   * edit is the one the server keeps, whichever request would have finished first.
+   */
+  updateGoalTitle = async (goalId: string, title: string): Promise<void> => {
+    const next = title.trim().slice(0, GOAL_TITLE_MAX_LENGTH);
+    if (!next) return;
+
+    this.#goalGraph.update(
+      goalId,
+      (graph) =>
+        graph && {
+          ...graph,
+          goal: { ...graph.goal, title: next },
+          // The server moves the root question along while it still has the old title.
+          nodes: graph.nodes.map((node) =>
+            node.kind === 'problem' && node.title === graph.goal.title
+              ? { ...node, title: next }
+              : node,
+          ),
+        },
+    );
+    this.#goalListRows.update(goalId, (item) => ({ ...item, goal: { ...item.goal, title: next } }));
+
+    const write = (this.#titleWrites.get(goalId) ?? Promise.resolve())
+      .catch(() => {})
+      .then(() => goalService.updateTitle(goalId, next));
+    this.#titleWrites.set(goalId, write);
+
+    try {
+      await write;
+      // The goal's management topic was renamed with it.
+      const topicId = this.#get().goalGraphById[goalId]?.goal.config?.managerState?.topicId;
+      // Loaded on demand: a static import puts the whole chat store on the first screen.
+      if (topicId)
+        void import('@/store/chat')
+          .then(({ useChatStore }) => useChatStore.getState().refreshTopicDetail(topicId, true))
+          .catch(() => {});
+    } catch (error) {
+      // A newer edit is still on its way: re-reading now would show this one's old title over it.
+      if (this.#titleWrites.get(goalId) === write) {
+        await Promise.allSettled([
+          this.refreshGoalGraph(goalId),
+          revalidateReplica(goalListResource),
+          revalidateReplica(homeGoalListResource),
+          revalidateReplica(topicGoalListResource),
+        ]);
+      }
+      throw error;
+    } finally {
+      if (this.#titleWrites.get(goalId) === write) this.#titleWrites.delete(goalId);
+    }
+  };
+
+  /**
+   * Name the goal from what it asks and what it has produced so far, with the
+   * chain and model topics are named with (`summaryTopicTitle`). An empty answer
+   * leaves the title alone. Failures reach the caller: the menu reports them,
+   * the background rename after creation ignores them.
+   */
+  autoRenameGoalTitle = async (goalId: string): Promise<void> => {
+    if (this.#get().goalTitleRenamingIds.includes(goalId)) return;
+    this.#setGoalTitleRenaming(goalId, true);
+
+    try {
+      const graph = this.#get().goalGraphById[goalId] ?? (await goalService.getGraph(goalId));
+      // A title saved by hand while the model was working is the newer choice.
+      const titleWhenAsked = this.#titleShown(goalId) ?? graph.goal.title;
+      const { model, provider } = systemAgentSelectors.topic(useUserStore.getState());
+      const { data } = await aiChatService.generateJSON(
+        {
+          ...chainSummaryTitle(
+            buildGoalTitleMessages(graph),
+            userGeneralSettingsSelectors.currentResponseLanguage(useUserStore.getState()),
+          ),
+          metadata: { trigger: RequestTrigger.Goal },
+          model,
+          provider,
+          schema: TOPIC_TITLE_JSON_SCHEMA,
+          tracing: {
+            promptVersion: TOPIC_TITLE_PROMPT_VERSION,
+            scenario: TRACING_SCENARIOS.TopicTitle,
+            schemaName: TOPIC_TITLE_JSON_SCHEMA.name,
+          },
+        },
+        new AbortController(),
+      );
+
+      const title = (data as { title?: string } | undefined)?.title?.trim();
+      if (!title) throw new Error('No goal title was generated.');
+
+      if ((this.#titleShown(goalId) ?? titleWhenAsked) !== titleWhenAsked) return;
+
+      await this.updateGoalTitle(goalId, title);
+    } finally {
+      this.#setGoalTitleRenaming(goalId, false);
+    }
+  };
+
+  /** What the page or a list row shows now; a list row may be all that is loaded. */
+  #titleShown = (goalId: string): string | undefined => {
+    const state = this.#get();
+    const inList = (lists: Record<string, { goals: GoalListItem[] } | undefined>) =>
+      Object.values(lists)
+        .flatMap((list) => list?.goals ?? [])
+        .find((item) => item.goal.id === goalId)?.goal.title;
+    return (
+      state.goalGraphById[goalId]?.goal.title ??
+      inList(state.goalListByAgentId) ??
+      inList(state.homeGoalsByScope)
+    );
+  };
+
+  #setGoalTitleRenaming = (goalId: string, renaming: boolean) => {
+    const ids = this.#get().goalTitleRenamingIds.filter((id) => id !== goalId);
+    this.#set(
+      { goalTitleRenamingIds: renaming ? [...ids, goalId] : ids },
+      false,
+      'setGoalTitleRenaming',
+    );
   };
 
   /**
@@ -575,6 +842,10 @@ export class GoalActionImpl {
 
   setGoalListFilter = (filter: GoalListFilter): void => {
     this.#set({ goalListFilter: filter, goalListVisibleLimit: 10 }, false, 'setGoalListFilter');
+  };
+
+  setGoalListKeyword = (keyword: string): void => {
+    this.#set({ goalListKeyword: keyword, goalListVisibleLimit: 10 }, false, 'setGoalListKeyword');
   };
 
   setGoalViewMode = (mode: GoalViewMode): void => {

@@ -9,6 +9,7 @@ import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { AgentService } from '@/server/services/agent';
 import { resolveAgentReference } from '@/server/services/agent/resolveReference';
+import { createAgentDirectChannel } from '@/server/services/channel/defaultChannel';
 
 import { assertCanUseConversationTargets } from './_helpers/conversationResourceGuard';
 
@@ -55,10 +56,19 @@ export const sessionRouter = router({
           ...config,
           fewShots: config.fewShots ?? examples,
           marketIdentifier: config.marketIdentifier ?? identifier,
-          pinned: input.session.pinned,
+          // A public workspace row's pin is the owner/admin team pin, set only
+          // through `agent.updateAgentPinned`; creating one never carries it.
+          pinned:
+            ctx.workspaceId && config.visibility !== 'private' ? undefined : input.session.pinned,
         },
         groupId: groupId && groupId !== 'default' ? groupId : undefined,
         visibility: config.visibility,
+      });
+      await createAgentDirectChannel({
+        agentId,
+        db: ctx.serverDB,
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId ?? undefined,
       });
       return agentId;
     }),

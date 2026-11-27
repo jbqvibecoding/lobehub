@@ -1,3 +1,4 @@
+import { type TaskListFilter } from '@lobechat/types';
 import { type NavigateFunction } from 'react-router';
 
 import { type LocaleMode } from '@/types/locale';
@@ -44,9 +45,11 @@ export type WorkingSidebarTab =
   | 'files'
   | 'overview'
   | 'params'
+  | 'pr'
   | 'review'
   | 'search'
   | 'skills'
+  | 'tools'
   | 'web'
   | (string & {});
 
@@ -54,6 +57,11 @@ export const CANVAS_TAB_PREFIX = 'canvas:';
 export const canvasTabKey = (canvasId: string) => `${CANVAS_TAB_PREFIX}${canvasId}`;
 export const canvasIdOfTab = (tab: string) =>
   tab.startsWith(CANVAS_TAB_PREFIX) ? tab.slice(CANVAS_TAB_PREFIX.length) : undefined;
+
+export const ARTBOARD_TAB_PREFIX = 'artboard:';
+export const artboardTabKey = (artboardId: string) => `${ARTBOARD_TAB_PREFIX}${artboardId}`;
+export const artboardIdOfTab = (tab: string) =>
+  tab.startsWith(ARTBOARD_TAB_PREFIX) ? tab.slice(ARTBOARD_TAB_PREFIX.length) : undefined;
 
 export const DEFAULT_RESOURCE_MANAGER_COLUMN_WIDTHS = {
   date: 160,
@@ -69,27 +77,25 @@ export enum SettingsTabs {
   Agent = 'agent',
   APIKey = 'apikey',
   Appearance = 'appearance',
+  Automations = 'automations',
   Billing = 'billing',
-  /** @deprecated Use Appearance instead */
+  /** @deprecated Use Conversation instead */
   ChatAppearance = 'chat-appearance',
   /** @deprecated Use Appearance instead */
   Common = 'common',
   Connector = 'connector',
+  Conversation = 'conversation',
   Credits = 'credits',
   Creds = 'credential',
   Devices = 'devices',
-  /** The cloud sandbox's network drives — labelled “Storage”; `storage` is local data. */
-  Drive = 'drive',
   Environments = 'environments',
   Hotkey = 'hotkey',
   /** @deprecated Use ServiceModel instead */
   Image = 'image',
-  Integrations = 'integrations',
   Labels = 'labels',
   Labs = 'labs',
   LLM = 'llm',
   Memory = 'memory',
-  Messenger = 'messenger',
   Notification = 'notification',
   OAuthApps = 'oauth-apps',
   // business
@@ -101,15 +107,17 @@ export enum SettingsTabs {
   Security = 'security',
   ServiceModel = 'service-model',
   Skill = 'skill',
-
   Stats = 'stats',
+
   Storage = 'storage',
+  SubscriptionAccounts = 'subscription-accounts',
   SystemTools = 'system-tools',
   Tools = 'tools',
   Trash = 'trash',
   /** @deprecated Use ServiceModel instead */
   TTS = 'tts',
   Usage = 'usage',
+  Webhooks = 'webhooks',
 }
 
 /**
@@ -154,7 +162,7 @@ export type TaskViewMode = 'kanban' | 'list';
 /** How topics inside one byProject sidebar group are sectioned. */
 export type ProjectTopicSubGroupMode = 'none' | 'byDevice' | 'byTime' | 'byStatus';
 
-export const DEFAULT_HOME_SIDEBAR_EXPANDED_KEYS = ['favorites', 'recents', 'agent', 'private'];
+export const DEFAULT_HOME_SIDEBAR_EXPANDED_KEYS = ['favorites', 'recents', 'agent'];
 
 /** How the agent document tree orders sibling rows. */
 export interface AgentDocumentSort {
@@ -184,8 +192,18 @@ export const DEFAULT_DOCS_PAGE_SECTION_VIEW: DocsPageSectionView = {
   type: 'all',
 };
 
+/** How a sidebar Channel section orders its Channels. */
+export interface ChannelListSort {
+  /** `updatedAt` follows the latest message, so it orders by activity. */
+  by: 'createdAt' | 'title' | 'updatedAt';
+  order: 'asc' | 'desc';
+}
+
 /** How the sidebar project list is ordered; `manual` follows the shared drag order. */
 export type ProjectListSortBy = 'manual' | 'createdAt' | 'updatedAt';
+
+/** How the projects page lays out projects: folder cards or compact rows. */
+export type ProjectListViewMode = 'folder' | 'list';
 
 export interface SystemStatus {
   /**
@@ -215,7 +233,8 @@ export interface SystemStatus {
    * Display options of the agent view-all page (grouping / ordering / hidden-agent visibility)
    */
   agentListViewOptions?: {
-    groupBy: 'author' | 'label' | 'none';
+    /** Unset until the member picks one; the page then defaults per mode. */
+    groupBy?: 'author' | 'folder' | 'label' | 'none';
     orderBy: 'author' | 'title' | 'updatedAt';
     orderDirection: 'asc' | 'desc';
     showSidebarHidden: boolean;
@@ -230,6 +249,10 @@ export interface SystemStatus {
    * scalars instead of index-merging arrays.
    */
   assigneeAgentSelectorCollapsedGroups?: Record<string, boolean>;
+  /**
+   * Order of the sidebar Channel sections. Device-local view setting.
+   */
+  channelListSort?: ChannelListSort;
   chatInputHeight?: number;
   /**
    * Which topicGroups are collapsed, bucketed by group mode. We persist the
@@ -247,11 +270,12 @@ export interface SystemStatus {
    */
   dismissedBannerIds?: string[];
   /**
-   * Keys of goal asks (clarification rounds, gates, sign-offs) the user waved
-   * off the approval island. Only the island honours them — the same ask stays
-   * in the Home inbox. Append-only and capped, see `appendDismissedIslandKey`.
+   * @deprecated Island dismissals live on the server now (`addIslandDismissals`),
+   * shared by every client. Read once to upload what this client dismissed
+   * before, then ignored; see `islandDismissalsUploaded`.
    */
   dismissedIslandItemKeys?: string[];
+  dismissedProjectOnboarding?: Record<string, boolean>;
   /**
    * List options of each Docs sidebar page section, kept apart so narrowing
    * Shared docs never changes what My docs shows.
@@ -295,14 +319,25 @@ export interface SystemStatus {
   homeGoalsCollapsed?: boolean;
   homeRecentsCount?: number;
   /**
-   * Agent picked from the home AgentSelect dropdown. When unset the home page
-   * falls back to the inbox agent. Persisted so the choice survives reloads.
+   * Agent picked from the home AgentSelect dropdown, keyed by cache scope
+   * (`${userId}:${workspaceId}`, see `buildCacheScope`). A scope without an
+   * entry falls back to its own inbox agent. Persisted so the choice survives
+   * reloads.
+   *
+   * Keyed by scope rather than stored once (or in the `workspace` overlay,
+   * which is shared by every workspace and falls back to the personal value):
+   * an agent only exists in the scope it was picked in, and a single value let
+   * the personal inbox reach a workspace home after a switch, where every
+   * config save and send against it returned NOT_FOUND until the workspace
+   * agent list loaded.
    */
-  homeSelectedAgentId?: string;
+  homeSelectedAgentIdByScope?: Record<string, string>;
   homeTaskCount?: number;
   imagePanelWidth: number;
   imageTopicPanelWidth?: number;
   imageTopicViewMode?: 'grid' | 'list';
+  /** This client's legacy `dismissedIslandItemKeys` have been uploaded to the server. */
+  islandDismissalsUploaded?: boolean;
   isShowCredit?: boolean;
   knowledgeBaseModalViewMode?: 'list' | 'masonry';
   language?: LocaleMode;
@@ -314,6 +349,8 @@ export interface SystemStatus {
    * Remember user's last selected image generation provider
    */
   lastSelectedImageProvider?: string;
+  lastSelectedMusicModel?: string;
+  lastSelectedMusicProvider?: string;
   lastSelectedVideoModel?: string;
   lastSelectedVideoProvider?: string;
   latestChangelogId?: string;
@@ -343,6 +380,7 @@ export interface SystemStatus {
    * ModelSwitchPanel width
    */
   modelSwitchPanelWidth?: number;
+  musicTopicViewMode?: 'grid' | 'list';
   noWideScreen?: boolean;
   pageAgentPanelWidth?: number;
   /**
@@ -367,6 +405,8 @@ export interface SystemStatus {
    * order itself is shared and lives on `projects.sort_order`.
    */
   projectListSortBy?: ProjectListSortBy;
+  /** Layout of the projects page. Device-local view setting. */
+  projectListViewMode?: ProjectListViewMode;
   /**
    * Per byProject group (keyed by the group id, e.g. `project-id:<id>`): how its
    * topics are sectioned. Absent means `none`.
@@ -459,6 +499,13 @@ export interface SystemStatus {
    */
   taskKanbanHiddenPanelCollapsed?: boolean;
   /**
+   * Tasks page filters, one entry per list scope (workspace + global / agent /
+   * project page). An array, not a map: status is deep-merged on write, which
+   * could never drop a removed condition from a nested object, while arrays
+   * are replaced whole.
+   */
+  taskListFilters?: { filter: TaskListFilter; scope: string }[];
+  /**
    * Display mode for the tasks page. Persisted so a manually selected board or
    * list view survives navigation and page reloads.
    */
@@ -470,7 +517,8 @@ export interface SystemStatus {
      * `hideCompleted` it replaces before normalization could migrate it.
      */
     completedTasks?: 'all' | 'day' | 'month' | 'none' | 'week';
-    groupBy: 'assignee' | 'member' | 'none' | 'priority' | 'status';
+    /** `label:<groupId>` groups by one label group. */
+    groupBy: 'assignee' | 'member' | 'none' | 'priority' | 'project' | 'status' | `label:${string}`;
     /** @deprecated Replaced by `completedTasks`; read once to migrate. */
     hideCompleted?: boolean;
     nestedSubTasks: boolean;
@@ -478,8 +526,14 @@ export interface SystemStatus {
     orderCompletedByRecency: boolean;
     orderDirection: 'asc' | 'desc';
     showSubTasks: boolean;
-    subGroupBy: 'assignee' | 'member' | 'none' | 'priority' | 'status';
+    subGroupBy:
+      'assignee' | 'member' | 'none' | 'priority' | 'project' | 'status' | `label:${string}`;
   };
+  /**
+   * Home team board: the attention list folded to a slim rail so the timeline
+   * gets the width. Persisted, like the other folded panels.
+   */
+  teamBoardAttentionCollapsed?: boolean;
   /**
    * Height of the chat bottom terminal panel. Persisted so resizing survives remounts.
    */
@@ -488,6 +542,12 @@ export interface SystemStatus {
    * Whether to display tokens in short format
    */
   tokenDisplayFormatShort?: boolean;
+  /**
+   * Workspace "only my topics" filter, keyed by the topic list's owner: the
+   * agentId of an agent sidebar, the groupId of a group, the projectId of a
+   * project sidebar. Device-local, so each agent keeps its own choice.
+   */
+  topicOnlyMineByAgent?: Record<string, boolean>;
   /**
    * number of topics to display per page
    */
@@ -567,6 +627,7 @@ export const createNavigationRef = (): GlobalNavigationRef => ({ current: null }
 export interface GlobalState {
   hasNewVersion?: boolean;
   isMobile?: boolean;
+  isNavPanelResizing?: boolean;
   /**
    * Server version is too old, does not support /api/version endpoint
    * Need to prompt user to update server
@@ -583,6 +644,12 @@ export interface GlobalState {
   sidebarKey: SidebarTabKey;
   status: SystemStatus;
   statusStorage: AsyncLocalStorage<SystemStatus>;
+  /**
+   * URL of the PR the mounted Working Sidebar's PR tab shows, so a Work card for
+   * the same PR can open that tab instead of leaving the app. Session state:
+   * deliberately outside the persisted `status`.
+   */
+  workingSidebarPullRequestUrl?: string;
 }
 
 export const INITIAL_STATUS = {
@@ -591,7 +658,6 @@ export const INITIAL_STATUS = {
   agentListSidebarSectionCollapsed: false,
   agentListViewMode: 'card' as const,
   agentListViewOptions: {
-    groupBy: 'none' as const,
     orderBy: 'updatedAt' as const,
     orderDirection: 'desc' as const,
     showSidebarHidden: true,
@@ -669,6 +735,8 @@ export const INITIAL_STATUS = {
   terminalPanelHeight: 320,
   tokenDisplayFormatShort: true,
   topicPageSize: 20,
+  // Songs rarely carry cover art, so music topics read better as a titled list
+  musicTopicViewMode: 'list' as const,
   verifyReportPanelWidth: 300,
   videoPanelWidth: 320,
   videoTopicViewMode: 'grid' as const,
@@ -678,6 +746,16 @@ export const INITIAL_STATUS = {
 
 const statusStorage = new AsyncLocalStorage<SystemStatus>('LOBE_SYSTEM_STATUS');
 
+/** Keeps only `ownerId → boolean` entries of a persisted value of unknown shape. */
+const restoreTopicOnlyMineByAgent = (value: unknown): Record<string, boolean> | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, boolean] => typeof entry[1] === 'boolean',
+    ),
+  );
+};
+
 /**
  * Restore the shell-defining preferences before React's first render. The
  * remaining system status still follows the existing async initialization path,
@@ -685,6 +763,10 @@ const statusStorage = new AsyncLocalStorage<SystemStatus>('LOBE_SYSTEM_STATUS');
  * the boot shell reads them synchronously to draw a shell that lines up with
  * the real layout, and `NavPanelDraggable` would otherwise size its
  * pre-hydration placeholder to the default width.
+ *
+ * The per-agent "only mine" topic filter is restored here too: it is part of
+ * the topic list identity, and the route loader seeds that list before the
+ * async initialization runs — an unrestored filter seeds the unfiltered page.
  */
 export const createInitialSystemStatus = (): SystemStatus => {
   const persistedStatus = statusStorage.getFromLocalStorageSync();
@@ -714,6 +796,7 @@ export const createInitialSystemStatus = (): SystemStatus => {
       typeof persistedStatus.showRightPanel === 'boolean'
         ? persistedStatus.showRightPanel
         : INITIAL_STATUS.showRightPanel,
+    topicOnlyMineByAgent: restoreTopicOnlyMineByAgent(persistedStatus.topicOnlyMineByAgent),
     showWorkingOverview:
       typeof persistedStatus.showWorkingOverview === 'boolean'
         ? persistedStatus.showWorkingOverview

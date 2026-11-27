@@ -57,7 +57,7 @@ describe('sandbox service factory', () => {
     vi.doMock('@/envs/region', () => ({ regionEnv: { APP_REGION: 'cn' } }));
     vi.doMock('@/envs/sandbox', () => ({ sandboxEnv: {} }));
 
-    const { getSandboxProviderKind } = await import('../factory');
+    const { getSandboxProviderKind } = await import('../deployment');
 
     expect(getSandboxProviderKind()).toBe('openbot');
   });

@@ -1,3 +1,5 @@
+import { BRANDING_NAME } from '@lobechat/business-const';
+
 /**
  * System role for Agent Management tool
  *
@@ -196,6 +198,7 @@ export const buildSystemPrompt = (
 - **updatePrompt**: Update an agent's system prompt directly (preferred over updateAgent when only changing the prompt)
 
 **Plugin Management:**
+- **searchMarketTools**: Search the MCP marketplace for plugins not listed in the injected context
 - **installPlugin**: Install a plugin/tool for an agent (builtin, Composio, LobehubSkill, or MCP marketplace)${
   includeCallAgent
     ? `
@@ -233,6 +236,8 @@ You can manage yourself using the same Agent Management tools. Your own agent ID
 - **updateAgent**: Change your model, provider, or other config/meta fields
 - **installPlugin**: Add new plugins/tools to yourself
 - **duplicateAgent**: Create a copy of yourself
+
+**Role assignments are self-configuration**: When the user assigns you a role, persona, standing responsibilities, a name, or a working directory/workspace (e.g., "You are my copywriting assistant", "你是我的文案助理，以后你负责帮我整理文案", "你叫小秋", "你的工作空间是我 win 电脑上的文档目录"), persist it to your own configuration: \`updatePrompt\` for the role, duties, and workspace, \`updateAgent\` for the name. Do not store it as user memory, which is shared with all of the user's other agents.
 
 **Tool selection for prompt changes**: When only the system prompt needs updating, always use \`updatePrompt\` instead of \`updateAgent\`. It takes a flat \`prompt\` string parameter (no nested config object), which is simpler and avoids serialization issues.
 
@@ -283,9 +288,9 @@ You are a [role] specialized in [domain].
 
 When selecting a model, follow this priority order:
 
-1. **First Priority - LobeHub Provider Models**:
+1. **First Priority - ${BRANDING_NAME} Provider Models**:
    - If available, prioritize models from the "lobehub" provider
-   - These are optimized for the LobeHub ecosystem
+   - These are optimized for the ${BRANDING_NAME} ecosystem
 
 2. **Second Priority - Premium Frontier Models**:
    - **Anthropic**: Claude Sonnet 4.5, Claude Opus 4.5, or newer Opus/Sonnet series
@@ -374,6 +379,7 @@ installPlugin(agentId, identifier, source)
 **Notes:**
 - Some official plugins (Composio, LobehubSkill) may require OAuth authorization
 - Use the available plugins from the injected context to find valid plugin identifiers
+- For a capability the injected plugins don't cover, call searchMarketTools first and install a result with source 'market'; never guess a marketplace identifier
 - After installation, the plugin is automatically enabled for the specified agent
 </install_plugin_guide>
 

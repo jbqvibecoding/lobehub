@@ -1,7 +1,9 @@
 'use client';
 
 import type { BuiltinRenderProps } from '@lobechat/types';
-import { ActionIcon, createStaticStyles, cssVar, Flexbox, Icon, Text } from '@lobehub/ui';
+import { ActionIcon, Flexbox, Icon, Text } from '@lobehub/ui';
+import { cssVar } from '@lobehub/ui/stylex/cssVar.stylex';
+import * as stylex from '@stylexjs/stylex';
 import {
   CircleXIcon,
   DownloadIcon,
@@ -15,27 +17,22 @@ import { useTranslation } from 'react-i18next';
 
 import type { ExportFileState } from '../../../types';
 
-const styles = createStaticStyles(({ css }) => ({
-  card: css`
-    overflow: hidden;
-
-    max-width: 420px;
-    padding-block: 10px;
-    padding-inline: 12px;
-    border: 1px solid ${cssVar.colorBorderSecondary};
-    border-radius: ${cssVar.borderRadiusLG};
-
-    background: ${cssVar.colorFillQuaternary};
-  `,
-  failed: css`
-    overflow: hidden;
-    padding-inline: 8px 0;
-  `,
-  icon: css`
-    flex: none;
-    color: ${cssVar.colorTextSecondary};
-  `,
-}));
+const styles = stylex.create({
+  card: {
+    overflow: 'hidden',
+    maxWidth: '420px',
+    paddingBlock: '10px',
+    paddingInline: '12px',
+    borderWidth: '1px',
+    borderStyle: 'solid',
+    borderColor: cssVar.colorBorderSecondary,
+    borderRadius: cssVar.borderRadiusLG,
+    backgroundColor: cssVar.colorFillQuaternary,
+    backgroundImage: 'none',
+  },
+  failed: { overflow: 'hidden', paddingInlineStart: '8px', paddingInlineEnd: '0' },
+  icon: { flex: 'none', color: cssVar.colorTextSecondary },
+});
 
 interface ExportFileParams {
   path: string;
@@ -62,19 +59,21 @@ const ExportFile = memo<BuiltinRenderProps<ExportFileParams, ExportFileState>>(
     const { t } = useTranslation('plugin');
     const filename = pluginState?.filename || args.path.split('/').pop() || args.path;
 
+    const downloadUrl = pluginState?.downloadUrl;
+    const downloadName = pluginState?.filename;
     const handleDownload = useCallback(async () => {
-      if (!pluginState?.downloadUrl || !pluginState?.filename) return;
+      if (!downloadUrl || !downloadName) return;
 
       try {
         // Fetch the file content to bypass cross-origin download restrictions
-        const response = await fetch(pluginState.downloadUrl);
+        const response = await fetch(downloadUrl);
         const blob = await response.blob();
 
         // Create a blob URL and trigger download
         const blobUrl = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = blobUrl;
-        link.download = pluginState.filename;
+        link.download = downloadName;
         document.body.append(link);
         link.click();
         link.remove();
@@ -83,15 +82,20 @@ const ExportFile = memo<BuiltinRenderProps<ExportFileParams, ExportFileState>>(
         URL.revokeObjectURL(blobUrl);
       } catch {
         // Fallback: open in new tab if fetch fails
-        window.open(pluginState.downloadUrl, '_blank');
+        window.open(downloadUrl, '_blank');
       }
-    }, [pluginState?.downloadUrl, pluginState?.filename]);
+    }, [downloadUrl, downloadName]);
 
     if (pluginState === undefined) return null;
 
     if (!pluginState.success || !pluginState.downloadUrl) {
       return (
-        <Flexbox horizontal align={'center'} className={styles.failed} gap={8}>
+        <Flexbox
+          horizontal
+          align={'center'}
+          className={stylex.props(styles.failed).className}
+          gap={8}
+        >
           <Icon color={cssVar.colorError} icon={CircleXIcon} size={12} />
           <Text code fontSize={12}>
             {t('builtins.lobe-cloud-sandbox.exportFile.failed', { path: args.path })}
@@ -100,13 +104,12 @@ const ExportFile = memo<BuiltinRenderProps<ExportFileParams, ExportFileState>>(
       );
     }
 
-    const TypeIcon = iconFor(filename);
     const extension = filename.split('.').pop()?.toUpperCase();
     const details = [extension, formatSize(pluginState.size)].filter(Boolean).join(' · ');
 
     return (
-      <Flexbox horizontal align={'center'} className={styles.card} gap={12}>
-        <TypeIcon className={styles.icon} size={28} />
+      <Flexbox horizontal align={'center'} className={stylex.props(styles.card).className} gap={12}>
+        <Icon className={stylex.props(styles.icon).className} icon={iconFor(filename)} size={28} />
         <Flexbox flex={1} gap={2} style={{ minWidth: 0 }}>
           <Text ellipsis weight={500}>
             {filename}

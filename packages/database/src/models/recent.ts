@@ -14,6 +14,7 @@ import {
 } from '../schemas';
 import type { LobeChatDatabase } from '../type';
 import { notShareVisitorTopic } from '../utils/shareVisitor';
+import { notTrashed } from '../utils/softDelete';
 import { CHANNEL_TOPIC_TRIGGER } from '../utils/topicVisibility';
 import { buildWorkspaceWhere } from '../utils/workspace';
 
@@ -52,6 +53,7 @@ const SYSTEM_TOPIC_TRIGGERS = [
   'task',
   'document',
   'goal_supervision',
+  'webhook',
 ];
 
 // Excluded so tool-owned document rows don't surface as generic recent docs;
@@ -78,7 +80,6 @@ const toPlainTextPreview = (markdown: string): string => {
   try {
     return removeMarkdown(markdown).trimEnd();
   } catch {
-    /* v8 ignore next -- unreachable: remove-markdown swallows its own errors unless `throwError` is set, and the preview query only yields non-empty strings */
     return markdown;
   }
 };
@@ -118,9 +119,14 @@ export class RecentModel {
 
     // `tasks` uses `createdByUserId` instead of `userId`, so apply the
     // workspace-aware predicate inline.
-    const taskScopeWhere = this.workspaceId
-      ? eq(tasks.workspaceId, this.workspaceId)
-      : and(eq(tasks.createdByUserId, this.userId), isNull(tasks.workspaceId));
+    // Hand-built (it bypasses `buildWorkspaceWhere`), so the recycle-bin
+    // filter the other arms get from that funnel is added here explicitly.
+    const taskScopeWhere = and(
+      this.workspaceId
+        ? eq(tasks.workspaceId, this.workspaceId)
+        : and(eq(tasks.createdByUserId, this.userId), isNull(tasks.workspaceId)),
+      notTrashed(tasks.isDeleted),
+    );
 
     // Workspace rows are shared across members; `mineOnly` narrows a workspace
     // feed back to the viewer's own items. A no-op in personal mode, where the
@@ -267,11 +273,8 @@ export class RecentModel {
         status: row.status,
         title: row.title,
         type: row.type,
-        // Unreachable fallback: drizzle's timestamp column maps every driver value to a Date.
-        updatedAt:
-          row.updatedAt instanceof Date
-            ? row.updatedAt
-            : /* v8 ignore next -- unreachable: see note */ new Date(row.updatedAt as any),
+        // Fallback for a driver or decoder that stops handing timestamps back as Date.
+        updatedAt: row.updatedAt instanceof Date ? row.updatedAt : new Date(row.updatedAt as any),
         userId: row.userId,
       };
     });

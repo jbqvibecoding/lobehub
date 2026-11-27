@@ -1,5 +1,7 @@
+import { omitToolWorkRegistration } from '@lobechat/agent-runtime';
 import { projectToolViewModels } from '@lobechat/tool-view-model';
 import {
+  AgentSenderMetadataSchema,
   CreateNewMessageParamsSchema,
   omitServerOwnedMessageMetadata,
   UpdateMessageParamsSchema,
@@ -62,7 +64,9 @@ const messageProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) 
       compressionRepo: new CompressionRepository(ctx.serverDB, ctx.userId, wsId),
       fileService: new FileService(ctx.serverDB, ctx.userId, wsId),
       messageModel: new MessageModel(ctx.serverDB, ctx.userId, wsId),
-      messageService: new MessageService(ctx.serverDB, ctx.userId, wsId),
+      messageService: new MessageService(ctx.serverDB, ctx.userId, wsId, {
+        workTypeOptIn: ctx.workTypeOptIn,
+      }),
       topicDoctorRepo: new TopicDoctorRepo(ctx.serverDB, ctx.userId, wsId),
     },
   });
@@ -419,6 +423,32 @@ export const messageRouter = router({
       return ctx.messageService.getToolResultPayloads(input.messageIds);
     }),
 
+  /**
+   * Where a message came from, for answering it: its conversation and, for a
+   * message another agent sent, that agent and its conversation
+   * (`metadata.agentSender`). Read by `lh message reply`.
+   */
+  getMessageOrigin: messageProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ input, ctx }) => {
+      await assertCanViewMessageTargets(guardCtx(ctx), [input.id]);
+
+      const message = await ctx.messageModel.findById(input.id);
+      if (!message) return null;
+
+      const agentSender = AgentSenderMetadataSchema.safeParse(
+        (message.metadata as Record<string, unknown> | null)?.agentSender,
+      );
+      return {
+        agentId: message.agentId ?? null,
+        agentSender: agentSender.success ? agentSender.data : null,
+        id: message.id,
+        role: message.role,
+        threadId: message.threadId ?? null,
+        topicId: message.topicId ?? null,
+      };
+    }),
+
   getToolResultPayload: messageProcedure
     .input(z.object({ messageId: z.string() }))
     .query(async ({ input, ctx }) => {
@@ -451,6 +481,7 @@ export const messageRouter = router({
         before: z.object({ createdAt: z.date(), id: z.string() }).optional(),
         current: z.number().optional(),
         groupId: z.string().nullish(),
+        includeArtboardWorks: z.boolean().optional(),
         // Opt-in for `file` work summaries in the payload. Absent → the legacy
         // set, so already-deployed clients (no `file` descriptor) never receive
         // a `file` summary that would crash their works UI. New clients set it.
@@ -549,7 +580,8 @@ export const messageRouter = router({
       // from the very list this read returns, and a projected tool result would
       // silently disappear from it. Absent ⇒ whole payloads, which is never the
       // answer that loses data.
-      return input.projectToolPayloads ? projectToolViewModels(messages) : messages;
+      const visibleMessages = messages.map(omitToolWorkRegistration);
+      return input.projectToolPayloads ? projectToolViewModels(visibleMessages) : visibleMessages;
     }),
 
   /**

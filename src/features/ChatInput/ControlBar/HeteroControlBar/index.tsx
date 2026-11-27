@@ -6,7 +6,9 @@ import {
   type HeterogeneousAgentRuntimeStatus,
   useWatchBroadcast,
 } from '@lobechat/electron-client-ipc';
-import { createStaticStyles, cssVar, cx, Flexbox, Icon, Tooltip } from '@lobehub/ui';
+import { Flexbox, Icon, Tooltip } from '@lobehub/ui';
+import { cssVar } from '@lobehub/ui/stylex/cssVar.stylex';
+import * as stylex from '@stylexjs/stylex';
 import { ActivityIcon, CircleAlertIcon, RadioTowerIcon, TimerResetIcon } from 'lucide-react';
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -22,100 +24,105 @@ import { resolveExecutionTarget } from '@/helpers/executionTarget';
 import { useEffectiveAgencyConfig } from '@/hooks/useEffectiveAgencyConfig';
 import { useAgentStore } from '@/store/agent';
 import { agentByIdSelectors } from '@/store/agent/selectors';
+import { useUserStore } from '@/store/user';
+import { labPreferSelectors } from '@/store/user/selectors';
 
-import { ClaudeCodeQuotaMenu, CodexQuotaMenu, KimiCodeQuotaMenu } from './QuotaMenu';
+import PermissionModeSelector from './PermissionMode';
+import PlanModeSwitch from './PlanMode';
+import {
+  AntigravityQuotaMenu,
+  ClaudeCodeQuotaMenu,
+  CodexQuotaMenu,
+  KimiCodeQuotaMenu,
+} from './QuotaMenu';
 
-const styles = createStaticStyles(({ css }) => ({
+const styles = stylex.create({
   // Pinned to the same 28px row as the plain ControlBar so the composer footer
   // keeps its rhythm regardless of which chips render. `flex: none` matters:
   // the bar sits in a column flex parent and would otherwise shrink to the
   // (compact) chips' min-content height.
-  bar: css`
-    container: runtimebar / inline-size;
-    flex: none;
-
-    height: 28px;
-    padding-block: 0;
-    padding-inline: 4px;
-  `,
-  fullAccess: css`
-    cursor: default;
-
-    display: flex;
-    flex: none;
-    gap: 6px;
-    align-items: center;
-
-    padding-block: 2px;
-    padding-inline: 4px;
-    border-radius: 4px;
-
-    font-size: 12px;
-    color: ${cssVar.colorTextSecondary};
-    white-space: nowrap;
-  `,
+  bar: {
+    containerName: 'runtimebar',
+    containerType: 'inline-size',
+    flex: 'none',
+    height: '28px',
+    paddingBlock: '0',
+    paddingInline: '4px',
+  },
+  fullAccess: {
+    cursor: 'default',
+    display: 'flex',
+    flex: 'none',
+    gap: '6px',
+    alignItems: 'center',
+    paddingBlock: '2px',
+    paddingInline: '4px',
+    borderRadius: '4px',
+    fontSize: '12px',
+    color: cssVar.colorTextSecondary,
+    whiteSpace: 'nowrap',
+  },
   // On a narrow bar the "full access" badge collapses to just its icon — the
   // hover tooltip still spells it out. Saves a chunk of horizontal space that
   // the truncating workspace cluster can use instead.
-  fullAccessLabel: css`
-    @container runtimebar (width < 600px) {
-      display: none;
-    }
-  `,
-  sdkRuntime: css`
-    cursor: default;
-
-    display: flex;
-    flex: none;
-    gap: 6px;
-    align-items: center;
-
-    padding-block: 2px;
-    padding-inline: 4px;
-    border-radius: 4px;
-
-    font-size: 12px;
-    color: ${cssVar.colorInfo};
-    white-space: nowrap;
-
-    background: color-mix(in srgb, ${cssVar.colorInfoBg} 55%, transparent);
-  `,
-  sdkRuntimeClosing: css`
-    color: ${cssVar.colorTextDescription};
-    background: ${cssVar.colorFillQuaternary};
-  `,
-  sdkRuntimeError: css`
-    color: ${cssVar.colorError};
-    background: color-mix(in srgb, ${cssVar.colorErrorBg} 55%, transparent);
-  `,
-  sdkRuntimeIdle: css`
-    color: ${cssVar.colorTextSecondary};
-    background: ${cssVar.colorFillQuaternary};
-  `,
-  sdkRuntimeMonitoring: css`
-    color: ${cssVar.colorWarning};
-    background: color-mix(in srgb, ${cssVar.colorWarningBg} 55%, transparent);
-  `,
-  sdkRuntimeStale: css`
-    color: ${cssVar.colorWarning};
-    background: color-mix(in srgb, ${cssVar.colorWarningBg} 55%, transparent);
-  `,
+  fullAccessLabel: {
+    display: {
+      'default': null,
+      '@container runtimebar (width < 600px)': 'none',
+    },
+  },
   // Mirror RuntimeConfig: the workspace cluster shrinks then scrolls horizontally
   // (hidden scrollbar) instead of wrapping each chip's text on narrow screens.
-  leftGroup: css`
-    scrollbar-width: none;
-    overflow: auto hidden;
-    flex: 1;
-    min-width: 0;
-
-    &::-webkit-scrollbar {
-      display: none;
-    }
-  `,
-  rightGroup: css`
-    flex: none;
-  `,
-}));
+  leftGroup: {
+    'scrollbarWidth': 'none',
+    'overflowX': 'auto',
+    'overflowY': 'hidden',
+    'flex': '1',
+    'minWidth': '0',
+    '::-webkit-scrollbar': { display: 'none' },
+  },
+  rightGroup: { flex: 'none' },
+  sdkRuntime: {
+    cursor: 'default',
+    display: 'flex',
+    flex: 'none',
+    gap: '6px',
+    alignItems: 'center',
+    paddingBlock: '2px',
+    paddingInline: '4px',
+    borderRadius: '4px',
+    fontSize: '12px',
+    color: cssVar.colorInfo,
+    whiteSpace: 'nowrap',
+    backgroundColor: `color-mix(in srgb, ${cssVar.colorInfoBg} 55%, transparent)`,
+    backgroundImage: 'none',
+  },
+  sdkRuntimeClosing: {
+    color: cssVar.colorTextDescription,
+    backgroundColor: cssVar.colorFillQuaternary,
+    backgroundImage: 'none',
+  },
+  sdkRuntimeError: {
+    color: cssVar.colorError,
+    backgroundColor: `color-mix(in srgb, ${cssVar.colorErrorBg} 55%, transparent)`,
+    backgroundImage: 'none',
+  },
+  sdkRuntimeIdle: {
+    color: cssVar.colorTextSecondary,
+    backgroundColor: cssVar.colorFillQuaternary,
+    backgroundImage: 'none',
+  },
+  sdkRuntimeMonitoring: {
+    color: cssVar.colorWarning,
+    backgroundColor: `color-mix(in srgb, ${cssVar.colorWarningBg} 55%, transparent)`,
+    backgroundImage: 'none',
+  },
+  sdkRuntimeStale: {
+    color: cssVar.colorWarning,
+    backgroundColor: `color-mix(in srgb, ${cssVar.colorWarningBg} 55%, transparent)`,
+    backgroundImage: 'none',
+  },
+});
 
 const visibleSdkRuntimeStates = new Set<HeterogeneousAgentRuntimeState>([
   'starting',
@@ -137,7 +144,7 @@ const HeteroControlBarSkeleton = ({ showRight }: { showRight?: boolean }) => (
     aria-busy
     horizontal
     align={'center'}
-    className={styles.bar}
+    className={stylex.props(styles.bar).className}
     data-testid={'hetero-control-bar-skeleton'}
     gap={4}
     justify={'space-between'}
@@ -166,6 +173,17 @@ const HeteroControlBar = memo(() => {
   const { agencyConfig, workspaceScoped } = useEffectiveAgencyConfig(agentId, { topicId });
 
   const heteroProvider = agencyConfig?.heterogeneousProvider;
+  const betterCoding = useUserStore(labPreferSelectors.enableBetterCodingExperience);
+  // Claude Code under the lab picks how it asks before acting, per topic.
+  const permissionModeChip =
+    betterCoding && heteroProvider?.type === 'claude-code' && agentId ? (
+      <PermissionModeSelector agentId={agentId} topicId={topicId} />
+    ) : null;
+  // Codex under the lab gets a Plan switch beside its unchanged full access.
+  const planModeSwitch =
+    betterCoding && heteroProvider?.type === 'codex' && agentId ? (
+      <PlanModeSwitch agentId={agentId} topicId={topicId} />
+    ) : null;
   const executionTarget = resolveExecutionTarget(agencyConfig, {
     clientExecutionAvailable: isDesktop,
     isHetero: !!heteroProvider,
@@ -197,6 +215,11 @@ const HeteroControlBar = memo(() => {
     heteroProvider?.type === 'kimi-code' &&
     (isLocalHeteroExecution || !!quotaDeviceId);
 
+  const shouldShowAntigravityQuota =
+    isSubscriptionAuth &&
+    heteroProvider?.type === 'antigravity' &&
+    (isLocalHeteroExecution || !!quotaDeviceId);
+
   if (isAccessLoading) return <HeteroControlBarSkeleton />;
 
   // A can-use collaborator may choose only their execution device; working
@@ -204,9 +227,18 @@ const HeteroControlBar = memo(() => {
   if (!canConfigureResource) {
     if (!agentId || isLoading) return <HeteroControlBarSkeleton />;
     return (
-      <Flexbox horizontal align={'center'} className={styles.bar} justify={'space-between'}>
+      <Flexbox
+        horizontal
+        align={'center'}
+        className={stylex.props(styles.bar).className}
+        justify={'space-between'}
+      >
         <DeviceSwitcher agentId={agentId} />
-        {shouldShowApiCredits && <ChatInputCredits />}
+        <Flexbox horizontal align={'center'} gap={4}>
+          {permissionModeChip}
+          {planModeSwitch}
+          {shouldShowApiCredits && <ChatInputCredits />}
+        </Flexbox>
       </Flexbox>
     );
   }
@@ -219,16 +251,43 @@ const HeteroControlBar = memo(() => {
   if (!isDesktop) {
     if (!agentId) return null;
     return (
-      <Flexbox horizontal align={'center'} className={styles.bar} justify={'space-between'}>
-        <Flexbox horizontal align={'center'} className={styles.leftGroup} gap={4}>
+      <Flexbox
+        horizontal
+        align={'center'}
+        className={stylex.props(styles.bar).className}
+        justify={'space-between'}
+      >
+        <Flexbox
+          horizontal
+          align={'center'}
+          className={stylex.props(styles.leftGroup).className}
+          gap={4}
+        >
           <WorkspaceControls alwaysShowWorkspace agentId={agentId} />
         </Flexbox>
-        {(shouldShowApiCredits ||
+        {(permissionModeChip ||
+          planModeSwitch ||
+          shouldShowApiCredits ||
           (shouldShowClaudeQuota && quotaDeviceId) ||
           (shouldShowCodexQuota && quotaDeviceId) ||
-          (shouldShowKimiCodeQuota && quotaDeviceId)) && (
-          <Flexbox horizontal align={'center'} className={styles.rightGroup} gap={4}>
+          (shouldShowKimiCodeQuota && quotaDeviceId) ||
+          (shouldShowAntigravityQuota && quotaDeviceId)) && (
+          <Flexbox
+            horizontal
+            align={'center'}
+            className={stylex.props(styles.rightGroup).className}
+            gap={4}
+          >
+            {permissionModeChip}
+            {planModeSwitch}
             {shouldShowApiCredits && <ChatInputCredits />}
+            {shouldShowAntigravityQuota && quotaDeviceId && (
+              <AntigravityQuotaMenu
+                command={heteroProvider?.command}
+                deviceId={quotaDeviceId}
+                env={heteroProvider?.env}
+              />
+            )}
             {shouldShowClaudeQuota && quotaDeviceId && (
               <ClaudeCodeQuotaMenu deviceId={quotaDeviceId} env={heteroProvider?.env} />
             )}
@@ -251,9 +310,9 @@ const HeteroControlBar = memo(() => {
   if (!agentId || isLoading) return <HeteroControlBarSkeleton showRight />;
 
   const fullAccessBadge = (
-    <div className={styles.fullAccess}>
+    <div {...stylex.props(styles.fullAccess)}>
       <Icon icon={CircleAlertIcon} size={14} />
-      <span className={styles.fullAccessLabel}>{tChat('heteroAgent.fullAccess.label')}</span>
+      <span {...stylex.props(styles.fullAccessLabel)}>{tChat('heteroAgent.fullAccess.label')}</span>
     </div>
   );
   const shouldShowSdkRuntime =
@@ -286,9 +345,9 @@ const HeteroControlBar = memo(() => {
         state: tChat(`heteroAgent.claudeSdkRuntime.state.${runtimeStatus.state}`),
       })}
     >
-      <div className={cx(styles.sdkRuntime, sdkRuntimeClassName)}>
+      <div {...stylex.props(styles.sdkRuntime, sdkRuntimeClassName)}>
         <Icon icon={sdkRuntimeIcon} size={14} />
-        <span className={styles.fullAccessLabel}>
+        <span {...stylex.props(styles.fullAccessLabel)}>
           {tChat(`heteroAgent.claudeSdkRuntime.state.${runtimeStatus.state}`)}
         </span>
       </div>
@@ -296,12 +355,34 @@ const HeteroControlBar = memo(() => {
   ) : null;
 
   return (
-    <Flexbox horizontal align={'center'} className={styles.bar} justify={'space-between'}>
-      <Flexbox horizontal align={'center'} className={styles.leftGroup} gap={4}>
+    <Flexbox
+      horizontal
+      align={'center'}
+      className={stylex.props(styles.bar).className}
+      justify={'space-between'}
+    >
+      <Flexbox
+        horizontal
+        align={'center'}
+        className={stylex.props(styles.leftGroup).className}
+        gap={4}
+      >
         <WorkspaceControls alwaysShowWorkspace agentId={agentId} />
       </Flexbox>
-      <Flexbox horizontal align={'center'} className={styles.rightGroup} gap={4}>
+      <Flexbox
+        horizontal
+        align={'center'}
+        className={stylex.props(styles.rightGroup).className}
+        gap={4}
+      >
         {shouldShowApiCredits && <ChatInputCredits />}
+        {shouldShowAntigravityQuota && (
+          <AntigravityQuotaMenu
+            command={heteroProvider?.command}
+            deviceId={quotaDeviceId}
+            env={heteroProvider?.env}
+          />
+        )}
         {shouldShowCodexQuota && (
           <CodexQuotaMenu
             command={heteroProvider?.command}
@@ -316,7 +397,10 @@ const HeteroControlBar = memo(() => {
           <ClaudeCodeQuotaMenu deviceId={quotaDeviceId} env={heteroProvider?.env} />
         )}
         {sdkRuntimeBadge}
-        <Tooltip title={tChat('heteroAgent.fullAccess.tooltip')}>{fullAccessBadge}</Tooltip>
+        {planModeSwitch}
+        {permissionModeChip ?? (
+          <Tooltip title={tChat('heteroAgent.fullAccess.tooltip')}>{fullAccessBadge}</Tooltip>
+        )}
       </Flexbox>
     </Flexbox>
   );

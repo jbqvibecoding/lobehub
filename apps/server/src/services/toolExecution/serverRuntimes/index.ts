@@ -7,11 +7,13 @@
  * - Per-request runtimes (e.g., CloudSandbox - needs topicId, userId)
  */
 
+import { LegacyDashboardIdentifier } from '@lobechat/builtin-tool-dashboard';
 import { LegacyGoalIdentifier } from '@lobechat/builtin-tool-goal';
 
 import type { ToolExecutionContext } from '../types';
 import { acceptanceEvidenceRuntime } from './acceptanceEvidence';
 import { activatorRuntime } from './activator';
+import { agentAccountRuntime } from './agentAccount';
 import { agentBuilderRuntime } from './agentBuilder';
 import { agentDocumentsRuntime } from './agentDocuments';
 import { agentManagementRuntime } from './agentManagement';
@@ -19,6 +21,7 @@ import { agentSignalFeedbackIntentRuntime } from './agentSignalFeedbackIntent';
 import { agentSignalReflectionRuntime } from './agentSignalReflection';
 import { agentSignalReviewRuntime } from './agentSignalReview';
 import { agentSignalSkillManagementRuntime } from './agentSignalSkillManagement';
+import { artboardRuntime } from './artboard';
 import { attachmentsRuntime } from './attachments';
 import { auvRuntime } from './auv';
 import { briefRuntime } from './brief';
@@ -41,6 +44,7 @@ import { knowledgeBaseRuntime } from './knowledgeBase';
 import { lobeAgentRuntime } from './lobeAgent';
 import { localSystemRuntime } from './localSystem';
 import { mailRuntime } from './mail';
+import { mcpEventsRuntime } from './mcpEvents';
 import { memoryRuntime } from './memory';
 import { messageRuntime } from './message';
 import { notebookRuntime } from './notebook';
@@ -58,7 +62,9 @@ import { userInteractionRuntime } from './userInteraction';
 import { verifyResultRuntime } from './verifyResult';
 import { videoGenerationRuntime } from './videoGeneration';
 import { webBrowsingRuntime } from './webBrowsing';
+import { webhookRuntime } from './webhook';
 import { webOnboardingRuntime } from './webOnboarding';
+import { workRuntime } from './work';
 
 /**
  * Registry of server runtime factories by identifier
@@ -76,9 +82,13 @@ const registerRuntimes = (runtimes: ServerRuntimeRegistration[]) => {
 
 // Register all server runtimes
 registerRuntimes([
+  mcpEventsRuntime,
+  webhookRuntime,
+  workRuntime,
   channelRuntime,
   acceptanceEvidenceRuntime,
   auvRuntime,
+  agentAccountRuntime,
   agentBuilderRuntime,
   webBrowsingRuntime,
   cloudSandboxRuntime,
@@ -104,6 +114,7 @@ registerRuntimes([
   taskRuntime,
   userInteractionRuntime,
   credsRuntime,
+  artboardRuntime,
   canvasRuntime,
   dashboardRuntime,
   groupAgentBuilderRuntime,
@@ -128,6 +139,8 @@ registerRuntimes([
 
 // Goal calls approved after the rename still name the tool `lobe-goal`.
 serverRuntimeFactories.set(LegacyGoalIdentifier, goalRuntime.factory);
+// Same for dashboard calls approved after the rename from `lobe-dashboard`.
+serverRuntimeFactories.set(LegacyDashboardIdentifier, dashboardRuntime.factory);
 
 // ==================== Registry API ====================
 

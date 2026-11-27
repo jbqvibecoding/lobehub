@@ -8,6 +8,8 @@ import { readBlobWithLimit } from '@lobechat/utils/readBlobWithLimit';
 import { QstashError } from '@upstash/qstash';
 
 import { OtelQstashClient } from '@/libs/qstash';
+import { toQStashDeduplicationId } from '@/libs/qstash/deduplicationId';
+import { signInternalCallback } from '@/libs/qstash/internalSignature';
 
 import type { AgentHookWebhook } from './types';
 
@@ -85,14 +87,6 @@ export function resolveWebhookHeaders(webhook: AgentHookWebhook): Record<string,
   }
 }
 
-/** Our own workflow endpoints take CRON_SECRET in place of a QStash signature; never send it elsewhere. */
-function withOwnEndpointAuth(url: string, headers: Record<string, string>): Record<string, string> {
-  if (!process.env.CRON_SECRET || !isApplicationOrigin(url) || 'authorization' in headers) {
-    return headers;
-  }
-  return { ...headers, authorization: `Bearer ${process.env.CRON_SECRET}` };
-}
-
 async function fetchWebhook<T>(
   webhook: AgentHookWebhook,
   payload: Record<string, unknown>,
@@ -104,9 +98,10 @@ async function fetchWebhook<T>(
   try {
     combinedSignal.throwIfAborted();
     const url = resolveUrl(webhook.url);
+    const body = JSON.stringify(payload);
     const response = await fetch(url, {
-      body: JSON.stringify(payload),
-      headers: withOwnEndpointAuth(url, resolveWebhookHeaders(webhook)),
+      body,
+      headers: { ...resolveWebhookHeaders(webhook), ...signInternalCallback(url, body) },
       method: 'POST',
       redirect: 'error',
       signal: combinedSignal,
@@ -154,6 +149,10 @@ async function readControlBody(response: Response, signal: AbortSignal): Promise
 export async function deliverWebhook(
   webhook: AgentHookWebhook,
   payload: Record<string, unknown>,
+  options: {
+    /** Logical id QStash drops repeats of; encoded at the provider boundary. */
+    deduplicationId?: string;
+  } = {},
 ): Promise<void> {
   const parsed = agentHookWebhookSchema.safeParse(webhook);
   if (!parsed.success || webhook.responseHandling === 'toolCall')
@@ -171,6 +170,9 @@ export async function deliverWebhook(
     const client = new OtelQstashClient({ token: process.env.QSTASH_TOKEN });
     await client.publishJSON({
       body: payload,
+      ...(options.deduplicationId && {
+        deduplicationId: toQStashDeduplicationId(options.deduplicationId),
+      }),
       headers: {
         ...headers,
         ...(isApplicationOrigin(url) &&

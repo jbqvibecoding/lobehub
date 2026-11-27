@@ -17,7 +17,7 @@ import { ChannelExecutionRepository, ChannelRoutingRepository } from '..';
 import { createChannelFixture, jobsOf } from './testUtils';
 
 const db: LobeChatDatabase = await getTestDB();
-const fixture = createChannelFixture(db, 'channel-jev-input');
+const fixture = createChannelFixture(db, 'channel-decision-input');
 const routing = new ChannelRoutingRepository(db);
 const execution = new ChannelExecutionRepository(db);
 beforeEach(async () => {
@@ -40,7 +40,7 @@ const prepare = async () => {
   const message = await team.asMember.send(team.channel.id, {
     content: 'Implement a parser',
     requestKey: 'request',
-    routing: 'jev',
+    routing: 'decision',
   });
   return { ...team, coder, reviewer, message };
 };
@@ -58,8 +58,11 @@ describe('Channel routing input and lease', () => {
     expect(input?.candidates.map((item) => item.memberId)).toContain(coder.id);
     expect(await routing.claim(channel.id, message.id)).toBeNull();
     const decision = { memberIds: [coder.id], status: 'assigned' as const, reason: 'Fits' };
-    expect(await execution.resolveRouting(channel.id, message.id, 1, decision)).toBe(true);
-    expect(await execution.resolveRouting(channel.id, message.id, 1, decision)).toBe(false);
+    expect(await execution.resolveRouting(channel.id, message.id, 1, decision)).toMatchObject({
+      recipients: [coder.id],
+      status: 'assigned',
+    });
+    expect(await execution.resolveRouting(channel.id, message.id, 1, decision)).toBeNull();
     expect(await jobsOf(db, message.id)).toHaveLength(1);
     expect(await routing.pending(channel.id)).toEqual([]);
   });
@@ -81,7 +84,7 @@ describe('Channel routing input and lease', () => {
     const reply = await asMember.send(channel.id, {
       content: 'Follow-up',
       requestKey: 'thread-request',
-      routing: 'jev',
+      routing: 'decision',
       threadId: thread.id,
     });
     expect(reply.routingStatus).toBe('pending');
@@ -114,7 +117,7 @@ describe('Channel routing input and lease', () => {
         reason: 'Late',
         status: 'assigned',
       }),
-    ).toBe(false);
+    ).toBeNull();
     expect(await jobsOf(db, message.id)).toEqual([]);
   });
 
@@ -124,7 +127,7 @@ describe('Channel routing input and lease', () => {
       content: '@Coder',
       mentions: [coder.id],
       requestKey: 'directed',
-      routing: 'jev',
+      routing: 'decision',
     });
     expect(await routing.claim(channel.id, directed.id)).toBeNull();
     await routing.claim(channel.id, message.id);
@@ -136,7 +139,7 @@ describe('Channel routing input and lease', () => {
         reason: 'Late',
         status: 'assigned',
       }),
-    ).toBe(false);
+    ).toBeNull();
   });
 
   it('does not read a message from another Channel', async () => {
@@ -224,7 +227,7 @@ describe('Channel routing input and lease', () => {
     const request = await asMember.send(channel.id, {
       content: 'Continue the parser',
       requestKey: 'thread',
-      routing: 'jev',
+      routing: 'decision',
       threadId: thread.id,
     });
     await asMember.send(channel.id, {
@@ -253,7 +256,7 @@ describe('Channel routing input and lease', () => {
     const message = await asMember.send(channel.id, {
       content: 'Now',
       requestKey: 'latest',
-      routing: 'jev',
+      routing: 'decision',
     });
     const input = await routing.claim(channel.id, message.id);
     expect(input?.history).toHaveLength(20);

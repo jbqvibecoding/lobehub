@@ -27,6 +27,7 @@ const PLAN_TITLE_KEYS = {
   [Plans.Free]: 'plans.plan.free.title',
   [Plans.Hobby]: 'plans.plan.hobby.title',
   // LobeHub Cloud's plans: Biber never assigns them, named only to cover the enum
+  [Plans.Basic]: 'plans.plan.basic.title',
   [Plans.Max]: 'plans.plan.max.title',
   [Plans.Plus]: 'plans.plan.plus.title',
   [Plans.Premium]: 'plans.plan.premium.title',

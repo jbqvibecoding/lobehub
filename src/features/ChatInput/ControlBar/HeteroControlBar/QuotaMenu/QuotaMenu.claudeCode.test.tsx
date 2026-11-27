@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { openQuotaCalendarModal } from '@/features/AgentQuotaCalendar';
 import { cacheScope } from '@/libs/replica';
 import { hashQuotaSourceKey, quotaPanelResource } from '@/store/agentQuota/projection';
+import { useElectronStore } from '@/store/electron';
 
 import ClaudeCodeQuotaMenu from './ClaudeCodeQuotaMenu';
 import { createQuotaSourceKey } from './QuotaMenu';
@@ -45,6 +46,10 @@ vi.mock('@/features/AgentQuotaCalendar', () => ({
 }));
 
 vi.mock('@/features/ChatInput/hooks/useAgentId', () => ({ useAgentId: () => 'agent-1' }));
+const selectedModel = vi.hoisted(() => ({ current: 'fable' as string | undefined }));
+vi.mock('../../HeteroModel/useEffectiveHeteroProvider', () => ({
+  useSelectedHeteroModel: () => selectedModel.current,
+}));
 
 const { confirmModalMock, toastErrorMock, toastSuccessMock } = vi.hoisted(() => ({
   confirmModalMock: vi.fn(),
@@ -82,7 +87,8 @@ vi.mock('@/libs/trpc/client', () => ({
 // path without each one stalling on a real HTTP request; individual tests can
 // hand it persisted accounts/windows.
 const mockQuotaService = vi.hoisted(() => ({
-  getLatestReadings: vi.fn(async (): Promise<unknown[]> => []),
+  getDeviceAccount: vi.fn(async (): Promise<{ accountId: string | null }> => ({ accountId: null })),
+  getLatestReadings: vi.fn(async (_accountId?: string): Promise<unknown[]> => []),
   ingestClaudeSnapshot: vi.fn(async () => undefined),
   ingestCodexSnapshot: vi.fn(async () => undefined),
   ingestKimiCodeSnapshot: vi.fn(async () => undefined),
@@ -90,6 +96,7 @@ const mockQuotaService = vi.hoisted(() => ({
   refreshKimiCodeQuota: vi.fn(),
   listAccounts: vi.fn(async (): Promise<unknown[]> => []),
   listBindings: vi.fn(async (): Promise<unknown[]> => []),
+  syncDeviceLogins: vi.fn(async () => undefined),
 }));
 
 vi.mock('@/services/agentQuota', () => ({ agentQuotaService: mockQuotaService }));
@@ -213,6 +220,7 @@ beforeEach(() => {
   mockQuotaService.ingestKimiCodeSnapshot.mockClear();
   mockQuotaService.listAccounts.mockClear().mockResolvedValue([]);
   mockQuotaService.listBindings.mockClear().mockResolvedValue([]);
+  mockQuotaService.getDeviceAccount.mockClear().mockResolvedValue({ accountId: null });
   vi.mocked(openQuotaCalendarModal).mockClear();
 });
 
@@ -288,6 +296,54 @@ describe('ClaudeCodeQuotaMenu', () => {
         item.getAttribute('data-quota-level'),
       ),
     ).toEqual(['normal', 'low']);
+  });
+
+  it('leaves a model-scoped window out of the compact values when another model is selected', async () => {
+    selectedModel.current = 'opus';
+    mockService.getClaudeCodeQuota.mockResolvedValue(
+      claudeSnapshot({
+        scopedWeekly: {
+          modelName: 'Fable',
+          window: { resetsAt: null, usedPercent: 0, windowMinutes: 10_080 },
+        },
+        session: { resetsAt: null, usedPercent: 53, windowMinutes: 300 },
+        weekly: { resetsAt: null, usedPercent: 6, windowMinutes: 10_080 },
+      }),
+    );
+
+    try {
+      render(<ClaudeCodeQuotaMenu />);
+
+      expect(await screen.findByText('heteroAgent.claudeQuota.scopedWeekly:Fable')).toBeTruthy();
+      const trigger = screen.getByRole('button', { name: 'heteroAgent.claudeQuota.tooltip' });
+      expect(trigger.textContent).toContain('heteroAgent.quota.compactLeft:47');
+      expect(trigger.textContent).not.toContain('Fable heteroAgent.quota.compactLeft');
+    } finally {
+      selectedModel.current = 'fable';
+    }
+  });
+
+  it('keeps a model-scoped window out of the compact values even when it is the only window', async () => {
+    selectedModel.current = 'opus';
+    mockService.getClaudeCodeQuota.mockResolvedValue(
+      claudeSnapshot({
+        scopedWeekly: {
+          modelName: 'Fable',
+          window: { resetsAt: null, usedPercent: 0, windowMinutes: 10_080 },
+        },
+      }),
+    );
+
+    try {
+      render(<ClaudeCodeQuotaMenu />);
+
+      expect(await screen.findByText('heteroAgent.claudeQuota.scopedWeekly:Fable')).toBeTruthy();
+      const trigger = screen.getByRole('button', { name: 'heteroAgent.claudeQuota.tooltip' });
+      expect(trigger.textContent).not.toContain('Fable');
+      expect(trigger.textContent).not.toContain('heteroAgent.quota.compactLeft');
+    } finally {
+      selectedModel.current = 'fable';
+    }
   });
 
   it('warns below 15 percent and keeps compact zero quota numeric', async () => {
@@ -652,15 +708,19 @@ describe('ClaudeCodeQuotaMenu', () => {
     // The regression: after five idle hours the session window rolls over and
     // the panel used to drop the row entirely, leaving the weekly limit alone
     // as if the plan had no session limit. A reset window is free, not absent.
-    mockQuotaService.listAccounts.mockResolvedValue([persistedAccount(Date.now() - 60_000)]);
+    // Both readings come from one sample, so they share its capture time: a
+    // weekly reading even 1 ms newer would make the panel retire the reset
+    // session as a limit the plan stopped reporting.
+    const sampledAt = Date.now() - 60_000;
+    mockQuotaService.listAccounts.mockResolvedValue([persistedAccount(sampledAt)]);
     mockQuotaService.getLatestReadings.mockResolvedValue([
       {
-        ...persistedSessionReading(Date.now() - 60_000),
+        ...persistedSessionReading(sampledAt),
         resetsAt: Date.now() - 30 * 60_000,
         utilization: 83,
       },
       {
-        capturedAt: Date.now() - 60_000,
+        capturedAt: sampledAt,
         limitType: 'weekly_all',
         resetsAt: Date.now() + 4 * 24 * 60 * 60_000,
         scopeKey: '',
@@ -686,6 +746,31 @@ describe('ClaudeCodeQuotaMenu', () => {
 
     expect(await screen.findByText('92%')).toBeTruthy();
     expect(mockService.getClaudeCodeQuota).not.toHaveBeenCalled();
+  });
+
+  // Regression: a pick whose account was then disabled for the agent kept the
+  // panel on that account, though runs no longer use it.
+  it('does not show a device pick whose account left the agent rotation', async () => {
+    const now = Date.now() - 60_000;
+    mockQuotaService.listAccounts.mockResolvedValue([
+      persistedAccount(now),
+      { ...persistedAccount(now), externalAccountId: 'ext-2', id: 'acc-2' },
+    ]);
+    mockQuotaService.listBindings.mockResolvedValue([
+      { accountId: 'acc-1', agentId: 'agent-1', enabled: true, id: 'b1', role: 'pool' },
+      { accountId: 'acc-2', agentId: 'agent-1', enabled: true, id: 'b2', role: 'disabled' },
+    ]);
+    mockQuotaService.getDeviceAccount.mockResolvedValue({ accountId: 'acc-2' });
+    mockQuotaService.getLatestReadings.mockImplementation(async (accountId?: string) => [
+      { ...persistedSessionReading(now), utilization: accountId === 'acc-2' ? 50 : 8 },
+    ]);
+    vi.spyOn(useElectronStore.getState(), 'resolveGatewayDeviceId').mockResolvedValue('device-a');
+
+    render(<ClaudeCodeQuotaMenu />);
+
+    expect(await screen.findByText('92%')).toBeTruthy();
+    expect(mockQuotaService.getDeviceAccount).toHaveBeenCalledWith('agent-1', 'device-a');
+    expect(screen.queryByText('50%')).toBeNull();
   });
 
   it('refreshes from the live API when the newest persisted reading is stale', async () => {

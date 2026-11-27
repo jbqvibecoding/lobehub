@@ -24,6 +24,7 @@ import {
 } from '@/features/ResourceManager/DndContextWrapper';
 import { showContextMenu } from '@/libs/contextMenu';
 import { getChunkTargetId, useFileStore } from '@/store/file';
+import { densityVars } from '@/styles/densityVars';
 import { type FileListItem } from '@/types/files';
 
 import { useFileItemClick, useFileItemDoubleClick } from '../../hooks/useFileItemClick';
@@ -163,7 +164,7 @@ const styles = createStaticStyles(({ css }) => ({
     background: ${cssVar.colorBgMask};
   `,
   contentWithPadding: css`
-    padding: 12px;
+    padding: ${densityVars.contentGap};
   `,
   dragOver: css`
     border-color: ${cssVar.colorText} !important;
@@ -230,7 +231,6 @@ const MasonryFileItem = memo<MasonryFileItemProps>(
     onOpen,
     metadata,
     sourceType,
-    slug,
     userId,
     visibility,
   }) => {
@@ -266,9 +266,12 @@ const MasonryFileItem = memo<MasonryFileItemProps>(
       libraryId: knowledgeBaseId,
       onOpen,
       openInPanel: true,
-      slug,
     });
-    const handleItemDoubleClick = useFileItemDoubleClick({ id, isPage });
+    const handleItemDoubleClick = useFileItemDoubleClick({
+      id,
+      isPage,
+      libraryId: knowledgeBaseId,
+    });
 
     // Memoize drag data to prevent recreation
     const dragData = useMemo(

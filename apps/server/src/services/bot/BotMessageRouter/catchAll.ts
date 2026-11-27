@@ -31,11 +31,12 @@ export const registerCatchAllHandler = (bot: Chat<any>, ctx: BotHandlerContext):
     commands,
     detectReplyLocale,
     deviceAllowlist,
+    isDeviceChannelGrantedFor,
+    isDeviceChannelRestrictedFor,
     displayToolCalls,
     dmSettings,
     gateFollowup,
     initiate,
-    isBotWakeRolledOut,
     isMessageMonitoringAllowed,
     nameKeywords,
     observe,
@@ -227,12 +228,10 @@ export const registerCatchAllHandler = (bot: Chat<any>, ctx: BotHandlerContext):
 
       // Only a wake nobody asked for (a keyword, or one the bot started itself) may end in silence
       // (`NO_REPLY`), holding back its reactions and typing until it decides to speak; and only
-      // once the bot-wake rollout reaches this bot's owner, exactly as in a subscribed thread. A DM
+      // while the bot's wake switch is on, exactly as in a subscribed thread. A DM
       // is always answered and never asks.
       const wakeKind =
-        wakeReason !== 'direct-message' && (await isBotWakeRolledOut())
-          ? botWakeKindFor(wakeReason)
-          : 'mention';
+        wakeReason !== 'direct-message' && botWakeEnabled ? botWakeKindFor(wakeReason) : 'mention';
       // Where the reply goes and what is said before the run (see `startReply`). Keyword and name
       // wakes in a channel used to get their own reply thread, since the chat-sdk Discord adapter
       // only auto-creates one on @-mention; that stays the behaviour when the bot does not decide.
@@ -283,6 +282,8 @@ export const registerCatchAllHandler = (bot: Chat<any>, ctx: BotHandlerContext):
             applicationId,
             authorUserId: merged.author?.userId,
             deviceAllowlist,
+            deviceChannelGranted: isDeviceChannelGrantedFor(thread),
+            deviceChannelRestricted: isDeviceChannelRestrictedFor(thread),
             operatorUserId,
             platform,
             platformThreadId: thread.id,
@@ -294,7 +295,10 @@ export const registerCatchAllHandler = (bot: Chat<any>, ctx: BotHandlerContext):
           openingReply,
           reactionMode,
           replyLocale,
-          duty: initiation?.reason === 'in-duty' ? { matched: initiation.duty } : undefined,
+          duty:
+            initiation?.reason === 'in-duty'
+              ? { helpful: initiation.helpful, matched: initiation.duty }
+              : undefined,
           followup: initiation?.reason === 'followup-window' ? initiation.followup : undefined,
           named: wakeReason === 'named-in-text',
           ...replyVoiceFor(thread.id),

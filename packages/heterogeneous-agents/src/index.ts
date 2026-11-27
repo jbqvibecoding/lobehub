@@ -1,7 +1,10 @@
 export {
   AmpAdapter,
+  AntigravityAdapter,
+  type AntigravityAdapterOptions,
   ClaudeCodeAdapter,
   CodeBuddyAdapter,
+  CopilotAcpAdapter,
   GrokBuildAdapter,
   QoderAdapter,
 } from './adapters';
@@ -11,6 +14,13 @@ export {
   collectHeteroAttachedFiles,
   type HeteroAttachedFileRef,
 } from './attachedFiles';
+export {
+  buildClaudeCodeEntrypointEnv,
+  CLAUDE_CODE_ENTRYPOINT_ENV,
+  DEFAULT_CLAUDE_CODE_ENTRYPOINT,
+  normalizeClaudeCodeEntrypoint,
+  resolveDispatchedClaudeCodeEntrypoint,
+} from './claudeCodeEntrypoint';
 export type {
   HeterogeneousAgentCliError,
   HeterogeneousAgentDescriptor,
@@ -34,6 +44,8 @@ export {
   CODEBUDDY_CLI_INSTALL_DOCS_URL,
   CODEX_CLI_INSTALL_COMMANDS,
   CODEX_CLI_INSTALL_DOCS_URL,
+  COPILOT_CLI_INSTALL_COMMANDS,
+  COPILOT_CLI_INSTALL_DOCS_URL,
   CURSOR_CLI_INSTALL_COMMANDS,
   CURSOR_CLI_INSTALL_DOCS_URL,
   DROID_CLI_INSTALL_COMMANDS,
@@ -58,6 +70,7 @@ export {
   QODER_CLI_INSTALL_DOCS_URL,
   REMOTE_HETEROGENEOUS_AGENT_CONFIGS,
   resolveHeterogeneousAgentCommand,
+  usesHeterogeneousSessionInitialModel,
 } from './config';
 export type {
   HeteroErrorAttribution,
@@ -89,6 +102,7 @@ export type {
   MainResolveToolResultIntent,
   MainSetToolInterventionIntent,
   MainStreamContentIntent,
+  MainUpdateBackgroundTaskIntent,
   MainUpdateToolStateIntent,
   PersistAssistantIntent,
   SetErrorIntent,
@@ -129,29 +143,40 @@ export type { HeterogeneousAgentScanMap, HeterogeneousAgentScanStatus } from './
 export type {
   CreateMessageIntent,
   CreateThreadIntent,
+  FinalizedSubagentRunSnapshot,
   FinalizeThreadIntent,
   PersistContentIntent,
   PersistToolBatchEntry,
   PersistToolBatchIntent,
   RecordUsageIntent,
+  ReopenThreadIntent,
   ResolveToolResultIntent,
   StreamContentIntent,
   SubagentIntent,
   SubagentReduceCtx,
+  SubagentRun,
   SubagentRunSnapshot,
   SubagentRunsState,
+  SubagentThreadMessage,
   UpdateToolStateIntent,
 } from './subagentCoordinator';
 export {
+  buildFinalizedSubagentRunSnapshot,
+  buildSubagentRunSnapshot,
   createSubagentRunsState,
   type EventScope,
   getEventScope,
   reduceSubagentRuns,
   rehydrateSubagentRunsState,
+  restoreFinalizedSubagentRun,
+  restoreSubagentRun,
 } from './subagentCoordinator';
 export type {
   AgentEventAdapter,
   AgentProcessConfig,
+  BackgroundTaskEventData,
+  HeteroBackgroundTask,
+  HeteroBackgroundTaskStatus,
   HeterogeneousAgentEvent,
   HeterogeneousEventType,
   HeterogeneousTerminalErrorData,

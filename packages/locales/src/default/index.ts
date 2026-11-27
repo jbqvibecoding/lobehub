@@ -17,6 +17,7 @@ import electron from './electron';
 import error from './error';
 import eval_ from './eval';
 import file from './file';
+import fileShare from './fileShare';
 import home from './home';
 import hotkey from './hotkey';
 import image from './image';
@@ -31,6 +32,7 @@ import migration from './migration';
 import modelProvider from './modelProvider';
 import modelRuntime from './modelRuntime';
 import models from './models';
+import music from './music';
 import notification from './notification';
 import oauth from './oauth';
 import onboarding from './onboarding';
@@ -75,6 +77,7 @@ const resources = {
   error,
   'eval': eval_,
   file,
+  fileShare,
   home,
   hotkey,
   image,
@@ -89,6 +92,7 @@ const resources = {
   modelProvider,
   modelRuntime,
   models,
+  music,
   notification,
   oauth,
   onboarding,

@@ -28,6 +28,7 @@ import { genEndDateWhere, genRangeWhere, genStartDateWhere, genWhere } from '../
 import { inJsonStringArray } from '../../utils/inJsonStringArray';
 import { searchableMessage } from '../../utils/searchableMessage';
 import { notChannelTopic } from '../../utils/topicVisibility';
+import { nonNull } from '../utils/rows';
 import type { TopicModelContext } from './context';
 import type { TopicKeywordScope } from './types';
 
@@ -177,8 +178,36 @@ export const findRunInitiators = async (
     )
     .orderBy(agentOperations.topicId, desc(agentOperations.startedAt));
 
-  /* v8 ignore next -- unreachable: the null-topicId fallback; `inArray(agentOperations.topicId, …)` never matches a NULL topic_id */
-  return new Map(rows.flatMap((row) => (row.topicId ? [[row.topicId, row.userId]] : [])));
+  // `inArray(agentOperations.topicId, …)` never matches a NULL topic_id.
+  return new Map(
+    rows.map((row) => [nonNull(row.topicId, 'agent_operations.topic_id'), row.userId]),
+  );
+};
+
+/**
+ * The Topic a generic webhook thread continues: the newest of the agent's
+ * Topics stamped with `metadata.webhook` for this webhook and thread key at
+ * creation. Narrowed by `agent_id` first, which keeps the unindexed JSON path
+ * test to one agent's Topics.
+ */
+export const findByWebhookThread = async (
+  ctx: TopicModelContext,
+  params: { agentId: string; threadKey: string; webhookId: string },
+): Promise<TopicItem | undefined> => {
+  const [topic] = await ctx.db
+    .select()
+    .from(topics)
+    .where(
+      and(
+        ctx.ownership(),
+        eq(topics.agentId, params.agentId),
+        sql`${topics.metadata} -> 'webhook' ->> 'webhookId' = ${params.webhookId}`,
+        sql`${topics.metadata} -> 'webhook' ->> 'threadKey' = ${params.threadKey}`,
+      ),
+    )
+    .orderBy(desc(topics.createdAt))
+    .limit(1);
+  return topic;
 };
 
 /**
@@ -431,9 +460,7 @@ export const queryRecent = async (ctx: TopicModelContext, limit: number = 12) =>
   return result.map((item) => ({
     ...item,
     type: item.groupId ? ('group' as const) : ('agent' as const),
-    /* v8 ignore start -- unreachable: the `new Date(…)` arm; `mapWith(topics.updatedAt)` decodes the timestamptz cell into a Date, whichever driver returns it */
     updatedAt: item.updatedAt instanceof Date ? item.updatedAt : new Date(item.updatedAt),
-    /* v8 ignore stop */
   }));
 };
 
