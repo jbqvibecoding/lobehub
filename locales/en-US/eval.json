@@ -839,7 +839,7 @@
   "lobeBench.status.failed": "Failed",
   "lobeBench.status.pending": "Pending",
   "lobeBench.status.running": "Running {{done}}/{{total}}",
-  "lobeBench.subtitle": "LobeHub's standard cases. Run experiments to compare models, settings and harnesses.",
+  "lobeBench.subtitle": "Biber's standard cases. Run experiments to compare models, settings and harnesses.",
   "lobeBench.switch.agent": "Evaluation Lab",
   "lobeBench.switch.bench": "Lobe Bench",
   "lobeBench.title": "Lobe Bench",

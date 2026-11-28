@@ -5,7 +5,7 @@ export default {
   'startupUpdate.requiredDescription': 'This version has a security issue. Update to continue.',
   'startupUpdate.checking': 'Checking for updates…',
   'startupUpdate.downloading': 'Downloading update',
-  'startupUpdate.applying': 'Restarting LobeHub…',
+  'startupUpdate.applying': 'Restarting Biber…',
   'startupUpdate.error': 'Couldn’t finish the update',
   'startupUpdate.retry': 'Retry',
   'startupUpdate.quit': 'Quit',

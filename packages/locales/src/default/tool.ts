@@ -173,7 +173,7 @@ export default {
   'connector.error.network':
     'The network connection was interrupted. Check your connection and try again.',
   'connector.error.stdioDesktopOnly':
-    'Stdio connectors can only sync in the desktop app. Open LobeHub Desktop to sync this connector.',
+    'Stdio connectors can only sync in the desktop app. Open Biber Desktop to sync this connector.',
   'connector.add.advanced': 'Advanced settings',
   'connector.add.authError': 'Authorization failed: {{reason}}',
   'connector.add.authFailed':

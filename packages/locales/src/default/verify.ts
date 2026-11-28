@@ -324,7 +324,7 @@ export default {
   'acceptance.local.saved': 'Saved {{file}}. Tell your agent you have finished reviewing.',
   'acceptance.local.share': 'Share',
   'acceptance.local.shareHint':
-    'Comments, mentions and a shareable link need LobeHub. Ask your agent to publish this acceptance, or run:',
+    'Comments, mentions and a shareable link need Biber. Ask your agent to publish this acceptance, or run:',
   'acceptance.local.shareTitle': 'Review with your team',
   'acceptance.local.unsaved': '{{count}} unsaved review(s)',
   'acceptance.comments.title': 'Discussion',

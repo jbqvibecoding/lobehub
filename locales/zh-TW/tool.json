@@ -112,7 +112,7 @@
   "connector.edit.success": "連接器已更新",
   "connector.enabled": "已啟用",
   "connector.error.network": "網路連線中斷。請檢查您的連線並重試。",
-  "connector.error.stdioDesktopOnly": "Stdio 連接器只能在桌面應用程式中同步。請打開 LobeHub 桌面版以同步此連接器。",
+  "connector.error.stdioDesktopOnly": "Stdio 連接器只能在桌面應用程式中同步。請打開 Biber 桌面版以同步此連接器。",
   "connector.kind.agent": "Agent 連接器",
   "connector.kind.builtin": "內建工具",
   "connector.kind.community": "市場工具",

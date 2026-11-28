@@ -56,7 +56,7 @@
   "environment.chooseDevice": "Choisir un appareil",
   "environment.configurationFailed": "Impossible de charger les paramètres de cet Agent. Réessayez.",
   "environment.configurationLoading": "Chargement des paramètres de cet Agent…",
-  "environment.connectorUpgradeRequired": "Le connecteur LobeHub de cet appareil doit être mis à jour. Mettez à jour LobeHub Desktop ou LobeHub CLI sur cet appareil, puis reconnectez l'appareil et réessayez.",
+  "environment.connectorUpgradeRequired": "Le connecteur Biber de cet appareil doit être mis à jour. Mettez à jour Biber Desktop ou LobeHub CLI sur cet appareil, puis reconnectez l'appareil et réessayez.",
   "environment.deviceLabel": "Appareil pour {{name}}",
   "environment.deviceOffline": "Cet appareil est hors ligne. Reconnectez-le ou choisissez un autre appareil.",
   "environment.deviceRequired": "Choisissez un appareil en ligne pour cet Agent de codage.",

@@ -112,7 +112,7 @@
   "connector.edit.success": "Connector bijgewerkt",
   "connector.enabled": "Ingeschakeld",
   "connector.error.network": "De netwerkverbinding werd onderbroken. Controleer uw verbinding en probeer het opnieuw.",
-  "connector.error.stdioDesktopOnly": "Stdio-connectors kunnen alleen synchroniseren in de desktop-app. Open LobeHub Desktop om deze connector te synchroniseren.",
+  "connector.error.stdioDesktopOnly": "Stdio-connectors kunnen alleen synchroniseren in de desktop-app. Open Biber Desktop om deze connector te synchroniseren.",
   "connector.kind.agent": "Agentconnector",
   "connector.kind.builtin": "Ingebouwd hulpmiddel",
   "connector.kind.community": "Marktplaats-tool",

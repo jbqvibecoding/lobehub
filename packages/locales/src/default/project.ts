@@ -208,7 +208,7 @@ export default {
   'createFromGithub.duplicateName':
     'A project with this name already exists, including in the trash. Choose a different name.',
   'createFromGithub.empty':
-    "The connected GitHub accounts haven't given LobeHub access to any repositories yet.",
+    "The connected GitHub accounts haven't given Biber access to any repositories yet.",
   'createFromGithub.loadFailed': "Couldn't load repositories from GitHub.",
   'createFromGithub.manageAccess': 'Manage access',
   'createFromGithub.private': 'Private',

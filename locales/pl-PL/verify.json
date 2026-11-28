@@ -322,7 +322,7 @@
   "acceptance.local.save": "Zapisz recenzje",
   "acceptance.local.saved": "Zapisano {{file}}. Powiedz swojemu agentowi, że zakończyłeś recenzowanie.",
   "acceptance.local.share": "Udostępnij",
-  "acceptance.local.shareHint": "Komentarze, wzmianki i link do udostępnienia wymagają LobeHub. Poproś swojego agenta o opublikowanie tej akceptacji lub uruchom:",
+  "acceptance.local.shareHint": "Komentarze, wzmianki i link do udostępnienia wymagają Biber. Poproś swojego agenta o opublikowanie tej akceptacji lub uruchom:",
   "acceptance.local.shareTitle": "Przejrzyj z zespołem",
   "acceptance.local.unsaved": "{{count}} niezapisana recenzja/niezapisane recenzje",
   "acceptance.notFound.description": "Może zostało usunięte lub nigdy nie zostało z Tobą udostępnione.",

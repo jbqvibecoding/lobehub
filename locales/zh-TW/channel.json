@@ -56,7 +56,7 @@
   "environment.chooseDevice": "選擇裝置",
   "environment.configurationFailed": "無法加載此代理的設置。請再試一次。",
   "environment.configurationLoading": "正在加載此代理的設置…",
-  "environment.connectorUpgradeRequired": "此裝置的 LobeHub 連接器需要更新。請在該裝置上更新 LobeHub Desktop 或 LobeHub CLI，然後重新連接並再試一次。",
+  "environment.connectorUpgradeRequired": "此裝置的 Biber 連接器需要更新。請在該裝置上更新 Biber Desktop 或 LobeHub CLI，然後重新連接並再試一次。",
   "environment.deviceLabel": "{{name}} 的裝置",
   "environment.deviceOffline": "此裝置已離線。重新連接或選擇其他裝置。",
   "environment.deviceRequired": "為此程式碼代理選擇一個在線裝置。",

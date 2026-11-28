@@ -126,7 +126,7 @@
   "remoteServer.statusConnected": "Подключено",
   "remoteServer.statusDisconnected": "Не подключено",
   "remoteServer.urlRequired": "Пожалуйста, введите адрес сервера",
-  "startupUpdate.applying": "Перезапуск LobeHub…",
+  "startupUpdate.applying": "Перезапуск Biber…",
   "startupUpdate.checking": "Проверка обновлений…",
   "startupUpdate.downloading": "Загрузка обновления",
   "startupUpdate.error": "Не удалось завершить обновление",

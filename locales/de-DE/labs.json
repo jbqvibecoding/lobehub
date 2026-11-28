@@ -39,7 +39,7 @@
   "features.selfLearning.title": "Selbstentwicklung",
   "features.taskVerify.desc": "Fügen Sie einen Abschnitt zur Lieferannahme in die Aufgabenbeschreibung hinzu: Beschreiben Sie die Annahme in einem Satz und lassen Sie die KI bearbeitbare Überprüfungskriterien erstellen.",
   "features.taskVerify.title": "Aufgabenlieferung und -annahme",
-  "features.topicBugReport.desc": "Fügt dem Themenmenü Problem melden hinzu. Es sendet die IDs des Themas und Ihre App-Umgebung an das LobeHub-Support-Team, das dann untersucht, was passiert ist.",
+  "features.topicBugReport.desc": "Fügt dem Themenmenü Problem melden hinzu. Es sendet die IDs des Themas und Ihre App-Umgebung an das Biber-Support-Team, das dann untersucht, was passiert ist.",
   "features.topicBugReport.title": "Ein Problem mit einem Thema melden",
   "group.desktop": "Desktop",
   "group.general": "Allgemein",

@@ -69,9 +69,9 @@ export default {
   'completionSound.title': 'In-app completion sound',
   'completionSound.enabled': 'Play completion sound',
   'completionSound.desc':
-    'Play a chime when a chat finishes while LobeHub is in the foreground. The sound, volume and imports stay on this device and are not synced.',
+    'Play a chime when a chat finishes while Biber is in the foreground. The sound, volume and imports stay on this device and are not synced.',
   'completionSound.sound': 'Sound',
-  'completionSound.builtin.lobehub': 'LobeHub chime',
+  'completionSound.builtin.lobehub': 'Biber chime',
   'completionSound.builtin.glassBell': 'Glass bell',
   'completionSound.builtin.softTone': 'Soft tone',
   'completionSound.builtin.xylophone': 'Xylophone',
@@ -86,13 +86,13 @@ export default {
   'completionSound.banner.title': 'Background notification',
   'completionSound.banner.label': 'Notification sound',
   'completionSound.banner.desc':
-    'Sound the notification banner carries when a chat finishes while LobeHub is in the background. macOS Focus and per-app notification settings still apply.',
+    'Sound the notification banner carries when a chat finishes while Biber is in the background. macOS Focus and per-app notification settings still apply.',
   'completionSound.banner.system': 'System default',
-  'completionSound.banner.lobehub': 'LobeHub chime',
+  'completionSound.banner.lobehub': 'Biber chime',
   'completionSound.banner.previewTitle': 'Notification preview',
   'completionSound.banner.previewBody': 'This is how a finished chat will sound in the background.',
   'completionSound.banner.systemMuted':
-    'macOS has notification sounds turned off for LobeHub, so background notifications stay silent. Turn them back on in System Settings › Notifications › LobeHub.',
+    'macOS has notification sounds turned off for Biber, so background notifications stay silent. Turn them back on in System Settings › Notifications › Biber.',
   '_cloud.officialProvider': '{{name}} Official Model Service',
   'about.title': 'About',
   'agentImport.action': 'Copy to Workspace...',
@@ -631,7 +631,7 @@ export default {
   'heterogeneousStatus.account.label': 'Account',
   'heterogeneousStatus.apiMode.configureProvider': 'Go to provider settings',
   'heterogeneousStatus.apiMode.localOnly': 'Available only for Desktop local execution',
-  'heterogeneousStatus.apiMode.defaultProvider': 'LobeHub',
+  'heterogeneousStatus.apiMode.defaultProvider': 'Biber',
   'heterogeneousStatus.apiMode.model': 'Model',
   'heterogeneousStatus.apiMode.modelPlaceholder': 'Select a model',
   'heterogeneousStatus.apiMode.noProviders':
@@ -728,7 +728,7 @@ export default {
   'heterogeneousStatus.device.offline': '{{device}} is offline. Check again once it reconnects.',
   'heterogeneousStatus.device.openDocs': 'Installation guide',
   'heterogeneousStatus.device.scanFailed':
-    'Couldn’t check {{name}} CLI on {{device}}. Update LobeHub on that device and try again.',
+    'Couldn’t check {{name}} CLI on {{device}}. Update Biber on that device and try again.',
   'heterogeneousStatus.device.scanFailedTag': 'Unknown',
   'heterogeneousStatus.device.showDetails': 'Show details',
   'heterogeneousStatus.device.unavailable': '{{name}} CLI not found on {{device}}',
@@ -876,7 +876,7 @@ export default {
   'devices.actions.remove': 'Remove',
   'devices.appUpdate.checkFailed': "Couldn't check for updates: {{message}}",
   'devices.appUpdate.confirmDesc':
-    'LobeHub on this device will quit and restart. Anything it is running, including agent tasks, will be interrupted.',
+    'Biber on this device will quit and restart. Anything it is running, including agent tasks, will be interrupted.',
   'devices.appUpdate.confirmTitle': 'Restart and update to v{{version}}?',
   'devices.appUpdate.downloading': 'Downloading v{{version}}',
   'devices.appUpdate.installFailed':
@@ -1009,10 +1009,10 @@ export default {
   'devices.health.load_one': 'Load · {{count}} core',
   'devices.health.load_other': 'Load · {{count}} cores',
   'devices.health.empty':
-    'No health data yet. It starts recording once this device runs the latest LobeHub desktop app or CLI.',
+    'No health data yet. It starts recording once this device runs the latest Biber desktop app or CLI.',
   'devices.health.memory': 'Memory',
   'devices.health.now': 'Now',
-  'devices.health.status.missing': 'No data — asleep, off, or LobeHub not running',
+  'devices.health.status.missing': 'No data — asleep, off, or Biber not running',
   'devices.health.status.offline': 'Running but disconnected',
   'devices.health.status.online': 'Online',
   'devices.health.status.pending': 'Not uploaded yet',
@@ -1020,13 +1020,13 @@ export default {
   'devices.lastSeen': 'Last connected {{time}}',
   'devices.managed.badge': 'Cloud',
   'devices.managed.badgeTooltip':
-    'A cloud device that LobeHub runs for you. It sleeps when idle and wakes when an agent needs it.',
+    'A cloud device that Biber runs for you. It sleeps when idle and wakes when an agent needs it.',
   'devices.managed.create.button': 'Create in cloud',
   'devices.managed.create.class.label': 'Size',
   'devices.managed.create.class.notIncluded': 'Not in your plan',
   'devices.managed.create.class.placeholder': 'Choose a size',
   'devices.managed.create.desc':
-    'LobeHub runs this device in the cloud for you. It sleeps when idle and wakes when an agent needs it.',
+    'Biber runs this device in the cloud for you. It sleeps when idle and wakes when an agent needs it.',
   'devices.managed.create.failed': 'Could not create the cloud device. Try again.',
   'devices.managed.create.forbidden':
     'Only workspace members who can add devices can create a cloud device.',
@@ -1095,7 +1095,7 @@ export default {
   'devices.workingDirectory': 'Working dir: {{path}}',
   'apps.cli.copied': 'Copied',
   'apps.cli.copy': 'Copy',
-  'apps.cli.desc': 'Scripts, cron jobs, and headless agents — the same LobeHub, from any terminal.',
+  'apps.cli.desc': 'Scripts, cron jobs, and headless agents — the same Biber, from any terminal.',
   'apps.cli.title': 'CLI',
   'apps.desktop.cta': 'Get desktop app',
   'apps.desktop.desc': 'Chat, build, and automate in one app, with full access to this machine:',
@@ -1109,13 +1109,13 @@ export default {
   'apps.desktop.inUseDesc': "You're already in the desktop app.",
   'apps.desktop.title': 'Desktop',
   'apps.messenger.desc':
-    'Talk to your agents where your team already is — replies land back in LobeHub.',
+    'Talk to your agents where your team already is — replies land back in Biber.',
   'apps.messenger.openApp': 'Open app',
   'apps.messenger.title': 'Messenger',
   'apps.mobile.cta': 'Get mobile app',
   'apps.mobile.desc': 'Pick up where you left off — your chats, agents, and files travel with you.',
   'apps.mobile.title': 'Mobile',
-  'apps.title': 'Do more with LobeHub, everywhere you work',
+  'apps.title': 'Do more with Biber, everywhere you work',
   'checkingPermissions': 'Checking permissions...',
   'danger.reset.action': 'Reset Now',
   'danger.reset.confirm': 'Reset all settings?',
@@ -1248,11 +1248,11 @@ export default {
   'notification.email.desc': 'Receive email notifications when important events occur',
   'notification.im.banner.platformUnlinked': '{{platform}} is not linked yet',
   'notification.im.desc':
-    'Deliver notifications to your linked messenger (Telegram, Discord, Slack, or WeChat) via the LobeHub bot',
+    'Deliver notifications to your linked messenger (Telegram, Discord, Slack, or WeChat) via the Biber bot',
   'notification.im.linkAccount': 'Link account',
   'notification.im.title': 'Messenger Notifications',
   'notification.im.platform.desc':
-    'Deliver notifications to your {{platform}} DM via the LobeHub bot',
+    'Deliver notifications to your {{platform}} DM via the Biber bot',
   'notification.im.platform.enable': 'Enable {{platform}} notifications',
   'notification.im.platform.viewSetup': 'View setup',
   'notification.email.title': 'Email Notifications',
@@ -1481,7 +1481,7 @@ export default {
   'settingAgent.driver.groupCli': 'Heterogeneous agent · local CLI',
   'settingAgent.driver.groupHarness': 'Built-in',
   'settingAgent.driver.groupRemote': 'Heterogeneous agent · remote platform',
-  'settingAgent.driver.harness': 'LobeHub',
+  'settingAgent.driver.harness': 'Biber',
   'settingAgent.driver.brings.harness': 'You choose the model, tools, and instruction.',
   'settingAgent.driver.brings.hetero':
     'Brings its own model, tools and instruction; you set where it runs.',
@@ -1582,16 +1582,16 @@ export default {
     'Packs the last 24 hours of logs with the app version and system details into one file. Attach it when you report a problem.',
   'settingAbout.diagnostics.bundle.title': 'Diagnostics Package',
   'settingAbout.remoteDebugging.activeDesc':
-    'On: programs on this computer can control LobeHub through port {{port}}. Turn it off when you finish debugging.',
+    'On: programs on this computer can control Biber through port {{port}}. Turn it off when you finish debugging.',
   'settingAbout.remoteDebugging.confirm.content':
-    'After you restart LobeHub, programs on this computer can connect to port {{port}}, control LobeHub windows, and read your signed-in session and data. The port opens on every launch until you turn this off. Turn it on only while debugging.',
+    'After you restart Biber, programs on this computer can connect to port {{port}}, control Biber windows, and read your signed-in session and data. The port opens on every launch until you turn this off. Turn it on only while debugging.',
   'settingAbout.remoteDebugging.confirm.ok': 'Allow',
   'settingAbout.remoteDebugging.confirm.title': 'Allow remote debugging?',
   'settingAbout.remoteDebugging.desc':
-    'For developers troubleshooting LobeHub. When on, other programs on this computer can control LobeHub and read your signed-in session and data. Keep it off for everyday use.',
+    'For developers troubleshooting Biber. When on, other programs on this computer can control Biber and read your signed-in session and data. Keep it off for everyday use.',
   'settingAbout.remoteDebugging.launchOptionDesc':
     'Remote debugging was turned on by a launch option for this session.',
-  'settingAbout.remoteDebugging.restartToApply': 'Restart LobeHub to apply this change.',
+  'settingAbout.remoteDebugging.restartToApply': 'Restart Biber to apply this change.',
   'settingAbout.remoteDebugging.title': 'Remote Debugging',
   'settingAppearance.appTray.desc':
     'Show the Biber icon in the system tray or macOS menu bar. Disabling it also removes tray menu access.',
@@ -1938,7 +1938,7 @@ export default {
   'serviceModel.contextLimit.placeholder': 'Context limit',
   'serviceModel.customModel': 'Choose a model',
   'serviceModel.desc':
-    'Models LobeHub uses for background tasks. They follow the system recommendation by default and upgrade automatically when new models arrive.',
+    'Models Biber uses for background tasks. They follow the system recommendation by default and upgrade automatically when new models arrive.',
   'serviceModel.off': 'Off',
   'serviceModel.systemRecommended': 'System recommended',
   'serviceModel.tierPicker': 'Model',
@@ -3671,7 +3671,7 @@ When I am ___, I need ___
   'workspace.waitlistPage.enabledSubtitle': 'Workspace is already enabled for your account.',
   'workspace.waitlistPage.enabledTitle': 'Workspace is ready for you',
   'workspace.waitlistPage.entryCta': 'Join Workspace Beta',
-  'workspace.waitlistPage.goHome': 'Back to LobeHub',
+  'workspace.waitlistPage.goHome': 'Back to Biber',
   'workspace.waitlistPage.learnMore': 'Learn more about Workspace',
   'workspace.waitlistPage.learnMoreNewTabHint': 'Opens in a new tab',
   'workspace.waitlistPage.organizationLabel': 'Organization / Group (optional)',
@@ -4242,7 +4242,7 @@ When I am ___, I need ___
   'workspace.onboarding.flow.devices.methodDesktop': 'Desktop app (recommended)',
   'workspace.onboarding.flow.devices.methodCli': 'Command line',
   'workspace.onboarding.flow.devices.desktopInstall':
-    'Download and install the LobeHub desktop app on a team computer',
+    'Download and install the Biber desktop app on a team computer',
   'workspace.onboarding.flow.devices.desktopDownload': 'Download desktop app',
   'workspace.onboarding.flow.devices.desktopShare':
     'Sign in with your account, find this computer in your personal Settings → Devices, choose "Share to workspace…", then pick this workspace and make it visible to all members',
@@ -4512,12 +4512,12 @@ When I am ___, I need ___
     'Search the web for current information and crawl web pages to extract content. Supports multiple search engines, categories, and time ranges for comprehensive research.',
   'tools.builtins.lobe-web-browsing.title': 'Web Browsing',
   'tools.builtins.lobe-image-generation.description':
-    'Generate images through LobeHub providers when the current chat model has no native image output.',
+    'Generate images through Biber providers when the current chat model has no native image output.',
   'tools.builtins.lobe-image-generation.readme':
     'Opt-in image generation for models without native image output. Enable this tool to use it in chat or agent mode; disable it to avoid exposing the tool.',
   'tools.builtins.lobe-image-generation.title': 'Image Generation',
   'tools.builtins.lobe-video-generation.description':
-    'Generate videos through LobeHub providers from text or reference images.',
+    'Generate videos through Biber providers from text or reference images.',
   'tools.builtins.lobe-video-generation.readme':
     'Opt-in video generation. Enable this tool to use it in chat or agent mode; disable it to avoid exposing the tool.',
   'tools.builtins.lobe-video-generation.title': 'Video Generation',
@@ -4709,7 +4709,7 @@ When I am ___, I need ___
   'tools.connectorFeedback.askAdminCopied':
     'Request copied. Send it to a workspace owner or admin.',
   'tools.connectorFeedback.askAdminMessage':
-    'Could you connect {{name}} for our LobeHub workspace? {{url}}',
+    'Could you connect {{name}} for our Biber workspace? {{url}}',
   'tools.connectorFeedback.connectFailed': 'Connection failed: {{reason}}',
   'tools.connectorFeedback.manageOnly': 'Only workspace owners and admins can change connectors',
   'tools.connectorFeedback.reason.authIncomplete':
@@ -5405,13 +5405,12 @@ When I am ___, I need ___
   'automations.status.paused': 'Paused',
   'automations.error.auth': "The connector's authorization has expired.",
   'automations.error.connection_refused':
-    'The connector could not connect to LobeHub to deliver events.',
-  'automations.error.timeout': 'The connector timed out delivering events to LobeHub.',
-  'automations.error.tls_error': 'The connector could not open a secure connection to LobeHub.',
-  'automations.error.http_4xx': "LobeHub rejected the connector's deliveries.",
-  'automations.error.http_5xx': "LobeHub failed while receiving the connector's deliveries.",
-  'automations.error.challenge_failed':
-    "The connector could not verify LobeHub's callback address.",
+    'The connector could not connect to Biber to deliver events.',
+  'automations.error.timeout': 'The connector timed out delivering events to Biber.',
+  'automations.error.tls_error': 'The connector could not open a secure connection to Biber.',
+  'automations.error.http_4xx': "Biber rejected the connector's deliveries.",
+  'automations.error.http_5xx': "Biber failed while receiving the connector's deliveries.",
+  'automations.error.challenge_failed': "The connector could not verify Biber's callback address.",
   'automations.error.delivery_suspended':
     'The connector had paused delivery after repeated failures and has been asked to resume. This clears when the next event arrives.',
   'automations.error.wake_cap':

@@ -563,7 +563,7 @@ export default {
   'lobeBench.switch.bench': 'Lobe Bench',
   'lobeBench.title': 'Lobe Bench',
   'lobeBench.subtitle':
-    "LobeHub's standard cases. Run experiments to compare models, settings and harnesses.",
+    "Biber's standard cases. Run experiments to compare models, settings and harnesses.",
   'lobeBench.sidebar.overview': 'Dashboard',
   'lobeBench.sidebar.experiments': 'Experiments',
   'lobeBench.sidebar.newBenchmark': 'New benchmark',

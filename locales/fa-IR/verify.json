@@ -322,7 +322,7 @@
   "acceptance.local.save": "ذخیره کردن بررسی‌ها",
   "acceptance.local.saved": "{{file}} ذخیره شد. به عامل خود بگویید که بررسی را تمام کرده‌اید.",
   "acceptance.local.share": "اشتراک‌گذاری",
-  "acceptance.local.shareHint": "نظرات، اشاره‌ها و یک لینک قابل اشتراک نیاز به LobeHub دارند. از عامل خود بخواهید این پذیرش را منتشر کند، یا این دستور را اجرا کنید:",
+  "acceptance.local.shareHint": "نظرات، اشاره‌ها و یک لینک قابل اشتراک نیاز به Biber دارند. از عامل خود بخواهید این پذیرش را منتشر کند، یا این دستور را اجرا کنید:",
   "acceptance.local.shareTitle": "با تیم خود بررسی کنید",
   "acceptance.local.unsaved": "{{count}} بررسی ذخیره‌نشده",
   "acceptance.notFound.description": "ممکن است حذف شده باشد یا هرگز با شما به اشتراک گذاشته نشده باشد.",

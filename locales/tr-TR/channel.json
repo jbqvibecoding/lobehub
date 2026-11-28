@@ -56,7 +56,7 @@
   "environment.chooseDevice": "Bir cihaz seçin",
   "environment.configurationFailed": "Bu Ajanın ayarları yüklenemedi. Tekrar deneyin.",
   "environment.configurationLoading": "Bu Ajanın ayarları yükleniyor…",
-  "environment.connectorUpgradeRequired": "Bu cihazın LobeHub bağlayıcısının güncellenmesi gerekiyor. O cihazdaki LobeHub Desktop'ı veya LobeHub CLI'yi güncelleyin, ardından yeniden bağlanıp tekrar deneyin.",
+  "environment.connectorUpgradeRequired": "Bu cihazın Biber bağlayıcısının güncellenmesi gerekiyor. O cihazdaki Biber Desktop'ı veya LobeHub CLI'yi güncelleyin, ardından yeniden bağlanıp tekrar deneyin.",
   "environment.deviceLabel": "{{name}} için cihaz",
   "environment.deviceOffline": "Bu cihaz çevrimdışı. Yeniden bağlayın veya başka bir cihaz seçin.",
   "environment.deviceRequired": "Bu kodlama Ajanı için çevrimiçi bir cihaz seçin.",

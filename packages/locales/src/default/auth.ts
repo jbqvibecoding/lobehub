@@ -61,7 +61,7 @@ export default {
   'apikey.list.columns.name': 'Name',
   'apikey.list.columns.scopes': 'Scope',
   'apikey.list.columns.status': 'Enabled',
-  'apikey.list.desc': 'API Keys let external tools and scripts call the LobeHub API as you.',
+  'apikey.list.desc': 'API Keys let external tools and scripts call the Biber API as you.',
   'apikey.list.empty': 'No API Keys yet',
   'apikey.list.restrictedEmpty.desc':
     'Only workspace admins can create API Keys. Contact a workspace admin if you need one.',
@@ -343,11 +343,11 @@ export default {
   'oauthApp.integration.issuer': 'Issuer',
   'oauthApp.integration.oneClick': 'One-prompt integration',
   'oauthApp.integration.oneClickDesc':
-    'Paste this prompt into a coding agent such as Claude Code or Codex to add LobeHub sign-in to your project.',
+    'Paste this prompt into a coding agent such as Claude Code or Codex to add Biber sign-in to your project.',
   'oauthApp.integration.prompt.device':
-    'Add LobeHub sign-in to this command-line tool using the OAuth 2.0 device authorization flow.\n\n- Issuer: {{issuer}} (discover the endpoints from {{discovery}})\n- Client ID: {{clientId}} (public client, no secret)\n- Device authorization endpoint: {{deviceAuthorization}}\n- Token endpoint: {{token}}\n- Scopes: openid profile email offline_access\n\nRequest a device code, show the user the verification URL and code, and poll the token endpoint until they approve. Store the refresh token securely (for example in the OS keychain) and refresh the access token when it expires.',
+    'Add Biber sign-in to this command-line tool using the OAuth 2.0 device authorization flow.\n\n- Issuer: {{issuer}} (discover the endpoints from {{discovery}})\n- Client ID: {{clientId}} (public client, no secret)\n- Device authorization endpoint: {{deviceAuthorization}}\n- Token endpoint: {{token}}\n- Scopes: openid profile email offline_access\n\nRequest a device code, show the user the verification URL and code, and poll the token endpoint until they approve. Store the refresh token securely (for example in the OS keychain) and refresh the access token when it expires.',
   'oauthApp.integration.prompt.web':
-    'Add "Sign in with LobeHub" to this project using OpenID Connect (authorization code flow with PKCE S256).\n\n- Issuer: {{issuer}} (discover the endpoints from {{discovery}})\n- Client ID: {{clientId}}\n- Client secret: read it from the LOBEHUB_CLIENT_SECRET environment variable and never hard-code it; send it as client_secret in the token request body (client_secret_post)\n- Scopes: openid profile email offline_access\n\nUse the OAuth / OIDC library this project already uses, or the standard one for its framework. Add a callback route, then tell me its full URL so I can register it as a redirect URI of the "{{appName}}" app. After sign-in, read the user\'s id (sub), name and email from the ID token.',
+    'Add "Sign in with Biber" to this project using OpenID Connect (authorization code flow with PKCE S256).\n\n- Issuer: {{issuer}} (discover the endpoints from {{discovery}})\n- Client ID: {{clientId}}\n- Client secret: read it from the LOBEHUB_CLIENT_SECRET environment variable and never hard-code it; send it as client_secret in the token request body (client_secret_post)\n- Scopes: openid profile email offline_access\n\nUse the OAuth / OIDC library this project already uses, or the standard one for its framework. Add a callback route, then tell me its full URL so I can register it as a redirect URI of the "{{appName}}" app. After sign-in, read the user\'s id (sub), name and email from the ID token.',
   'oauthApp.integration.promptCopied': 'Prompt copied',
   'oauthApp.integration.title': 'Integration',
   'oauthApp.integration.token': 'Token endpoint',
@@ -356,7 +356,7 @@ export default {
   'oauthApp.list.actions.create': 'Create App',
   'oauthApp.list.actions.delete': 'Delete',
   'oauthApp.list.empty':
-    'Let a CLI tool or your own website sign people in with their LobeHub account.',
+    'Let a CLI tool or your own website sign people in with their Biber account.',
   'oauthApp.list.emptyTitle': 'Create your first OAuth app',
   'oauthApp.list.neverUsed': 'Never used',
   'oauthApp.redirectUris.add': 'Add redirect URI',

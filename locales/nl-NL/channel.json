@@ -56,7 +56,7 @@
   "environment.chooseDevice": "Kies een apparaat",
   "environment.configurationFailed": "Kon de instellingen van deze Agent niet laden. Probeer het opnieuw.",
   "environment.configurationLoading": "Instellingen van deze Agent laden…",
-  "environment.connectorUpgradeRequired": "De LobeHub-connector van dit apparaat moet worden bijgewerkt. Werk LobeHub Desktop of de LobeHub CLI op dat apparaat bij, maak vervolgens opnieuw verbinding en probeer het opnieuw.",
+  "environment.connectorUpgradeRequired": "De Biber-connector van dit apparaat moet worden bijgewerkt. Werk Biber Desktop of de LobeHub CLI op dat apparaat bij, maak vervolgens opnieuw verbinding en probeer het opnieuw.",
   "environment.deviceLabel": "Apparaat voor {{name}}",
   "environment.deviceOffline": "Dit apparaat is offline. Verbind het opnieuw of kies een ander apparaat.",
   "environment.deviceRequired": "Kies een online apparaat voor deze codeeragent.",

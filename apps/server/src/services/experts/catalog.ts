@@ -211,6 +211,9 @@ Picking products and generating images or videos are other experts' work.`),
     version: 1,
   },
   {
+    // Runs on the cloud sandbox: without it as the target, upstream leaves the sandbox's tools out
+    // of the run's tool set, and every call to them is asked about as an unknown tool
+    agencyConfig: { executionTarget: 'sandbox' },
     avatar: '📄',
     backgroundColor: 'rgba(214,160,74,0.15)',
     description: {

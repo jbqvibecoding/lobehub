@@ -112,7 +112,7 @@
   "connector.edit.success": "Conector atualizado",
   "connector.enabled": "Habilitado",
   "connector.error.network": "A conexão de rede foi interrompida. Verifique sua conexão e tente novamente.",
-  "connector.error.stdioDesktopOnly": "Conectores Stdio só podem sincronizar no aplicativo desktop. Abra o LobeHub Desktop para sincronizar este conector.",
+  "connector.error.stdioDesktopOnly": "Conectores Stdio só podem sincronizar no aplicativo desktop. Abra o Biber Desktop para sincronizar este conector.",
   "connector.kind.agent": "Conector de agente",
   "connector.kind.builtin": "Ferramenta integrada",
   "connector.kind.community": "Ferramenta do Mercado",

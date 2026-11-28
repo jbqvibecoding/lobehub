@@ -839,7 +839,7 @@
   "lobeBench.status.failed": "失败",
   "lobeBench.status.pending": "待开始",
   "lobeBench.status.running": "进行中 {{done}}/{{total}}",
-  "lobeBench.subtitle": "LobeHub 的标准题。用实验比较模型、参数和 harness。",
+  "lobeBench.subtitle": "Biber 的标准题。用实验比较模型、参数和 harness。",
   "lobeBench.switch.agent": "评测实验室",
   "lobeBench.switch.bench": "Lobe Bench",
   "lobeBench.title": "Lobe Bench",

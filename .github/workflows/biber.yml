@@ -1,8 +1,9 @@
 name: Biber CI
 
 # The parts of Biber that the upstream Test CI does not run: its own packages (excluded from
-# the root vitest run), the migration journal after merges from upstream, the phone app and the
-# agent computers. Kept apart from test.yml so merges from upstream do not touch it.
+# the root vitest run), the migration journal and the brand in copy after merges from upstream,
+# the phone app and the agent computers. Kept apart from test.yml so merges from upstream do not
+# touch it.
 
 on: [push, pull_request, workflow_dispatch]
 
@@ -35,7 +36,7 @@ jobs:
           done
 
   migrations:
-    name: Migration journal
+    name: Migration journal and brand
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -48,6 +49,12 @@ jobs:
 
       - name: Check the migrations line up
         run: bunx tsx scripts/biber/check-migrations.ts
+
+      # Upstream keeps adding copy that names LobeHub and its assistant
+      - name: Check the copy says Biber
+        run: |
+          node scripts/brand/rename-assistant.mjs --check
+          bunx tsx scripts/brand/rename-product.ts --check
 
   mobile:
     name: Phone app

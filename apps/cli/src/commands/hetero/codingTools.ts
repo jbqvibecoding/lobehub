@@ -241,8 +241,23 @@ export const buildCodingTools = ({
         topicId,
       });
 
+      // A yes or no on the push, in the one shape upstream's review accepts for it. The server
+      // shows the push as it holds it, not this text.
+      const approval = {
+        questions: [
+          {
+            header: 'Push to GitHub',
+            multiSelect: false,
+            options: [
+              { id: 'push', label: 'Push' },
+              { id: 'dont_push', label: 'Do not push' },
+            ],
+            question: `Push "${summary.pullRequest}" to a new branch ${summary.branch} in ${summary.repository}?`,
+          },
+        ],
+      };
       const answer = await waitForUser(
-        { arguments: summary, toolCallId: call.toolCallId },
+        { arguments: approval, interactionKind: 'permission', toolCallId: call.toolCallId },
         {
           onProgress: call.onProgress,
           progressIntervalMs: call.progressIntervalMs,

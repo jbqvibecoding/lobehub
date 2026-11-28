@@ -181,7 +181,7 @@
   "connector.edit.success": "连接器已更新",
   "connector.enabled": "已启用",
   "connector.error.network": "网络连接已中断，请检查网络后重试。",
-  "connector.error.stdioDesktopOnly": "stdio 连接器只能在桌面端同步，请打开 LobeHub 桌面端同步此连接器。",
+  "connector.error.stdioDesktopOnly": "stdio 连接器只能在桌面端同步，请打开 Biber 桌面端同步此连接器。",
   "connector.kind.agent": "助理连接器",
   "connector.kind.builtin": "内置工具",
   "connector.kind.community": "市场工具",

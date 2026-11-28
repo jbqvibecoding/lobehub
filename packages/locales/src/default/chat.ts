@@ -41,7 +41,7 @@ export default {
   'sharePage.app.browserGuide.title.weibo':
     'Weibo can’t open the app directly. Open this page in your browser to continue.',
   'sharePage.app.fallback.desc':
-    'You may not have the LobeHub app yet, or this browser blocked the jump.',
+    'You may not have the Biber app yet, or this browser blocked the jump.',
   'sharePage.app.fallback.dismiss': 'Keep reading',
   'sharePage.app.fallback.download': 'Get the app',
   'sharePage.app.fallback.title': 'App didn’t open?',
@@ -437,7 +437,7 @@ export default {
   'cliDetectionTimeoutGuide.actions.openSystemTools': 'Open System Tools',
   'cliDetectionTimeoutGuide.actions.retry': 'Detect again',
   'cliDetectionTimeoutGuide.desc':
-    'LobeHub took too long to locate `{{command}}` from your login shell environment.',
+    'Biber took too long to locate `{{command}}` from your login shell environment.',
   'cliDetectionTimeoutGuide.errorDetails': 'Technical details',
   'cliDetectionTimeoutGuide.hint':
     'This is often caused by a slow shell startup script. Try again, or open System Tools to check the detected command path.',
@@ -746,7 +746,7 @@ export default {
   'heteroAgent.claudeQuota.calendar.monthlyHistory': 'Monthly windows',
   'heteroAgent.claudeQuota.calendar.noLedgerSpend': 'No token usage recorded in this window',
   'heteroAgent.claudeQuota.calendar.noLedgerSpendHint':
-    'Token history is only recorded for runs started in LobeHub after usage tracking was enabled. Earlier usage and runs started directly from the terminal cannot be backfilled.',
+    'Token history is only recorded for runs started in Biber after usage tracking was enabled. Earlier usage and runs started directly from the terminal cannot be backfilled.',
   'heteroAgent.claudeQuota.calendar.noLedgerSpendShort': 'History not recorded',
   'heteroAgent.claudeQuota.calendar.partialCost': 'at least {{cost}}',
   'heteroAgent.claudeQuota.calendar.partialCostCompact': '{{cost}}+',
@@ -817,7 +817,7 @@ export default {
   'heteroAgent.codexQuota.calendar.title': 'Codex usage calendar',
   'heteroAgent.codexQuota.doesNotExpire': 'Does not expire',
   'heteroAgent.codexQuota.errorConnection':
-    "Couldn't reach the Codex quota endpoint. Check your network or LobeHub proxy settings.",
+    "Couldn't reach the Codex quota endpoint. Check your network or Biber proxy settings.",
   'heteroAgent.codexQuota.errorGeneric': "Couldn't load Codex quota. Try again later.",
   'heteroAgent.codexQuota.expiresIn': 'Expires in {{duration}}',
   'heteroAgent.codexQuota.expiresSoon': 'Expires soon',
@@ -949,11 +949,11 @@ export default {
   'heteroAgent.cloudNotConfigured.desc':
     'Configure your Claude Code token in agent profile to start sending messages.',
   'heteroAgent.cloudNotConfigured.title': 'Cloud credentials required',
-  'heteroAgent.apiMode.agentUnsupported': '{{name}} does not support LobeHub Provider binding.',
+  'heteroAgent.apiMode.agentUnsupported': '{{name}} does not support Biber Provider binding.',
   'heteroAgent.apiMode.configMissing':
     'Provider binding requires a provider and model. Open the agent profile to configure it.',
   'heteroAgent.apiMode.defaultProviderConfigMissing':
-    'LobeHub requires a compatible model. Open the agent profile to select one.',
+    'Biber requires a compatible model. Open the agent profile to select one.',
   'heteroAgent.apiMode.credentialUnsupported':
     'The provider "{{providerId}}" uses an authentication method this agent does not support.',
   'heteroAgent.apiMode.credentialsMissing':
@@ -1241,11 +1241,11 @@ export default {
   'messageAction.regenerate': 'Regenerate',
   'messageAction.select': 'Select',
   'messageLink.openInSideBrowser': 'Open in side browser',
-  'clientLlmWait.title': 'Waiting for a LobeHub client to run {{provider}}',
+  'clientLlmWait.title': 'Waiting for a Biber client to run {{provider}}',
   'clientLlmWait.descHere':
     'This run needs {{provider}}, which only your own device can reach. Continue it on this device, or it stops waiting at {{time}}.',
   'clientLlmWait.descElsewhere':
-    'This run needs {{provider}}, which only your own device can reach. Open LobeHub on the device running {{provider}} and the run continues on its own. It stops waiting at {{time}}.',
+    'This run needs {{provider}}, which only your own device can reach. Open Biber on the device running {{provider}} and the run continues on its own. It stops waiting at {{time}}.',
   'clientLlmWait.continue': 'Continue on this device',
   'clientLlmWait.notWaiting':
     'This run is no longer waiting. It may have been picked up by another device, stopped, or timed out.',
@@ -1328,7 +1328,7 @@ export default {
   'messages.tokenDetails.average': 'Average price per 1M tokens',
   'messages.tokenDetails.cliCredits.title': '{{value}} Credits',
   'messages.tokenDetails.cliCredits.tooltip':
-    'Subscription credits reported by the agent CLI for this turn. The CLI bills in credits instead of reporting tokens; this is separate from your LobeHub usage.',
+    'Subscription credits reported by the agent CLI for this turn. The CLI bills in credits instead of reporting tokens; this is separate from your Biber usage.',
   'messages.tokenDetails.cacheRate': 'Cache rate',
   'messages.tokenDetails.input': 'Input',
   'messages.tokenDetails.inputAudio': 'Audio Input',
@@ -1398,7 +1398,7 @@ export default {
   'antigravityInstallGuide.desc':
     'Antigravity needs the native agy CLI with stream-json support. Follow the install guide for your operating system and make sure the `agy` command is available.',
   'antigravityInstallGuide.menuNotification.title': 'Antigravity CLI not found',
-  'antigravityInstallGuide.reason': 'LobeHub could not start Antigravity: {{message}}',
+  'antigravityInstallGuide.reason': 'Biber could not start Antigravity: {{message}}',
   'antigravityInstallGuide.title': 'Install Antigravity CLI',
   'connectAgent.providerDesc.antigravity': 'Google coding agent CLI',
   'ampInstallGuide.actions.openDocs': 'Open Install Guide',
@@ -1410,7 +1410,7 @@ export default {
   'ampInstallGuide.installWithBrew': 'Homebrew (macOS)',
   'ampInstallGuide.installWithNpm': 'Recommended install',
   'ampInstallGuide.menuNotification.title': 'Amp CLI not found',
-  'ampInstallGuide.reason': 'LobeHub could not start Amp: {{message}}',
+  'ampInstallGuide.reason': 'Biber could not start Amp: {{message}}',
   'ampInstallGuide.title': 'Install Amp CLI',
   'claudeCodeInstallGuide.actions.openDocs': 'Open Install Guide',
   'claudeCodeInstallGuide.actions.openSystemTools': 'Open System Tools',
@@ -1432,7 +1432,7 @@ export default {
   'codeBuddyInstallGuide.installWithBrew': 'Homebrew (macOS)',
   'codeBuddyInstallGuide.installWithNpm': 'Recommended install',
   'codeBuddyInstallGuide.menuNotification.title': 'CodeBuddy CLI not found',
-  'codeBuddyInstallGuide.reason': 'LobeHub could not start CodeBuddy: {{message}}',
+  'codeBuddyInstallGuide.reason': 'Biber could not start CodeBuddy: {{message}}',
   'codeBuddyInstallGuide.title': 'Install CodeBuddy CLI',
   'cliAuthGuide.actions.openDocs': 'Open Sign-in Guide',
   'cliAuthGuide.actions.openCloudCredentials': 'Update Cloud Token',
@@ -1517,7 +1517,7 @@ export default {
   'copilotInstallGuide.installWithBrew': 'Homebrew (macOS / Linux)',
   'copilotInstallGuide.installWithNpm': 'Recommended install',
   'copilotInstallGuide.menuNotification.title': 'GitHub Copilot CLI not found',
-  'copilotInstallGuide.reason': 'LobeHub could not start GitHub Copilot: {{message}}',
+  'copilotInstallGuide.reason': 'Biber could not start GitHub Copilot: {{message}}',
   'copilotInstallGuide.title': 'Install GitHub Copilot CLI',
   'cursorInstallGuide.actions.openDocs': 'Open Install Guide',
   'cursorInstallGuide.actions.openSystemTools': 'Open System Tools',
@@ -1527,7 +1527,7 @@ export default {
     'Cursor needs the Cursor CLI to run locally. Install it and make sure the `agent` command is available in your PATH.',
   'cursorInstallGuide.installWithNpm': 'Recommended install',
   'cursorInstallGuide.menuNotification.title': 'Cursor CLI not found',
-  'cursorInstallGuide.reason': 'LobeHub could not start Cursor: {{message}}',
+  'cursorInstallGuide.reason': 'Biber could not start Cursor: {{message}}',
   'cursorInstallGuide.title': 'Install Cursor CLI',
   'droidInstallGuide.actions.openDocs': 'Open Install Guide',
   'droidInstallGuide.actions.openSystemTools': 'Open System Tools',
@@ -1537,7 +1537,7 @@ export default {
     'Factory Droid needs the Droid CLI to run locally. Install it and make sure the `droid` command is available in your PATH.',
   'droidInstallGuide.installWithNpm': 'Recommended install',
   'droidInstallGuide.menuNotification.title': 'Factory Droid CLI not found',
-  'droidInstallGuide.reason': 'LobeHub could not start Factory Droid: {{message}}',
+  'droidInstallGuide.reason': 'Biber could not start Factory Droid: {{message}}',
   'droidInstallGuide.title': 'Install Factory Droid CLI',
   'devinInstallGuide.actions.openDocs': 'Open Install Guide',
   'devinInstallGuide.actions.openSystemTools': 'Open System Tools',
@@ -1548,7 +1548,7 @@ export default {
   'devinInstallGuide.installWithBrew': 'Windows PowerShell',
   'devinInstallGuide.installWithNpm': 'macOS / Linux / WSL',
   'devinInstallGuide.menuNotification.title': 'Devin CLI not found',
-  'devinInstallGuide.reason': 'LobeHub could not start Devin: {{message}}',
+  'devinInstallGuide.reason': 'Biber could not start Devin: {{message}}',
   'devinInstallGuide.title': 'Install Devin CLI',
   'grokBuildInstallGuide.actions.openDocs': 'Open Install Guide',
   'grokBuildInstallGuide.actions.openSystemTools': 'Open System Tools',
@@ -1559,7 +1559,7 @@ export default {
   'grokBuildInstallGuide.installWithBrew': 'Windows PowerShell',
   'grokBuildInstallGuide.installWithNpm': 'macOS / Linux',
   'grokBuildInstallGuide.menuNotification.title': 'Grok Build CLI not found',
-  'grokBuildInstallGuide.reason': 'LobeHub could not start Grok Build: {{message}}',
+  'grokBuildInstallGuide.reason': 'Biber could not start Grok Build: {{message}}',
   'grokBuildInstallGuide.title': 'Install Grok Build CLI',
   'workingDirectoryGuide.actions.resetToSource': 'Switch back to {{name}} and retry',
   'workingDirectoryGuide.actions.retry': 'Retry',
@@ -1581,7 +1581,7 @@ export default {
   'opencodeInstallGuide.installWithBrew': 'Alternative install',
   'opencodeInstallGuide.installWithNpm': 'Recommended install',
   'opencodeInstallGuide.menuNotification.title': 'OpenCode CLI not found',
-  'opencodeInstallGuide.reason': 'LobeHub could not start OpenCode: {{message}}',
+  'opencodeInstallGuide.reason': 'Biber could not start OpenCode: {{message}}',
   'opencodeInstallGuide.title': 'Install OpenCode CLI',
   'piInstallGuide.actions.openDocs': 'Open Install Guide',
   'piInstallGuide.actions.openSystemTools': 'Open System Tools',
@@ -1591,7 +1591,7 @@ export default {
     'Pi needs its CLI to run locally. Install it and make sure the pi command is available in your PATH.',
   'piInstallGuide.installWithNpm': 'Recommended install',
   'piInstallGuide.menuNotification.title': 'Pi CLI not found',
-  'piInstallGuide.reason': 'LobeHub could not start Pi: {{message}}',
+  'piInstallGuide.reason': 'Biber could not start Pi: {{message}}',
   'piInstallGuide.title': 'Install Pi CLI',
   'qoderInstallGuide.actions.openDocs': 'Open Install Guide',
   'qoderInstallGuide.actions.openSystemTools': 'Open System Tools',
@@ -1602,7 +1602,7 @@ export default {
   'qoderInstallGuide.installWithBrew': 'npm install',
   'qoderInstallGuide.installWithNpm': 'Recommended install',
   'qoderInstallGuide.menuNotification.title': 'Qoder CLI not found',
-  'qoderInstallGuide.reason': 'LobeHub could not start Qoder: {{message}}',
+  'qoderInstallGuide.reason': 'Biber could not start Qoder: {{message}}',
   'qoderInstallGuide.title': 'Install Qoder CLI',
   'quickChatSwitcher.empty': 'No agents found',
   'quickChatSwitcher.more': 'More agents',
@@ -1616,7 +1616,7 @@ export default {
   'kimiCodeInstallGuide.installWithBrew': 'Windows PowerShell',
   'kimiCodeInstallGuide.installWithNpm': 'Recommended install',
   'kimiCodeInstallGuide.menuNotification.title': 'Kimi Code CLI not found',
-  'kimiCodeInstallGuide.reason': 'LobeHub could not start Kimi Code: {{message}}',
+  'kimiCodeInstallGuide.reason': 'Biber could not start Kimi Code: {{message}}',
   'kimiCodeInstallGuide.title': 'Install Kimi Code CLI',
   'traeInstallGuide.actions.openDocs': 'Open official docs',
   'traeInstallGuide.actions.openSystemTools': 'Open System Tools',
@@ -1625,7 +1625,7 @@ export default {
   'traeInstallGuide.desc':
     'TRAE CLI requires the TRAE Enterprise (TraeCode) command-line tool. Follow the official documentation to install or enable it for your account.',
   'traeInstallGuide.menuNotification.title': 'TRAE CLI not found',
-  'traeInstallGuide.reason': 'LobeHub could not start TRAE CLI: {{message}}',
+  'traeInstallGuide.reason': 'Biber could not start TRAE CLI: {{message}}',
   'traeInstallGuide.title': 'Install TRAE CLI',
   'addAgent': 'Add Agent',
   'addAgentFromList': 'Add from Agent list',
@@ -4136,7 +4136,7 @@ export default {
   'workingPanel.overview.pr.autoFix.disableFailed': "Couldn't turn off Auto-fix for {{name}}",
   'workingPanel.overview.pr.autoFix.enableFailed': "Couldn't turn on Auto-fix for {{name}}",
   'workingPanel.overview.pr.autoFix.noApp':
-    'Install the LobeHub GitHub App on this repository to use Auto-fix',
+    'Install the Biber GitHub App on this repository to use Auto-fix',
   'workingPanel.overview.pr.autoFix.openOwner': 'Go to that topic',
   'workingPanel.overview.pr.autoFix.otherTopic': 'Notifies the agent in the topic "{{title}}"',
   'workingPanel.overview.pr.autoFix.otherTopicHidden': 'Notifies the agent in another topic',

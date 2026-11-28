@@ -322,7 +322,7 @@
   "acceptance.local.save": "Enregistrer les avis",
   "acceptance.local.saved": "Enregistré {{file}}. Informez votre agent que vous avez terminé l'évaluation.",
   "acceptance.local.share": "Partager",
-  "acceptance.local.shareHint": "Les commentaires, mentions et un lien partageable nécessitent LobeHub. Demandez à votre agent de publier cette acceptation, ou exécutez :",
+  "acceptance.local.shareHint": "Les commentaires, mentions et un lien partageable nécessitent Biber. Demandez à votre agent de publier cette acceptation, ou exécutez :",
   "acceptance.local.shareTitle": "Évaluer avec votre équipe",
   "acceptance.local.unsaved": "{{count}} avis non enregistré(s)",
   "acceptance.notFound.description": "Il a peut-être été supprimé ou n'a jamais été partagé avec vous.",

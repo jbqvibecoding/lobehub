@@ -39,7 +39,7 @@
   "features.selfLearning.title": "Autoevolución",
   "features.taskVerify.desc": "Agrega una sección de aceptación de entrega a los detalles de la tarea: describe la aceptación en una frase y permite que la IA genere criterios de verificación editables.",
   "features.taskVerify.title": "Aceptación de Entrega de Tarea",
-  "features.topicBugReport.desc": "Agrega Informar un Problema al menú del tema. Envía los IDs del tema y el entorno de tu aplicación al equipo de soporte de LobeHub, quienes investigan lo sucedido a partir de ahí.",
+  "features.topicBugReport.desc": "Agrega Informar un Problema al menú del tema. Envía los IDs del tema y el entorno de tu aplicación al equipo de soporte de Biber, quienes investigan lo sucedido a partir de ahí.",
   "features.topicBugReport.title": "Informar un Problema con un Tema",
   "group.desktop": "Escritorio",
   "group.general": "General",

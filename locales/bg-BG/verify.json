@@ -322,7 +322,7 @@
   "acceptance.local.save": "Запази прегледите",
   "acceptance.local.saved": "Запазено {{file}}. Кажете на вашия агент, че сте приключили с прегледа.",
   "acceptance.local.share": "Сподели",
-  "acceptance.local.shareHint": "Коментари, споменавания и споделим линк изискват LobeHub. Помолете вашия агент да публикува този преглед или изпълнете:",
+  "acceptance.local.shareHint": "Коментари, споменавания и споделим линк изискват Biber. Помолете вашия агент да публикува този преглед или изпълнете:",
   "acceptance.local.shareTitle": "Прегледайте с вашия екип",
   "acceptance.local.unsaved": "{{count}} незапазен(и) преглед(и)",
   "acceptance.notFound.description": "Може да е било изтрито или никога не е било споделено с вас.",

@@ -55,7 +55,7 @@ export const translation = async (ns: NS = 'common', hl: string) => {
       }
       // Mirror the client's brand post-processor (packages/locales/src/create.ts)
       // so SSR copy does not leak the upstream product's names either.
-      return applyBrandStrings(content);
+      return applyBrandStrings(content, `${ns}:${key}`);
     },
   };
 };

@@ -54,7 +54,7 @@ export default {
   'environment.configurationFailed': 'Could not load this Agent’s settings. Try again.',
   'environment.configurationLoading': 'Loading this Agent’s settings…',
   'environment.connectorUpgradeRequired':
-    'This device’s LobeHub connector needs an update. Update LobeHub Desktop or the LobeHub CLI on that device, then reconnect and try again.',
+    'This device’s Biber connector needs an update. Update Biber Desktop or the LobeHub CLI on that device, then reconnect and try again.',
   'environment.deviceLabel': 'Device for {{name}}',
   'environment.deviceOffline': 'This device is offline. Reconnect it or choose another device.',
   'environment.deviceUnreachable':

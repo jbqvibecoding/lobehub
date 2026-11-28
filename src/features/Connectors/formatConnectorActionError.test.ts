@@ -15,9 +15,9 @@ describe('formatConnectorActionErrorToast', () => {
   it.each([
     [
       'en-US',
-      'Stdio connectors can only sync in the desktop app. Open LobeHub Desktop to sync this connector.',
+      'Stdio connectors can only sync in the desktop app. Open Biber Desktop to sync this connector.',
     ],
-    ['zh-CN', 'stdio 连接器只能在桌面端同步，请打开 LobeHub 桌面端同步此连接器。'],
+    ['zh-CN', 'stdio 连接器只能在桌面端同步，请打开 Biber 桌面端同步此连接器。'],
   ])(
     'explains the desktop-only restriction in %s without raw diagnostics',
     async (lng, expected) => {

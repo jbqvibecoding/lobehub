@@ -277,6 +277,8 @@ bunx tsx scripts/biber/ops.ts bot list
    - `proactive.ts` 要求服务端设 `CRON_SECRET` 和 `EXPO_BASE_URL=http://127.0.0.1:4020`，运行时带上 `SMOKE_CRON_SECRET`
      和指向服务端数据库的 `SMOKE_DATABASE_URL`：记忆整理在本地不运行，脚本直接往数据库写一条活动，并把上次检查的时间改早。
      国内版运行时再带 `APP_REGION=cn`、`SMOKE_MODEL_PROVIDER=deepseek`、`SMOKE_MODEL=deepseek-chat`。
+     对着 `next dev` 跑时再带 `SMOKE_DEV_SERVER=1`：开发服务器没配 QStash 时放行工作流调用（上游为本地执行留的），
+     "不带密钥被拒" 那一步就跳过；生产环境照样拒绝，`qstashAuth.test.ts` 钉住这一条。
    - `reminders.ts` 的设置同 `proactive.ts`。国内版用 `SMOKE_MODEL=deepseek-v4-flash`：模型库里只有别的厂商列着
      `deepseek-chat`，查出来的是 32k 的上下文窗口，第一条消息就会触发对话压缩。
    - `experts.ts` 只要模型替身和指向服务端数据库的 `SMOKE_DATABASE_URL`（把这个账号的 Agent 都改成用替身的模型）。
@@ -299,7 +301,8 @@ bunx tsx scripts/biber/ops.ts bot list
      `GITHUB_API_URL` 和 `GITHUB_WEB_URL` 都设 `http://127.0.0.1:4150`、`GITHUB_APP_ID=4242`、`GITHUB_APP_SLUG=biber-smoke`、
      `GITHUB_APP_CLIENT_ID=Iv1.smoke`、`GITHUB_APP_CLIENT_SECRET=smoke`、`GITHUB_APP_PRIVATE_KEY`（`openssl genrsa 2048` 现生成一把）、
      `JWKS_KEY`（见第 20 节）和 `LOBEHUB_HETERO_SANDBOX_CWD=<脚本的工作目录>`（默认 `$TMPDIR/biber-coding-workspace`，
-     脚本用 `SMOKE_CODING_WORKSPACE` 改）。本机要有 Bun、Node 和 tar：编程电脑用 Bun 直接跑 `apps/cli` 里的 `lh`。
+     脚本用 `SMOKE_CODING_WORKSPACE` 改，两边必须是同一个目录）。本机要有 Bun、Node 和 tar：编程电脑用 Bun 直接跑 `apps/cli` 里的 `lh`。
+     中途失败时，编程电脑上的 `fake-claude.mjs` 和 `lh hetero exec` 可能留着，下一次跑之前先结束它们。
      运行时带 `SMOKE_DATABASE_URL`；国内版再带 `APP_REGION=cn`、`SMOKE_MODEL_PROVIDER=deepseek`、`SMOKE_MODEL=deepseek-v4-flash`。
    - `profile-interview.ts` 和 `reminders.ts` 要的一样：服务端设 `CRON_SECRET`，运行时带上 `SMOKE_CRON_SECRET` 和
      `SMOKE_DATABASE_URL`；国内版再带 `APP_REGION=cn`、`SMOKE_MODEL_PROVIDER=deepseek`、`SMOKE_MODEL=deepseek-v4-flash`。
@@ -313,31 +316,45 @@ bunx tsx scripts/biber/ops.ts bot list
      加上 `NODE_OPTIONS="--import ./scripts/biber/smoke/redirect-hosts.mjs"`。不设 `SMOKE_REDIRECT_HOSTS` 时它什么也不做，
      生产环境也不会加载它。
 
-冒烟脚本像网页端一样按手动审批启动运行。后台运行怎么请手机审批，见 [决策记录](./decisions.md) 第 5 条。
+冒烟脚本像网页端一样按手动审批启动运行。上游在 agent 模式下把云沙箱等工具改成按需加载（先调 `activateTools`），
+假模型也照这样做：要用的工具只在 `<available_tools>` 里时，先激活再调用（`fake-services/model.ts` 的 `decideReply`）。后台运行怎么请手机审批，见 [决策记录](./decisions.md) 第 5 条。
 
 ## 10. 持续集成
 
 上游的 `Test CI`（`.github/workflows/test.yml`）不跑 Biber 加的这些：根目录的 vitest 排除了 `packages/**`、
 `apps/mobile`，也没有 bun 测试。`Biber CI`（`.github/workflows/biber.yml`）补上：
 
-| 任务              | 内容                                                                        |
-| ----------------- | --------------------------------------------------------------------------- |
-| Biber packages    | `@lobechat/region`、`@lobechat/billing`、`@lobechat/agent-policy` 的测试    |
-| Migration journal | `scripts/biber/check-migrations.ts`：迁移编号连续不重复、文件齐全、时间递增 |
-| Phone app         | `apps/mobile` 的类型检查和 jest 测试                                        |
-| Agent computers   | `apps/computer` 两个 Bun 项目的类型检查和 `bun test`                        |
+| 任务                        | 内容                                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Biber packages              | `@lobechat/region`、`@lobechat/billing`、`@lobechat/agent-policy` 的测试                              |
+| Migration journal and brand | `scripts/biber/check-migrations.ts`：迁移编号连续不重复、文件齐全、时间递增；两个品牌脚本的 `--check` |
+| Phone app                   | `apps/mobile` 的类型检查和 jest 测试                                                                  |
+| Agent computers             | `apps/computer` 两个 Bun 项目的类型检查和 `bun test`                                                  |
 
-每次合并上游后先跑 `bunx tsx scripts/biber/check-migrations.ts` 和 `node scripts/brand/rename-assistant.mjs`。
+每次合并上游后先跑：
 
-**上游自带的失败（2026-11-13，基线 `ae2c2710`）。** 仓库设置了 `lockfile: false`，每次安装都取依赖的最新版本，
-以下失败与 Biber 的改动无关，在上游的同一份代码上也会出现。合并上游后重新核对：
+- `bunx tsx scripts/biber/check-migrations.ts`。上游只保留最新的 10 个 snapshot（`scripts/pruneMigrationSnapshots`），
+  所以检查只要求最新的那个在；
+- `node scripts/brand/rename-assistant.mjs`：上游新文案里的 "Lobe AI" 改成 Biber；
+- `bunx tsx scripts/brand/rename-product.ts`：上游新文案里的产品名 LobeHub（和旧名 LobeChat）改成 Biber，
+  LobeHub Cloud、社区、Market 和它的技能、CLI 保留。规则在 `packages/locales/src/brandRule.ts`，运行时替换翻译
+  （`brandPostProcessor.ts`）用的是同一份：按词保留（各语言里的 Cloud、市场、클라우드……），按键保留意思上指
+  LobeHub 服务的文案（`KEPT_BY_MEANING`），英文只提到这些服务的键各语言都保留（脚本算出来写进 `brandKeptKeys.ts`）。
+  新文案里指 LobeHub 服务、但用词看不出来的，把键加进 `KEPT_BY_MEANING` 再跑；
+- 两个品牌脚本都带 `--check` 时只列出还要改的地方，CI 用这个；
+- 给模型看的服务端文字（提示词、计费说明）不在脚本里，合并时照旧逐条看。
 
-- 类型检查 12 个错误（`src/services/message/__tests__/metadata-race-condition.test.ts` 等）；
-- `bun run lint` 的 ESLint 有约 2000 处 `no-restricted-imports`（旧的 `@lobehub/ui` / `antd` 引用），
-  所以 `Test Database` 任务的 lint 步骤失败；
-- `@lobechat/model-runtime`：`newapi` 的一个 baseURL 测试；
-- 服务端：`search/impls/jina` 的两个测试；
-- 应用：`ContentBlock` 三个、`WorkflowCollapse` 一个、`oidc-provider/http-adapter` 一个测试。
+**上游自带的失败（2026-11-28，基线 `2d5beaa2`）。** 仓库设置了 `lockfile: false`，每次安装都取依赖的最新版本。
+上游换了工具链：lint 是 oxlint（`bun run check --lint <文件>`），类型检查是 tsrs（`bun run type-check`，一次跑完，
+约 3.5 GB 内存）。下面这些与 Biber 的改动无关，在上游的同一份代码上也会出现。合并上游后重新核对：
+
+- tsrs 用上游的配置（`tsconfig.type-check.json`，不含测试）有 9 个错误，都在 `src/app/` 的 Next 路由文件上：
+  装出了两个 Next 版本（16.3.8 和 16.4.5），类型对不上；
+- 含测试的整个项目（`-p tsconfig.json`）有上千个错误，大多在上游的测试上，只核对 Biber 改过的行；
+- 两个上游自己就超过 1200 行的文件：`apps/cli/src/commands/hetero/index.ts`、
+  `apps/server/src/services/toolExecution/__tests__/index.test.ts`；
+- CLI 的 Pi 真进程启动测试（`hetero/index.startup.test.ts`）缺 `tinyexec`：CLI 有自己的 pnpm workspace，
+  先在 `apps/cli` 里单独 `pnpm install`（CI 就是这样装的）。
 
 另外 `lint:style` 带 `--fix`，本地跑会直接改文件。
 
@@ -430,10 +447,11 @@ Electron 本身已由 `apps/desktop/.npmrc` 和 `electron-builder.mjs` 从 npmmi
 | `/api/agent/approvals/expire`                  | GET  | 每小时     | 24 小时没人回答的后台审批按拒绝处理，见第 5 节                                  | 等审批的任务一直停在 "运行中"                                                   |
 | `/api/workflows/task/watchdog`                 | POST | 每 10 分钟 | 超过心跳时限仍在运行中的任务标为失败，并给用户留一条简报                        | 卡住的任务一直显示 "运行中"                                                     |
 | `/api/workflows/task/scheduled-topic-dispatch` | POST | 每 10 分钟 | 因模型限流推迟的对话，到时间后接着运行                                          | 被限流打断的对话不会自动继续                                                    |
+| `/api/agent/reap-operations`                   | GET  | 每 5 分钟  | 上游的：执行中途主机没了的运行，重新派发或标为失败                              | 主机重启时正在跑的运行一直卡着                                                  |
 
 **鉴权：** 调用带 `Authorization: Bearer <CRON_SECRET>`。`/api/workflows/*` 也接受 QStash 的签名
 （配了 `QSTASH_CURRENT_SIGNING_KEY` 和 `QSTASH_NEXT_SIGNING_KEY` 时）；两样都没配，生产环境返回 503，开发环境不检查。
-`/api/agent/approvals/expire` 只认 `CRON_SECRET`。`ops.ts doctor` 会检查生产环境至少配了其中一样。
+`/api/agent/approvals/expire` 和 `/api/agent/reap-operations` 只认 `CRON_SECRET`。`ops.ts doctor` 会检查生产环境至少配了其中一样。
 
 **国际版：** 用 QStash 时，在 Upstash 控制台给这些地址建 Schedule，频率同上；也可以和国内版一样用 cron。
 
@@ -445,6 +463,7 @@ Electron 本身已由 `apps/desktop/.npmrc` 和 `electron-builder.mjs` 从 npmmi
 */5 * * * * curl -fsS -X POST -H "Authorization: Bearer CRON_SECRET" "APP_URL/api/workflows/task/schedule-dispatch"
 */5 * * * * curl -fsS -X POST -H "Authorization: Bearer CRON_SECRET" "APP_URL/api/workflows/proactive/tick"
 0 * * * * curl -fsS -H "Authorization: Bearer CRON_SECRET" "APP_URL/api/agent/approvals/expire"
+*/5 * * * * curl -fsS -H "Authorization: Bearer CRON_SECRET" "APP_URL/api/agent/reap-operations"
 */10 * * * * curl -fsS -X POST -H "Authorization: Bearer CRON_SECRET" "APP_URL/api/workflows/task/watchdog"
 */10 * * * * curl -fsS -X POST -H "Authorization: Bearer CRON_SECRET" "APP_URL/api/workflows/task/scheduled-topic-dispatch"
 ```
@@ -715,6 +734,9 @@ Market 镜像里缺这几个 Node 库时，它会先按固定版本 `npm install
 | `CODING_BASE_URL`                                                                                                | 可选，换一个 Anthropic 格式的地址；默认 Anthropic 官方（或 `ANTHROPIC_PROXY_URL`）和 `https://api.deepseek.com/anthropic` |
 | `GITHUB_APP_ID`、`GITHUB_APP_SLUG`、`GITHUB_APP_PRIVATE_KEY`、`GITHUB_APP_CLIENT_ID`、`GITHUB_APP_CLIENT_SECRET` | Biber 的 GitHub App，下面注册。少一个，手机上的 "GitHub" 就显示不可用                                                     |
 | `GITHUB_API_URL`、`GITHUB_WEB_URL`                                                                               | 可选，GitHub Enterprise 或本地替身的地址                                                                                  |
+
+**不要设 `GITHUB_APP_WEBHOOK_SECRET`。** 上游自带一套 GitHub App（`scm_*`，跟踪 PR、CI），用的是同样的 `GITHUB_APP_*`
+变量名，只在还设了这个变量时启用。Biber 不设它，上游那套就保持关闭；以后要用上游的 PR 跟踪，再评估两套怎么合。
 
 **注册 GitHub App：**
 

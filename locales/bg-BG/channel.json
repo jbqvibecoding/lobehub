@@ -56,7 +56,7 @@
   "environment.chooseDevice": "Изберете устройство",
   "environment.configurationFailed": "Не може да се заредят настройките на този агент. Опитайте отново.",
   "environment.configurationLoading": "Зареждане на настройките на този агент…",
-  "environment.connectorUpgradeRequired": "Конекторът LobeHub на това устройство се нуждае от актуализация. Актуализирайте LobeHub Desktop или LobeHub CLI на това устройство, след което се свържете отново и опитайте пак.",
+  "environment.connectorUpgradeRequired": "Конекторът Biber на това устройство се нуждае от актуализация. Актуализирайте Biber Desktop или LobeHub CLI на това устройство, след което се свържете отново и опитайте пак.",
   "environment.deviceLabel": "Устройство за {{name}}",
   "environment.deviceOffline": "Това устройство е офлайн. Свържете го отново или изберете друго устройство.",
   "environment.deviceRequired": "Изберете онлайн устройство за този кодиращ агент.",

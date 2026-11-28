@@ -359,7 +359,7 @@
   "acceptance.local.save": "保存评审",
   "acceptance.local.saved": "已保存 {{file}}。告诉 Agent 你已评审完即可。",
   "acceptance.local.share": "分享",
-  "acceptance.local.shareHint": "评论、@ 提及和分享链接需要 LobeHub。让 Agent 发布这份验收，或运行：",
+  "acceptance.local.shareHint": "评论、@ 提及和分享链接需要 Biber。让 Agent 发布这份验收，或运行：",
   "acceptance.local.shareTitle": "和团队一起评审",
   "acceptance.local.unsaved": "{{count}} 条评审未保存",
   "acceptance.notFound.back": "返回验收列表",

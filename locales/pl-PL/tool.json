@@ -112,7 +112,7 @@
   "connector.edit.success": "Konektor zaktualizowany",
   "connector.enabled": "Włączony",
   "connector.error.network": "Połączenie sieciowe zostało przerwane. Sprawdź swoje połączenie i spróbuj ponownie.",
-  "connector.error.stdioDesktopOnly": "Konektory Stdio mogą synchronizować się tylko w aplikacji desktopowej. Otwórz LobeHub Desktop, aby zsynchronizować ten konektor.",
+  "connector.error.stdioDesktopOnly": "Konektory Stdio mogą synchronizować się tylko w aplikacji desktopowej. Otwórz Biber Desktop, aby zsynchronizować ten konektor.",
   "connector.kind.agent": "Konektor agenta",
   "connector.kind.builtin": "Wbudowane narzędzie",
   "connector.kind.community": "Narzędzie z Rynku",

@@ -126,7 +126,7 @@
   "remoteServer.statusConnected": "Đã kết nối",
   "remoteServer.statusDisconnected": "Chưa kết nối",
   "remoteServer.urlRequired": "Vui lòng nhập địa chỉ máy chủ",
-  "startupUpdate.applying": "Đang khởi động lại LobeHub…",
+  "startupUpdate.applying": "Đang khởi động lại Biber…",
   "startupUpdate.checking": "Đang kiểm tra cập nhật…",
   "startupUpdate.downloading": "Đang tải xuống bản cập nhật",
   "startupUpdate.error": "Không thể hoàn tất cập nhật",

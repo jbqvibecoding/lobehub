@@ -14,6 +14,7 @@ import { getTestDB } from '@lobechat/database/test-utils';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { HumanApprovalAlreadyResolvedError, MessageModel } from '@/database/models/message';
 import { createTestUser } from '@/server/routers/lambda/__tests__/integration/setup';
 
 import { BACKGROUND_APPROVAL_TTL_MS } from '../background';
@@ -26,10 +27,36 @@ const { mockExecAgent, mockQueueMode } = vi.hoisted(() => ({
 }));
 
 vi.mock('@/server/services/aiAgent', () => ({
-  AiAgentService: vi.fn().mockImplementation(function () {
-    return { execAgent: mockExecAgent };
+  AiAgentService: vi.fn().mockImplementation(function (
+    db: LobeChatDatabase,
+    userId: string,
+    options?: { workspaceId?: string },
+  ) {
+    return { execAgent: (params: any) => mockExecAgent(params, { db, userId, ...options }) };
   }),
 }));
+
+/**
+ * The resumed run claims the answer at upstream's exactly-once boundary before it does anything
+ * else; the stand-in does the same, so a second answer finds it taken.
+ */
+const claimLikeTheResumedRun = async (
+  params: any,
+  { db, userId, workspaceId }: { db: LobeChatDatabase; userId: string; workspaceId?: string },
+) => {
+  const { decision, parentMessageId, rejectionReason } = params.resumeApproval;
+  await new MessageModel(db, userId, workspaceId).resolveHumanApproval([
+    {
+      id: parentMessageId,
+      intervention: {
+        rejectedReason: rejectionReason,
+        resolutionRequestId: 'resolution-1',
+        status: decision === 'approved' ? 'approved' : 'rejected',
+      },
+    },
+  ]);
+  return { operationId: 'op-resumed' };
+};
 vi.mock('@/server/services/queue/impls', () => ({
   isQueueAgentRuntimeEnabled: mockQueueMode,
 }));
@@ -75,7 +102,7 @@ const pendingCallIn = async (
     arguments: '{"to":"ana@example.com"}',
     id: `tool-${userId}`,
     identifier: 'gmail-mcp',
-    intervention: { status: 'pending' },
+    intervention: { operationId: 'op-paused', status: 'pending' },
     toolCallId: 'call-1',
     type: 'mcp',
     userId,
@@ -86,7 +113,7 @@ const pendingCallIn = async (
 beforeEach(async () => {
   db = await getTestDB();
   mockExecAgent.mockReset();
-  mockExecAgent.mockResolvedValue({ operationId: 'op-resumed' });
+  mockExecAgent.mockImplementation(claimLikeTheResumedRun);
   mockQueueMode.mockReturnValue(true);
 });
 
@@ -104,7 +131,10 @@ describe('answerToolApproval', () => {
 
     const params = mockExecAgent.mock.calls[0][0];
     expect(params).toMatchObject({
+      // The resumed run takes the conversation over from the run that paused
+      approvalSourceOperationId: 'op-paused',
       botContext: telegramChat,
+      replacesOperationId: 'op-paused',
       resumeApproval: { decision: 'approved', toolCallId: 'call-1', via: 'telegram' },
       trigger: 'bot',
       userInterventionConfig: { approvalMode: 'manual' },
@@ -147,6 +177,15 @@ describe('answerToolApproval', () => {
       answerToolApproval(db, { decision: 'rejected', toolMessageId, userId, via: 'mobile' }),
     ).rejects.toEqual(new ToolApprovalError('CONFLICT', 'This tool call was already answered'));
     expect(mockExecAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports CONFLICT when another answer wins the claim in the resumed run', async () => {
+    const { toolMessageId, userId } = await pendingCallIn();
+    mockExecAgent.mockRejectedValueOnce(new HumanApprovalAlreadyResolvedError(toolMessageId));
+
+    await expect(
+      answerToolApproval(db, { decision: 'approved', toolMessageId, userId, via: 'mobile' }),
+    ).rejects.toEqual(new ToolApprovalError('CONFLICT', 'This tool call was already answered'));
   });
 });
 
@@ -256,7 +295,7 @@ describe('expireBackgroundApprovals', () => {
       .select()
       .from(messagePlugins)
       .where(eq(messagePlugins.id, toolMessageId));
-    expect(plugin.intervention).toEqual({ status: 'rejected' });
+    expect(plugin.intervention).toMatchObject({ status: 'rejected' });
   });
 
   it('leaves recent requests and requests in chats waiting', async () => {

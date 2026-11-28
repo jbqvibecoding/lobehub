@@ -126,7 +126,7 @@
   "remoteServer.statusConnected": "Bağlandı",
   "remoteServer.statusDisconnected": "Bağlı değil",
   "remoteServer.urlRequired": "Lütfen sunucu adresini girin",
-  "startupUpdate.applying": "LobeHub yeniden başlatılıyor…",
+  "startupUpdate.applying": "Biber yeniden başlatılıyor…",
   "startupUpdate.checking": "Güncellemeler kontrol ediliyor…",
   "startupUpdate.downloading": "Güncelleme indiriliyor",
   "startupUpdate.error": "Güncelleme tamamlanamadı",

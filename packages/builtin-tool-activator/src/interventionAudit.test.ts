@@ -22,6 +22,18 @@ describe('activateToolsAudit', () => {
     expect(await activateToolsAudit({ identifiers: ['artboard'] }, metadata)).toBe(true);
   });
 
+  it("lets the agent's own deferred plugins through, and still asks for anything else", async () => {
+    const carried = { agentPluginIds: ['lobe-cloud-sandbox'], enabledToolIds: [] };
+
+    expect(await activateToolsAudit({ identifiers: ['lobe-cloud-sandbox'] }, carried)).toBe(false);
+    expect(
+      await activateToolsAudit({ identifiers: ['lobe-cloud-sandbox____executeCode'] }, carried),
+    ).toBe(false);
+    expect(
+      await activateToolsAudit({ identifiers: ['lobe-cloud-sandbox', 'lobe-notebook'] }, carried),
+    ).toBe(true);
+  });
+
   it('asks when the run reports no enabled tools or the request is empty', async () => {
     expect(await activateToolsAudit({ identifiers: ['builtin-artboard'] }, {})).toBe(true);
     expect(await activateToolsAudit({ identifiers: [] }, metadata)).toBe(true);

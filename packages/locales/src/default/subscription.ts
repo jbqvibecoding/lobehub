@@ -434,7 +434,7 @@ export default {
   'limitation.insufficientBudget.required': 'Required amount',
   'limitation.insufficientBudget.rescue.basic.configApi': 'Set up API key',
   'limitation.insufficientBudget.rescue.basic.desc':
-    "Basic doesn't include LobeHub-hosted model usage, and your free allowance is used up",
+    "Basic doesn't include Biber-hosted model usage, and your free allowance is used up",
   'limitation.insufficientBudget.rescue.basic.ownKeyHint':
     'Models on your own API key keep working.',
   'limitation.insufficientBudget.rescue.desc': 'This request needs {{shortfall}} more to continue',
@@ -668,7 +668,7 @@ export default {
   'plans.limits.agentRunCredit.ownKey': 'Use your own API key',
   'plans.limits.agentRunCredit.runs': '{{runs}} platform run fees/mo',
   'plans.limits.agentRunCredit.tooltip':
-    'Covers platform run fees for agent tasks only, not model usage. LobeHub adds nothing for models on your own API key; LobeHub-hosted models draw on your free allowance and top-ups.',
+    'Covers platform run fees for agent tasks only, not model usage. Biber adds nothing for models on your own API key; Biber-hosted models draw on your free allowance and top-ups.',
   'plans.limits.agentRunFee': '{{value}} per agent task',
   'plans.limits.agentRunFee.tooltip':
     'Charged from your balance when an agent task you start finishes, on top of its model usage. Tasks that fail, or that you stop within 30 seconds, are free.',
@@ -782,7 +782,7 @@ export default {
   'plans.plan.free.desc': 'For first-time users',
   'plans.plan.free.title': 'Free',
   'plans.plan.basic.desc':
-    'Run agents with your own model API keys. LobeHub-hosted model usage not included',
+    'Run agents with your own model API keys. Biber-hosted model usage not included',
   'plans.plan.basic.title': 'Basic',
   'plans.plan.hobby.desc': 'For users with their own API who pay as they go',
   'plans.plan.hobby.title': 'Hobby',

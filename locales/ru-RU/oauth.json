@@ -43,7 +43,7 @@
   "consent.scope.sync-read": "Чтение ваших синхронизированных данных",
   "consent.scope.sync-write": "Запись и обновление ваших синхронизированных данных",
   "consent.thirdParty.developedBy": "Разработано {{developerName}}",
-  "consent.thirdParty.notice": "Это приложение создано сторонним разработчиком и не управляется LobeHub. После авторизации оно может действовать от вашего имени и использовать квоту вашего аккаунта.",
+  "consent.thirdParty.notice": "Это приложение создано сторонним разработчиком и не управляется Biber. После авторизации оно может действовать от вашего имени и использовать квоту вашего аккаунта.",
   "consent.thirdParty.privacyPolicy": "Политика конфиденциальности",
   "consent.thirdParty.unknownDeveloper": "сторонним разработчиком",
   "consent.title": "Разрешить {{clientName}}",

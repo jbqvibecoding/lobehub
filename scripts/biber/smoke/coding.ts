@@ -113,6 +113,9 @@ const allFiles = async (dir: string): Promise<{ file: string; text: string }[]> 
   const found: { file: string; text: string }[] = [];
   for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
     const file = path.join(dir, entry.name);
+    // Bun's own cache holds the CLI's libraries, transpiled: library source, which names
+    // `client_secret` as an OAuth field, not anything the run was given
+    if (entry.isDirectory() && entry.name === '.bun') continue;
     if (entry.isDirectory()) found.push(...(await allFiles(file)));
     else if (entry.isFile() && (await stat(file)).size < 5_000_000) {
       found.push({ file, text: await readFile(file, 'latin1') });

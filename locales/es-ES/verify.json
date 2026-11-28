@@ -322,7 +322,7 @@
   "acceptance.local.save": "Guardar revisiones",
   "acceptance.local.saved": "Guardado {{file}}. Dile a tu agente que has terminado de revisar.",
   "acceptance.local.share": "Compartir",
-  "acceptance.local.shareHint": "Los comentarios, menciones y un enlace compartible necesitan LobeHub. Pídele a tu agente que publique esta aceptación, o ejecuta:",
+  "acceptance.local.shareHint": "Los comentarios, menciones y un enlace compartible necesitan Biber. Pídele a tu agente que publique esta aceptación, o ejecuta:",
   "acceptance.local.shareTitle": "Revisar con tu equipo",
   "acceptance.local.unsaved": "{{count}} revisión(es) no guardada(s)",
   "acceptance.notFound.description": "Puede que haya sido eliminado o que nunca se haya compartido contigo.",

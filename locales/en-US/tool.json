@@ -181,7 +181,7 @@
   "connector.edit.success": "Connector updated",
   "connector.enabled": "Enabled",
   "connector.error.network": "The network connection was interrupted. Check your connection and try again.",
-  "connector.error.stdioDesktopOnly": "Stdio connectors can only sync in the desktop app. Open LobeHub Desktop to sync this connector.",
+  "connector.error.stdioDesktopOnly": "Stdio connectors can only sync in the desktop app. Open Biber Desktop to sync this connector.",
   "connector.kind.agent": "Agent connector",
   "connector.kind.builtin": "Built-in tool",
   "connector.kind.community": "Marketplace tool",

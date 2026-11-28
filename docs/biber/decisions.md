@@ -666,3 +666,80 @@ Node 24 和 Chromium，没有文档库，也没有明确的中文字体。
   编程镜像也没在 Docker 里构建过。
 - 一次推送最多 300 个文件、5 MB；符号链接推不了。
 - 只做 Claude Code。Codex、Pi、用户自带的 Claude 订阅或密钥都还没有。
+
+## 26. 合并上游 LobeHub：分六段合；上游的结构，Biber 的行为
+
+**背景：** Biber 基于上游 canary 的 `ae2c2710`（2026-07-14），四个月后上游多了 4,501 个提交、改了约 24,700 个文件，
+试合并有 447 个文件冲突，其中 40 个是上游拆成目录或删掉、Biber 又改过的文件。上游这四个月做了自己的 Vault、
+大改了 Claude Code 通道和群聊，迁移到了 `0226`。不合并，这些修复和功能都拿不到，以后越拖冲突越多。
+
+**选择：**
+
+- **分六段合，不 rebase。** 按月份找路标（`a5769c22`、`5cb99eec`、`14dfc07b`、`6c7a6fb0`、`483c4a34`、`2d5beaa2`），
+  每段合并、解决冲突、类型检查和相关测试过了就推一个合并提交作为检查点。rebase 要把 111 个提交逐个过冲突，还会改写已推送的历史。
+- **冲突的总规则：上游的结构，Biber 的行为。** 上游重构过的文件（aiAgent 拆成 `pipeline/*`、
+  `HeterogeneousPersistenceHandler`、`MessengerRouter`、lambda 路由、`models/message` 等），Biber 的改动搬到上游的新位置，
+  不退回旧结构；和 Biber 功能重叠的新东西，保留 Biber 的行为。LobeHub Cloud、社区、Market（和它的技能）、CLI 的名字保留，
+  其余品牌都是 Biber。
+- **迁移每段重新生成一个。** 冲突时取上游的迁移，删掉 Biber 的，再从合并后的 schema 生成一个 Biber 迁移，改成幂等写法；
+  最后是 `0227_biber_tables`，SQL 和合并前的 11 个迁移合起来一样。除了本机的两个开发库，没有共用的数据库跑过 Biber 的迁移，
+  所以不用写已部署库的对齐步骤。上游开始只保留最新的 10 个 snapshot，`check-migrations` 跟着只要求最新的那个。
+
+**和上游重叠的取舍（按主题）：**
+
+- **聊天平台。**
+  - 上游的个人微信机器人（`wechat`）和 Biber 的服务号（改名为 `wechatmp`）并存；上游的 `linq` 和 Biber 的 `imessage` 并存，
+    运维只配 `imessage`；上游新加的企业微信、钉钉只在国际版注册。国内版的平台名单不变（飞书、服务号）。
+  - 系统回复用上游的 `systemReply.ts` 结构，语言和品牌用 Biber 的：国内版和服务号一律中文（`messengerReplyLocale`），
+    Biber 只在 `replies.ts` 留上游没有的几句。服务号改名后，回调发批准请求时查不到它的语言、回落成英文，已改为用这条规则。
+  - 推送沿用上游的排除和展示规则，加上 Biber 的厂商通道；平台清单移到上游的 `platforms.ts`。
+- **Claude Code 通道和令牌。**
+  - 上游的 `hetero-operation` 令牌和 Biber 的 `hetero-run` 并存，运行令牌只认那几个接口；上游新加的并行读取 GitHub 令牌整个去掉，
+    GitHub 凭证不进沙箱。
+  - 上游给持久沙箱加的工作区和 Biber 的编程电脑一起传；沙箱启动环境加上游新的 Claude Code 入口名变量。
+  - 回答 Claude Code 的提问：上游抽出的 `submitHeteroInterventionAs`（分享访客也用）里加上 Biber 的 "答了手机就不再列出"。
+  - 上游的批准审核现在只收 "问题、权限、计划" 三种格式，`push_changes` 改为以权限请求发出（推送 / 不推送）；
+    手机上展示的仍是服务端存下的推送内容。
+- **群成员运行。** 上游的子运行和 Biber 的 `heteroMemberRuns` 并存，`runFor` 依次认根运行、子运行、成员运行；
+  会话 id 按成员存；上游的 "运行还活着" 和 Biber 的成员记录合用一个变量。
+- **运行准备和工具规则。**
+  - 运行状态从 `state.metadata` 搬到上游的新槽位（`origin`、`plan`、`host` 等），Biber 读旧键的三处跟着改。
+  - 工具规则共享到 `packages/mecha`：云电脑浏览器、提醒、档案、邮件、日历按携带启用；网页端 custom 模式只给声明的插件，
+    改用上游按执行助手解析的 `runAgent`。
+  - **按需加载工具：** 上游在 agent 模式下把云沙箱等延后到 `activateTools`，激活不在已启用列表里的工具要用户批准。
+    Biber 的批准是给敏感操作的，激活助手自己带着的插件不算新授权：`GeneralChatAgent` 把助手的插件交给审核，
+    `activateToolsAudit` 认它们；激活技能和别的工具照上游要批准。
+  - 文档助手是 custom 模式，上游只在执行目标是沙箱时把云沙箱的工具清单放进运行，否则每个沙箱调用都被当成未知工具要批准；
+    文档助手的执行目标设为沙箱（和编程助手一样）。
+- **批准后恢复运行。** 上游把 "一次批准只处理一次" 放在恢复运行里（网页、手机、停止共用）。Biber 的批准服务不再自己认领，
+  只把被暂停的运行交给恢复运行接管（`replacesOperationId`），抢输了报 "已经回答过了"。原来的认领会抹掉上游记在批准上的运行 id。
+- **品牌。**
+  - 默认助手的名字集中到上游的 `BRANDING_INBOX_TITLE`，设为 Biber，提示词一律用它。
+  - 上游新加了翻译的运行时替换（`brandPostProcessor.ts`）。Biber 的保留规则写在 `brandRule.ts`，运行时和合并后的静态替换
+    （`scripts/brand/rename-product.ts`，CI 跑它的 `--check`）共用：按词保留各语言里的 Cloud、市场、클라우드……；
+    按键保留意思上指 LobeHub 服务的文案（官方技能、Market 的扫描、CLI 的说明等）；英文只提到这些服务的键，各语言都保留，
+    因为别的语言常把名字放在前面（"Pazara на LobeHub"）。这一轮改了 343 个文案文件 1,734 条，合并前保留的一条没动。
+  - 给模型看的计费说明里的 "LobeHub balance/plan" 改成 Biber。
+- **计费。** 上游给 LobeHub Cloud 加的 `basic`、`plus`、`pro`、`max` 进了共用的 `Plans` 枚举，在 Biber 的目录里列为不卖、
+  零额度；上游不再把部署的模型密钥发给用户自己填的地址，Biber 照收。
+- **桌面端。** 上游的更新拆成更新引擎，没配更新地址时会回落到 LobeHub 的 GitHub 发布，这个回落去掉；Biber 的 "没有更新地址就不检查"
+  放在引擎前面。上游的 `DESKTOP_APP_ID` 等白标变量保留，不设时用 Biber 按版本区分的身份。
+- **沙箱。** `getSandboxProviderKind` 挪到上游的 `deployment.ts`，带上 Biber 的按版本默认（国内版 openbot）；上游的页面助手
+  只认 Market 和 Onlyboxes，加上 openbot。
+- **认证。** 上游自己给内部回调签名（`signInternalCallback`），Webhook 投递改用它，不再带 `CRON_SECRET`；工作流接口先认
+  `CRON_SECRET`（运维自己的定时器），其余交给上游的签名校验。上游在开发模式下、没配 QStash 时放行工作流调用（为了本地执行），
+  生产环境照样拒绝，运维手册写的本来就是 "生产环境拒绝"。上游自带的 GitHub App（`scm_*`）和 Biber 的用同样的变量名，
+  只在设了 `GITHUB_APP_WEBHOOK_SECRET` 时启用，Biber 不设。
+
+**检查：** 两个版本都从空库重新迁移；第 9 节的冒烟全部通过（国际版 golden-path、phone-chat、background-approval、experts、
+coding、Telegram、iMessage、飞书、memories、routines、computer；国内版 mainland、experts、documents、saved-logins、
+mail-calendar、coding、服务号、APNs、proactive、reminders、profile-interview）；tsrs 只剩上游自己的 9 个错误。
+
+**待办：**
+
+- `public/.well-known/assetlinks.json` 和 `apple-app-site-association` 还是 LobeHub 的，要换成 Biber 的应用；
+- 桌面 shell 的救援窗口（`apps/desktop/shell/`，启动失败时显示）写死了 LobeHub 和它的下载页，要在打包时写进产品名和下载页；
+- `aiAgent/helpers/heteroErrors.ts` 的 "设备离线" 提示还写着 LobeHub 桌面端；
+- Windows 通知的 AppUserModelId 还是 `com.lobehub.chat`，应改成本版本的 appId；
+- 上游新规则不许新加组件测试（`.test.tsx`），Biber 已有的几个会被提示；
+- 上游的 `BotCallbackService.test.ts` 已超过 1200 行（Biber 早先又加了一些），新的回调测试放在拆出的场景文件里。

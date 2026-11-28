@@ -112,7 +112,7 @@
   "connector.edit.success": "Connector aktualisiert",
   "connector.enabled": "Aktiviert",
   "connector.error.network": "Die Netzwerkverbindung wurde unterbrochen. Überprüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
-  "connector.error.stdioDesktopOnly": "Stdio-Connectoren können nur in der Desktop-App synchronisiert werden. Öffnen Sie LobeHub Desktop, um diesen Connector zu synchronisieren.",
+  "connector.error.stdioDesktopOnly": "Stdio-Connectoren können nur in der Desktop-App synchronisiert werden. Öffnen Sie Biber Desktop, um diesen Connector zu synchronisieren.",
   "connector.kind.agent": "Agent-Connector",
   "connector.kind.builtin": "Eingebautes Werkzeug",
   "connector.kind.community": "Marktplatz-Tool",

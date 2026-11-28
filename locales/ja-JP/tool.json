@@ -112,7 +112,7 @@
   "connector.edit.success": "コネクタが更新されました",
   "connector.enabled": "有効",
   "connector.error.network": "ネットワーク接続が中断されました。接続を確認して再試行してください。",
-  "connector.error.stdioDesktopOnly": "Stdioコネクタはデスクトップアプリでのみ同期できます。LobeHubデスクトップを開いてこのコネクタを同期してください。",
+  "connector.error.stdioDesktopOnly": "Stdioコネクタはデスクトップアプリでのみ同期できます。Biberデスクトップを開いてこのコネクタを同期してください。",
   "connector.kind.agent": "エージェントコネクタ",
   "connector.kind.builtin": "組み込みツール",
   "connector.kind.community": "マーケットプレイスのツール",

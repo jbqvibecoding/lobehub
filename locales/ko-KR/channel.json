@@ -56,7 +56,7 @@
   "environment.chooseDevice": "기기 선택",
   "environment.configurationFailed": "이 에이전트의 설정을 로드할 수 없습니다. 다시 시도하세요.",
   "environment.configurationLoading": "이 에이전트의 설정을 로드 중…",
-  "environment.connectorUpgradeRequired": "이 기기의 LobeHub 커넥터를 업데이트해야 합니다. 해당 기기에서 LobeHub Desktop 또는 LobeHub CLI를 업데이트한 후 다시 연결하고 시도하세요.",
+  "environment.connectorUpgradeRequired": "이 기기의 Biber 커넥터를 업데이트해야 합니다. 해당 기기에서 Biber Desktop 또는 LobeHub CLI를 업데이트한 후 다시 연결하고 시도하세요.",
   "environment.deviceLabel": "{{name}}의 기기",
   "environment.deviceOffline": "이 기기는 오프라인 상태입니다. 다시 연결하거나 다른 기기를 선택하세요.",
   "environment.deviceRequired": "이 코딩 에이전트에 대해 온라인 기기를 선택하세요.",

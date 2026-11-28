@@ -408,7 +408,7 @@ export default {
   'channel.slack.webhookMigrationDesc':
     'Socket Mode provides real-time event delivery via WebSocket without exposing a public HTTP endpoint. To migrate, enable Socket Mode in your Slack app settings, generate an App-Level Token, then switch the Connection Mode to WebSocket under Connection options on the Connect tab.',
   'channel.secretTokenHint':
-    'Used to verify webhook requests from Telegram. Leave blank and LobeHub derives one for this bot — verification is always on.',
+    'Used to verify webhook requests from Telegram. Leave blank and Biber derives one for this bot — verification is always on.',
   'channel.secretTokenPlaceholder': 'Leave blank to auto-generate',
   'channel.telegram.description': 'Connect this agent to Telegram for private and group chats.',
   'channel.testConnection': 'Test Connection',
@@ -973,11 +973,11 @@ export default {
   'share.settings.link.modelDisabledTitle': 'Switch model providers to enable sharing',
   'share.settings.link.changeModel': 'Change model',
   'share.settings.modelRestriction.title':
-    'Sharing is on: models are limited to the LobeHub provider',
+    'Sharing is on: models are limited to the Biber provider',
   'share.settings.modelRestriction.description':
     'To choose a model from another provider, turn off sharing first.',
   'share.settings.link.modelDisabled':
-    'Your current model uses another provider. Choose a model provided by LobeHub, then turn on sharing.',
+    'Your current model uses another provider. Choose a model provided by Biber, then turn on sharing.',
   'share.settings.link.slugError.invalid':
     'Use lowercase letters, numbers and hyphens only, and don’t start or end with a hyphen.',
   'share.settings.link.slugError.reserved': 'This word is reserved. Please pick another one.',
@@ -1199,7 +1199,7 @@ export default {
   'share.visitor.profile.terms.visibilityCreator':
     'The creator has turned on topic access and may read the messages in your topics.',
   'share.visitor.profile.terms.visibilityPrivate': 'Only you can see your topics.',
-  'share.visitor.topBar.home': 'Go to my LobeHub',
+  'share.visitor.topBar.home': 'Go to my Biber',
   'share.visitor.upload.creatorStorageBlocked':
     "This Agent's upload space is full. Ask its creator to free up room or raise the cap.",
   'share.visitor.upload.fileTooLarge': 'Files must be under {{max}}.',

@@ -24,6 +24,7 @@
   "navigation.automations": "自动化",
   "navigation.channels": "IM 机器人",
   "navigation.chat": "对话",
+  "navigation.cloudComputer": "云电脑",
   "navigation.dashboard": "看板",
   "navigation.document": "文档",
   "navigation.engine": "助理引擎",
@@ -144,7 +145,7 @@
   "remoteServer.statusConnected": "已连接",
   "remoteServer.statusDisconnected": "未连接",
   "remoteServer.urlRequired": "请输入服务器地址",
-  "startupUpdate.applying": "正在重新打开 LobeHub…",
+  "startupUpdate.applying": "正在重新打开 Biber…",
   "startupUpdate.checking": "正在检查更新…",
   "startupUpdate.downloading": "正在下载更新",
   "startupUpdate.error": "暂时无法完成更新",
@@ -217,6 +218,5 @@
   "window.minimize": "最小化窗口",
   "window.pinToTop": "窗口置顶",
   "window.restore": "恢复窗口",
-  "window.unpinFromTop": "取消置顶",
-  "navigation.cloudComputer": "云电脑"
+  "window.unpinFromTop": "取消置顶"
 }

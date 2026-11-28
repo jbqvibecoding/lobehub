@@ -1,7 +1,10 @@
 // Imported via @lobechat/const (already a dependency) rather than
 // @lobechat/business-const, which this package does not depend on.
 import { BRANDING_NAME, DEFAULT_INBOX_TITLE, LOBE_CHAT_CLOUD } from '@lobechat/const';
-import type { i18n as I18n, InitOptions, PostProcessorModule } from 'i18next';
+import type { i18n as I18n, InitOptions, PostProcessorModule, TOptions } from 'i18next';
+
+import { BRAND_KEPT_KEYS } from './brandKeptKeys';
+import { isKeptProductName, KEPT_BY_MEANING } from './brandRule';
 
 /**
  * Upstream brand literals baked into the locale files, each paired with the
@@ -68,28 +71,46 @@ const pattern = replacements.length
   : undefined;
 
 /**
- * Biber keeps the names of LobeHub's own services it still points to: LobeHub Cloud, the LobeHub
- * Community, the Market and its skills, and the CLI. A bare `LobeHub` followed by one of these
- * (or by more letters, as in an identifier) is left as it is.
+ * Biber keeps the names of LobeHub's own services it still points to (LobeHub Cloud, the
+ * Community, the Market and its skills, the CLI), by the words after the name and by key. The
+ * rule is shared with `scripts/brand/rename-product.ts`, which applies it to the locale files.
  */
-const KEPT_AFTER_LOBEHUB =
-  /^(?:\s*(?:Cloud|CLI|Community|Market(?:place)?|market(?:place)?|Skills?)\b|\s*(?:社区|市场|技能)|\w)/;
+const keptKeys = new Set<string>([...KEPT_BY_MEANING, ...BRAND_KEPT_KEYS]);
 
 export const isBrandPostProcessorEnabled = replacements.length > 0;
 
 export const BRAND_POST_PROCESSOR = 'brandStrings';
 
-/** Apply the brand rewrites to one translated string. */
-export const applyBrandStrings = (value: string): string => {
+/**
+ * Apply the brand rewrites to one translated string. `key` is its `namespace:key`, when known;
+ * copy kept by key is left as it is.
+ */
+export const applyBrandStrings = (value: string, key?: string): string => {
   // Fast path: the overwhelming majority of translated strings never mention the
   // brand, and one substring scan is much cheaper than running the regex.
   if (!pattern || !value.includes(COMMON_PREFIX)) return value;
+  if (key && keptKeys.has(key)) return value;
 
   return value.replaceAll(pattern, (match: string, _literal: string, offset: number) =>
-    match === 'LobeHub' && KEPT_AFTER_LOBEHUB.test(value.slice(offset + match.length))
+    (match === 'LobeHub' || match === 'LobeChat') && isKeptProductName(value, offset, match)
       ? match
       : (lookup.get(match) ?? match),
   );
+};
+
+type Translator = { options?: { defaultNS?: false | string | readonly string[] } };
+
+const firstOf = (value: false | string | readonly string[] | undefined) =>
+  typeof value === 'string' ? value : value ? value[0] : undefined;
+
+/** The `namespace:key` i18next resolves a key to, as the kept-key list names it. */
+const qualify = (key: string, options: TOptions | undefined, translator?: Translator) => {
+  if (key.includes(':')) return key;
+
+  const ns = firstOf(options?.ns as string | readonly string[] | undefined);
+  const fallback = firstOf(translator?.options?.defaultNS);
+
+  return `${ns ?? fallback ?? 'translation'}:${key}`;
 };
 
 /**
@@ -99,7 +120,16 @@ export const applyBrandStrings = (value: string): string => {
  */
 export const brandPostProcessor: PostProcessorModule = {
   name: BRAND_POST_PROCESSOR,
-  process: (value) => (typeof value === 'string' ? applyBrandStrings(value) : value),
+  process: (value, key, options, translator) => {
+    if (typeof value !== 'string') return value;
+
+    // A t() call can name several keys and takes the first that resolves; any of them kept
+    // keeps the copy, which errs toward the upstream name rather than a wrong one.
+    const keys = (Array.isArray(key) ? key : [key]).filter((k) => typeof k === 'string');
+    const kept = keys.find((k) => keptKeys.has(qualify(k, options, translator)));
+
+    return kept ? value : applyBrandStrings(value);
+  },
   type: 'postProcessor',
 };
 

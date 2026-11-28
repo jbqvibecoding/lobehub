@@ -422,7 +422,7 @@
   "models.parameterList.top_p.desc": "此設置將模型的選擇限制為可能性最高的一定比例的詞彙：只選擇那些累計概率達到P的頂尖詞彙。較低的值使得模型的回應更加可預測，而默認設置則允許模型從全部範圍的詞彙中進行選擇。",
   "models.parameterList.top_p.title": "核採樣",
   "models.parameterList.type": "類型",
-  "models.providerInfo.apiTooltip": "LobeChat 支持為此提供商使用自定義 API 密鑰。",
+  "models.providerInfo.apiTooltip": "Biber 支持為此提供商使用自定義 API 密鑰。",
   "models.providerInfo.input": "輸入價格",
   "models.providerInfo.inputTooltip": "每百萬個 Token 的成本",
   "models.providerInfo.latency": "延遲",

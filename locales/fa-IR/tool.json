@@ -112,7 +112,7 @@
   "connector.edit.success": "کانکتور به‌روزرسانی شد",
   "connector.enabled": "فعال",
   "connector.error.network": "اتصال شبکه قطع شد. اتصال خود را بررسی کرده و دوباره تلاش کنید.",
-  "connector.error.stdioDesktopOnly": "اتصال‌دهنده‌های Stdio فقط در برنامه دسکتاپ قابل همگام‌سازی هستند. برنامه LobeHub Desktop را باز کنید تا این اتصال‌دهنده همگام‌سازی شود.",
+  "connector.error.stdioDesktopOnly": "اتصال‌دهنده‌های Stdio فقط در برنامه دسکتاپ قابل همگام‌سازی هستند. برنامه Biber Desktop را باز کنید تا این اتصال‌دهنده همگام‌سازی شود.",
   "connector.kind.agent": "اتصال‌دهنده عامل",
   "connector.kind.builtin": "ابزار داخلی",
   "connector.kind.community": "ابزار بازار",

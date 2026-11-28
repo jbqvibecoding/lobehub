@@ -42,7 +42,7 @@
   "workingDirectory.detachedHead": "游离 HEAD，当前提交 {{sha}}",
   "workingDirectory.detachedHeadShort": "detached@{{sha}}",
   "workingDirectory.detachedWorktree": "detached",
-  "workingDirectory.deviceOutdated": "这台设备上的 LobeHub 应用或 lh CLI 版本过旧，不支持此操作。请升级后重试。",
+  "workingDirectory.deviceOutdated": "这台设备上的 Biber 应用或 lh CLI 版本过旧，不支持此操作。请升级后重试。",
   "workingDirectory.deviceWakeFailed": "无法唤醒该云端设备，请重试。",
   "workingDirectory.deviceWakeSlow": "云端设备仍在启动，请稍后重试。",
   "workingDirectory.deviceWaking": "正在唤醒云端设备，最多需要 2 分钟…",

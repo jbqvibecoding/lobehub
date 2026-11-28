@@ -68,6 +68,8 @@ describe('ExpertService', () => {
 
     const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
     expect(agent).toMatchObject({
+      // The sandbox is where it runs, so its tools are part of the run's tool set
+      agencyConfig: { executionTarget: 'sandbox' },
       chatConfig: { searchMode: 'auto', toolMode: 'custom' },
       marketIdentifier: expertMarketIdentifier('documents'),
       plugins: ['lobe-web-browsing', 'lobe-cloud-sandbox'],

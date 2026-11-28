@@ -111,6 +111,50 @@ describe('brandPostProcessor', () => {
       );
     });
 
+    it('keeps copy kept by key, whatever its words', async () => {
+      const { applyBrandStrings } = await loadWith({ ...UPSTREAM, BRANDING_NAME: 'Acme' });
+
+      // Kept by meaning: the official skill badge names the Market's own verification
+      expect(applyBrandStrings('LobeHub 官方技能', 'plugin:protocolInstall.official.badge')).toBe(
+        'LobeHub 官方技能',
+      );
+      // Kept because its English names only the Marketplace
+      expect(applyBrandStrings('Споделете в Пазара на LobeHub', 'discover:footer.title')).toBe(
+        'Споделете в Пазара на LobeHub',
+      );
+      expect(applyBrandStrings('Споделете в LobeHub', 'discover:footer.other')).toBe(
+        'Споделете в Acme',
+      );
+    });
+
+    it('resolves the namespace of a key through i18next', async () => {
+      const { brandPostProcessOptions, withBrandPostProcessor } = await loadWith({
+        ...UPSTREAM,
+        BRANDING_NAME: 'Acme',
+      });
+      const { createInstance } = await import('i18next');
+      const i18n = withBrandPostProcessor(createInstance());
+      await i18n.init({
+        defaultNS: ['common'],
+        keySeparator: false,
+        lng: 'bg-BG',
+        resources: {
+          'bg-BG': {
+            common: { 'footer.title': 'Пусни LobeHub' },
+            discover: { 'footer.title': 'Споделете в Пазара на LobeHub' },
+          },
+        },
+        ...brandPostProcessOptions,
+      });
+
+      expect(i18n.t('footer.title', { ns: 'discover' })).toBe('Споделете в Пазара на LobeHub');
+      expect(i18n.t('discover:footer.title')).toBe('Споделете в Пазара на LobeHub');
+      expect(i18n.getFixedT(null, 'discover')('footer.title')).toBe(
+        'Споделете в Пазара на LobeHub',
+      );
+      expect(i18n.t('footer.title')).toBe('Пусни Acme');
+    });
+
     it('rewrites only what was renamed', async () => {
       const { applyBrandStrings } = await loadWith({ ...UPSTREAM, DEFAULT_INBOX_TITLE: 'Acme AI' });
 

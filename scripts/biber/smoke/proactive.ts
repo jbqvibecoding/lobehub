@@ -7,7 +7,8 @@
  * - the next check says nothing: a message went out less than two hours ago;
  * - inside the user's quiet hours nothing goes out either;
  * - a starter routine's result is pushed and opens the routine's task;
- * - the workflow endpoints turn away a call without the scheduler's secret.
+ * - the workflow endpoints turn away a call without the scheduler's secret (not on a development
+ *   server, which accepts unsigned workflow calls: set SMOKE_DEV_SERVER=1 against `next dev`).
  *
  *   SMOKE_DATABASE_URL=postgres://… SMOKE_CRON_SECRET=… bunx tsx scripts/biber/smoke/proactive.ts
  *
@@ -223,6 +224,12 @@ const main = async () => {
     });
 
     await step('workflow endpoints turn away a call without the scheduler’s secret', async () => {
+      // Upstream lets a development server (`next dev`) without QStash keys run workflows
+      // unsigned, for local execution; production refuses them (qstashAuth.test.ts pins it)
+      if (process.env.SMOKE_DEV_SERVER === '1') {
+        console.log('  (SMOKE_DEV_SERVER=1: a development server accepts unsigned workflow calls)');
+        return;
+      }
       for (const path of [
         '/api/workflows/proactive/tick',
         '/api/workflows/task/schedule-execute',

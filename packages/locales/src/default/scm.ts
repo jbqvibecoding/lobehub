@@ -31,14 +31,14 @@ export default {
   'github.connect.action': 'Connect GitHub',
   'github.connect.addAnother': 'Add another account',
   'github.connect.description':
-    'Install the LobeHub GitHub App on your account or organization. Your agents will hear about CI failures, review feedback and merges without polling.',
+    'Install the Biber GitHub App on your account or organization. Your agents will hear about CI failures, review feedback and merges without polling.',
   'github.connect.disabled': 'The GitHub App is not configured on this deployment.',
   'github.connect.identity': 'Signed in to GitHub as {{login}}',
   'github.connect.title': 'GitHub',
   'github.installResult.error.exchange_failed':
     'GitHub did not accept the authorization code. Please try connecting again.',
   'github.installResult.error.identity_taken':
-    'This GitHub account is already linked to another LobeHub user.',
+    'This GitHub account is already linked to another Biber user.',
   'github.installResult.error.installation_fetch_failed':
     'Could not read the installation from GitHub. Please try again.',
   'github.installResult.error.missing_installation': 'GitHub did not report an installation.',

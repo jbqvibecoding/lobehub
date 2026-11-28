@@ -56,7 +56,7 @@
   "environment.chooseDevice": "Elegir un dispositivo",
   "environment.configurationFailed": "No se pudieron cargar los ajustes de este agente. Inténtalo de nuevo.",
   "environment.configurationLoading": "Cargando los ajustes de este agente…",
-  "environment.connectorUpgradeRequired": "El conector de LobeHub de este dispositivo necesita una actualización. Actualiza LobeHub Desktop o la CLI de LobeHub en ese dispositivo, vuelve a conectarlo e inténtalo de nuevo.",
+  "environment.connectorUpgradeRequired": "El conector de Biber de este dispositivo necesita una actualización. Actualiza Biber Desktop o la CLI de Biber en ese dispositivo, vuelve a conectarlo e inténtalo de nuevo.",
   "environment.deviceLabel": "Dispositivo para {{name}}",
   "environment.deviceOffline": "Este dispositivo está desconectado. Vuelve a conectarlo o elige otro dispositivo.",
   "environment.deviceRequired": "Elige un dispositivo en línea para este agente de codificación.",

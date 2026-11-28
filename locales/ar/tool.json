@@ -112,7 +112,7 @@
   "connector.edit.success": "تم تحديث الموصل",
   "connector.enabled": "مفعل",
   "connector.error.network": "تم انقطاع اتصال الشبكة. تحقق من الاتصال وحاول مرة أخرى.",
-  "connector.error.stdioDesktopOnly": "يمكن لموصلات Stdio المزامنة فقط في تطبيق سطح المكتب. افتح LobeHub Desktop لمزامنة هذا الموصل.",
+  "connector.error.stdioDesktopOnly": "يمكن لموصلات Stdio المزامنة فقط في تطبيق سطح المكتب. افتح Biber Desktop لمزامنة هذا الموصل.",
   "connector.kind.agent": "موصل الوكيل",
   "connector.kind.builtin": "أداة مدمجة",
   "connector.kind.community": "أداة السوق",

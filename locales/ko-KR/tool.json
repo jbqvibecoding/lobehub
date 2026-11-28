@@ -112,7 +112,7 @@
   "connector.edit.success": "커넥터가 업데이트되었습니다",
   "connector.enabled": "활성화됨",
   "connector.error.network": "네트워크 연결이 중단되었습니다. 연결을 확인하고 다시 시도하세요.",
-  "connector.error.stdioDesktopOnly": "Stdio 커넥터는 데스크톱 앱에서만 동기화할 수 있습니다. LobeHub 데스크톱을 열어 이 커넥터를 동기화하세요.",
+  "connector.error.stdioDesktopOnly": "Stdio 커넥터는 데스크톱 앱에서만 동기화할 수 있습니다. Biber 데스크톱을 열어 이 커넥터를 동기화하세요.",
   "connector.kind.agent": "에이전트 커넥터",
   "connector.kind.builtin": "내장 도구",
   "connector.kind.community": "마켓플레이스 도구",

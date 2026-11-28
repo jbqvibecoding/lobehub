@@ -39,7 +39,7 @@
   "features.selfLearning.title": "Tự tiến hóa",
   "features.taskVerify.desc": "Thêm phần chấp nhận giao hàng vào chi tiết nhiệm vụ: mô tả chấp nhận trong một câu và để AI tạo tiêu chí xác minh có thể chỉnh sửa.",
   "features.taskVerify.title": "Chấp Nhận Giao Nhiệm Vụ",
-  "features.topicBugReport.desc": "Thêm Báo cáo Sự cố vào menu chủ đề. Nó gửi ID của chủ đề và môi trường ứng dụng của bạn đến đội hỗ trợ LobeHub, những người sẽ kiểm tra vấn đề từ đó.",
+  "features.topicBugReport.desc": "Thêm Báo cáo Sự cố vào menu chủ đề. Nó gửi ID của chủ đề và môi trường ứng dụng của bạn đến đội hỗ trợ Biber, những người sẽ kiểm tra vấn đề từ đó.",
   "features.topicBugReport.title": "Báo cáo Sự cố với Chủ đề",
   "group.desktop": "Máy tính để bàn",
   "group.general": "Chung",

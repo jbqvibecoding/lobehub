@@ -112,7 +112,7 @@
   "connector.edit.success": "Коннектор обновлен",
   "connector.enabled": "Включено",
   "connector.error.network": "Сетевое соединение было прервано. Проверьте подключение и попробуйте снова.",
-  "connector.error.stdioDesktopOnly": "Stdio-коннекторы могут синхронизироваться только в настольном приложении. Откройте LobeHub Desktop, чтобы синхронизировать этот коннектор.",
+  "connector.error.stdioDesktopOnly": "Stdio-коннекторы могут синхронизироваться только в настольном приложении. Откройте Biber Desktop, чтобы синхронизировать этот коннектор.",
   "connector.kind.agent": "Коннектор агента",
   "connector.kind.builtin": "Встроенный инструмент",
   "connector.kind.community": "Инструмент торговой площадки",

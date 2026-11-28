@@ -322,7 +322,7 @@
   "acceptance.local.save": "Lưu đánh giá",
   "acceptance.local.saved": "Đã lưu {{file}}. Hãy thông báo cho agent của bạn rằng bạn đã hoàn thành việc đánh giá.",
   "acceptance.local.share": "Chia sẻ",
-  "acceptance.local.shareHint": "Bình luận, đề cập và liên kết có thể chia sẻ cần LobeHub. Hãy yêu cầu agent của bạn xuất bản đánh giá này, hoặc chạy:",
+  "acceptance.local.shareHint": "Bình luận, đề cập và liên kết có thể chia sẻ cần Biber. Hãy yêu cầu agent của bạn xuất bản đánh giá này, hoặc chạy:",
   "acceptance.local.shareTitle": "Đánh giá cùng nhóm của bạn",
   "acceptance.local.unsaved": "{{count}} đánh giá chưa được lưu",
   "acceptance.notFound.description": "Có thể nó đã bị xóa, hoặc chưa bao giờ được chia sẻ với bạn.",

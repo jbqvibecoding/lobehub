@@ -8,11 +8,11 @@ export default {
   'messenger.detail.addWorkspace': 'Add workspace',
   'messenger.detail.commands.agents': 'List your agents and switch the active one',
   'messenger.detail.commands.feedback':
-    'Send feedback to the LobeHub team (no AI reply), e.g. /feedback your message',
+    'Send feedback to the Biber team (no AI reply), e.g. /feedback your message',
   'messenger.detail.commands.help': 'Show all commands in the bot',
   'messenger.detail.commands.hint': 'Send these commands to the bot in a direct message.',
   'messenger.detail.commands.new': 'Start a new conversation',
-  'messenger.detail.commands.start': 'Link your account to LobeHub',
+  'messenger.detail.commands.start': 'Link your account to Biber',
   'messenger.detail.commands.stop': 'Stop the current execution',
   'messenger.detail.commands.switch': 'Switch between your personal scope and workspaces',
   'messenger.detail.commands.title': 'Commands',
@@ -204,7 +204,7 @@ export default {
   'messenger.wechat.defaultAgentHint':
     'New WeChat messages will be routed to this agent. You can switch later with /agents.',
   'messenger.wechat.error.alreadyLinkedToOther':
-    'This WeChat account is already connected to another LobeHub account.',
+    'This WeChat account is already connected to another Biber account.',
   'messenger.wechat.error.connectionFailed':
     'WeChat was verified, but message delivery could not start. Please try again.',
   'messenger.wechat.error.incompleteConfirmation':
@@ -306,12 +306,12 @@ export default {
   'messenger.linq.code.label': 'Your one-time link code',
   'messenger.linq.code.sendTo': 'Text it to {{number}}',
   'messenger.linq.code.tip':
-    'Scan the QR code with your phone camera or tap Open in Messages on your phone, then send the prefilled message. The number is shared — LobeHub recognizes you by the phone you text from. The code works once.',
+    'Scan the QR code with your phone camera or tap Open in Messages on your phone, then send the prefilled message. The number is shared — Biber recognizes you by the phone you text from. The code works once.',
   'messenger.linq.code.waiting': 'Waiting for your message…',
   'messenger.linq.connectCta': 'Get link code',
   'messenger.linq.connected': 'iMessage connected.',
   'messenger.linq.error.alreadyLinkedToOther':
-    'This phone number is already connected to another LobeHub account.',
+    'This phone number is already connected to another Biber account.',
   'messenger.linq.error.codeUnavailable': 'Could not create a link code. Please try again.',
   'messenger.linq.error.pollFailed':
     'Could not check the link status. Please generate a new code and try again.',
@@ -321,7 +321,7 @@ export default {
   'messenger.linq.retry': 'Get a new code',
   'messenger.linq.setupTitle': 'Connect iMessage',
   'messenger.list.linq.description':
-    'Text your LobeHub agents from iMessage or SMS — no app to install, and /agents switches agents.',
+    'Text your Biber agents from iMessage or SMS — no app to install, and /agents switches agents.',
   'messenger.unlinkConfirmLinq':
     'Messages from this phone number will no longer reach your agents. You can reconnect any time with a new link code.',
   'messenger.linq.code.expiresAt': 'Valid until {{time}}',

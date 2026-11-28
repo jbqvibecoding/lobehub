@@ -322,7 +322,7 @@
   "acceptance.local.save": "儲存評論",
   "acceptance.local.saved": "已儲存 {{file}}。告訴您的代理您已完成評論。",
   "acceptance.local.share": "分享",
-  "acceptance.local.shareHint": "評論、提及和可分享的連結需要 LobeHub。請要求您的代理發布此接受，或執行：",
+  "acceptance.local.shareHint": "評論、提及和可分享的連結需要 Biber。請要求您的代理發布此接受，或執行：",
   "acceptance.local.shareTitle": "與您的團隊一起評論",
   "acceptance.local.unsaved": "{{count}} 條未儲存的評論",
   "acceptance.notFound.description": "可能已被刪除，或從未與您分享。",

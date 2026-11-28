@@ -24,6 +24,7 @@ import {
   messengerPlatformOfInstallationKey,
 } from '@/server/services/messenger/installations';
 import { messengerPlatformRegistry } from '@/server/services/messenger/platforms';
+import { messengerReplyLocale } from '@/server/services/messenger/replies';
 import type { MessengerPlatformBinder } from '@/server/services/messenger/types';
 import { SystemAgentService } from '@/server/services/systemAgent';
 import { describeApprovalCall } from '@/server/services/toolApproval/describe';
@@ -39,7 +40,6 @@ import type {
   UsageStats,
 } from './platforms';
 import {
-  getBotReplyLocale,
   getStepReactionEmoji,
   normalizeBotReactionMode,
   platformFromThreadId,
@@ -212,7 +212,8 @@ export class BotCallbackService {
     const entry =
       platformRegistry.getPlatform(platform) ?? messengerPlatformRegistry.getPlatform(platform);
     const canEdit = entry?.supportsMessageEdit !== false;
-    const replyLocale = getBotReplyLocale(platform);
+    // Biber's rule: the mainland edition and the WeChat Official Account answer in Chinese
+    const replyLocale = messengerReplyLocale(platform);
     const reactionMode = normalizeBotReactionMode(settings.reactionMode);
 
     if (type === 'step') {

@@ -6,9 +6,9 @@ export default {
   CapabilityNotSupported:
     'Sorry, this model does not support the requested capability (such as vision input or tool calling). Please switch to a model that supports it.',
   ClientLlmExecutorLost:
-    'The device running {{provider}} for this conversation stopped responding before the reply finished — it may have been closed, refreshed or disconnected. Keep the LobeHub window open and try again.',
+    'The device running {{provider}} for this conversation stopped responding before the reply finished — it may have been closed, refreshed or disconnected. Keep the Biber window open and try again.',
   ClientLlmExecutorUnavailable:
-    '{{provider}} can only be reached from your own device, but no open LobeHub window picked up the request. Open LobeHub on the device where {{provider}} runs, then retry.',
+    '{{provider}} can only be reached from your own device, but no open Biber window picked up the request. Open Biber on the device where {{provider}} runs, then retry.',
   ClientLlmTimeout:
     '{{provider}} on your device did not respond in time. Make sure the model is running and loaded, then try again.',
   ComfyUIBizError:

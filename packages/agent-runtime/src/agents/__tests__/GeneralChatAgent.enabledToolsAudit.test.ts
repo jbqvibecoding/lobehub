@@ -119,4 +119,21 @@ describe('GeneralChatAgent — audits see the tools the run already offers', () 
     ]);
     expect(seen.at(-1)?.enabledToolIds).toEqual(['builtin-artboard']);
   });
+
+  it("hands the audits the agent's own plugins", async () => {
+    const agent = new GeneralChatAgent({
+      agentConfig: { maxSteps: 100, plugins: ['lobe-cloud-sandbox'] },
+      dynamicInterventionAudits: {
+        offeredOnly: async (_toolArgs, metadata) => {
+          seen.push(metadata ?? {});
+          return false;
+        },
+      },
+      modelRuntimeConfig: { model: 'gpt-4o-mini', provider: 'openai' },
+      operationId: 'test-session',
+    });
+    await agent.runner(createContext([activate('lobe-cloud-sandbox')]), stateWith());
+
+    expect(seen.at(-1)?.agentPluginIds).toEqual(['lobe-cloud-sandbox']);
+  });
 });

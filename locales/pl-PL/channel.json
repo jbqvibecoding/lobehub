@@ -56,7 +56,7 @@
   "environment.chooseDevice": "Wybierz urządzenie",
   "environment.configurationFailed": "Nie udało się załadować ustawień tego Agenta. Spróbuj ponownie.",
   "environment.configurationLoading": "Ładowanie ustawień tego Agenta…",
-  "environment.connectorUpgradeRequired": "Konektor LobeHub na tym urządzeniu wymaga aktualizacji. Zaktualizuj LobeHub Desktop lub LobeHub CLI na tym urządzeniu, a następnie połącz ponownie i spróbuj jeszcze raz.",
+  "environment.connectorUpgradeRequired": "Konektor Biber na tym urządzeniu wymaga aktualizacji. Zaktualizuj Biber Desktop lub LobeHub CLI na tym urządzeniu, a następnie połącz ponownie i spróbuj jeszcze raz.",
   "environment.deviceLabel": "Urządzenie dla {{name}}",
   "environment.deviceOffline": "To urządzenie jest offline. Połącz je ponownie lub wybierz inne urządzenie.",
   "environment.deviceRequired": "Wybierz online urządzenie dla tego kodującego Agenta.",

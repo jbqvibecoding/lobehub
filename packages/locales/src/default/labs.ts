@@ -66,7 +66,7 @@ export default {
     'This runs model calls in the background and uses additional quota. Each nightly review covers up to 50 conversations.',
   'features.selfLearning.title': 'Self-evolving',
   'features.topicBugReport.desc':
-    'Adds Report Bug to the topic menu. Send the topic’s IDs, your app environment, and optional attachments to the LobeHub support team.',
+    'Adds Report Bug to the topic menu. Send the topic’s IDs, your app environment, and optional attachments to the Biber support team.',
   'features.topicBugReport.title': 'Report Bug',
   'group.desktop': 'Desktop',
   'group.general': 'General',

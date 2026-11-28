@@ -3,6 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/pr
 import os from 'node:os';
 import path from 'node:path';
 
+import { sanitizeAgentInterventionRequestForReview } from '@lobechat/agent-gateway-client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildCodingTools } from './codingTools';
@@ -165,6 +166,19 @@ describe('a repository from the user’s GitHub', () => {
       expect.objectContaining({ toolCallId: 'toolu_push' }),
       expect.objectContaining({ timeoutMs: 2 * 60 * 60 * 1000 }),
     );
+    // As a yes or no that upstream's review accepts: anything else is refused as unsafe
+    const [asked] = waitForUser.mock.calls[0];
+    expect(
+      sanitizeAgentInterventionRequestForReview({
+        apiName: 'askUserQuestion',
+        arguments: JSON.stringify(asked.arguments),
+        deadline: Date.now() + 60_000,
+        identifier: 'claude-code',
+        interactionKind: asked.interactionKind,
+        provider: 'claude-code',
+        toolCallId: 'toolu_push',
+      }),
+    ).toMatchObject({ interactionKind: 'permission' });
     expect((pushed.content[0] as { text: string }).text).toContain(
       'Pull request: https://github.test/acme/app/pull/5',
     );

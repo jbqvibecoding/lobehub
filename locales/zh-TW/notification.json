@@ -159,6 +159,6 @@
   "workspace_primary_ownership_transferred_title": "您現在是 {{workspaceName}} 的主要擁有者",
   "workspace_subscription_expired": "工作區「{{workspaceName}}」的訂閱已結束。請在 {{days}} 天內續訂以恢復完整訪問權限，否則工作區將被降級。",
   "workspace_subscription_expired_title": "{{workspaceName}} 的訂閱已結束",
-  "workspace_waitlist_approved": "您的 Workspace 測試版已準備就緒。前往 LobeHub 創建您的第一個工作空間並邀請您的團隊。",
+  "workspace_waitlist_approved": "您的 Workspace 測試版已準備就緒。前往 Biber 創建您的第一個工作空間並邀請您的團隊。",
   "workspace_waitlist_approved_title": "Workspace 測試版訪問已獲批准"
 }

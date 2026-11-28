@@ -322,7 +322,7 @@
   "acceptance.local.save": "Salvar revisões",
   "acceptance.local.saved": "Salvo {{file}}. Informe ao seu agente que você terminou de revisar.",
   "acceptance.local.share": "Compartilhar",
-  "acceptance.local.shareHint": "Comentários, menções e um link compartilhável precisam do LobeHub. Peça ao seu agente para publicar esta aceitação ou execute:",
+  "acceptance.local.shareHint": "Comentários, menções e um link compartilhável precisam do Biber. Peça ao seu agente para publicar esta aceitação ou execute:",
   "acceptance.local.shareTitle": "Revisar com sua equipe",
   "acceptance.local.unsaved": "{{count}} revisão(ões) não salva(s)",
   "acceptance.notFound.description": "Pode ter sido excluído ou nunca foi compartilhado com você.",

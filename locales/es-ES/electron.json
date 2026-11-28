@@ -126,7 +126,7 @@
   "remoteServer.statusConnected": "Conectado",
   "remoteServer.statusDisconnected": "No conectado",
   "remoteServer.urlRequired": "Por favor, introduce la dirección del servidor",
-  "startupUpdate.applying": "Reiniciando LobeHub…",
+  "startupUpdate.applying": "Reiniciando Biber…",
   "startupUpdate.checking": "Buscando actualizaciones…",
   "startupUpdate.downloading": "Descargando actualización",
   "startupUpdate.error": "No se pudo completar la actualización",

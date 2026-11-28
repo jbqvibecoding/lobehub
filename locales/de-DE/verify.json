@@ -322,7 +322,7 @@
   "acceptance.local.save": "Bewertungen speichern",
   "acceptance.local.saved": "{{file}} gespeichert. Sagen Sie Ihrem Agenten, dass Sie die Überprüfung abgeschlossen haben.",
   "acceptance.local.share": "Teilen",
-  "acceptance.local.shareHint": "Kommentare, Erwähnungen und ein teilbarer Link benötigen LobeHub. Bitten Sie Ihren Agenten, diese Akzeptanz zu veröffentlichen, oder führen Sie aus:",
+  "acceptance.local.shareHint": "Kommentare, Erwähnungen und ein teilbarer Link benötigen Biber. Bitten Sie Ihren Agenten, diese Akzeptanz zu veröffentlichen, oder führen Sie aus:",
   "acceptance.local.shareTitle": "Mit Ihrem Team überprüfen",
   "acceptance.local.unsaved": "{{count}} nicht gespeicherte Bewertung(en)",
   "acceptance.notFound.description": "Es wurde möglicherweise gelöscht oder nie mit Ihnen geteilt.",

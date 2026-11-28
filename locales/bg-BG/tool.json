@@ -112,7 +112,7 @@
   "connector.edit.success": "Конекторът е актуализиран",
   "connector.enabled": "Активирано",
   "connector.error.network": "Мрежовата връзка беше прекъсната. Проверете връзката си и опитайте отново.",
-  "connector.error.stdioDesktopOnly": "Stdio конекторите могат да се синхронизират само в десктоп приложението. Отворете LobeHub Desktop, за да синхронизирате този конектор.",
+  "connector.error.stdioDesktopOnly": "Stdio конекторите могат да се синхронизират само в десктоп приложението. Отворете Biber Desktop, за да синхронизирате този конектор.",
   "connector.kind.agent": "Конектор за агент",
   "connector.kind.builtin": "Вграден инструмент",
   "connector.kind.community": "Инструмент от Пазар",

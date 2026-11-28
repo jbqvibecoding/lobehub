@@ -1,7 +1,7 @@
 import { RequestTrigger } from '@lobechat/types';
 import debug from 'debug';
 
-import { MessageModel } from '@/database/models/message';
+import { HumanApprovalAlreadyResolvedError, MessageModel } from '@/database/models/message';
 import { NotificationModel } from '@/database/models/notification';
 import { TaskModel } from '@/database/models/task';
 import { TaskTopicModel } from '@/database/models/taskTopic';
@@ -139,9 +139,13 @@ export const answerToolApproval = async (
     return { operationId };
   }
 
-  if (!(await messageModel.claimPendingIntervention(toolMessageId, decision))) {
+  // The resumed run claims the answer itself (upstream's exactly-once boundary, shared with the
+  // web), so only a request still waiting is taken on; the claim below settles a race.
+  if (plugin.intervention?.status !== 'pending') {
     throw new ToolApprovalError('CONFLICT', 'This tool call was already answered');
   }
+  // The run that paused still holds the conversation; the resumed run takes it over
+  const pausedOperationId = plugin.intervention.operationId;
 
   const topic = message.topicId
     ? await new TopicModel(db, userId, workspaceId).findById(message.topicId)
@@ -181,32 +185,46 @@ export const answerToolApproval = async (
       : []),
   ];
 
-  const result = await new AiAgentService(db, userId, { workspaceId }).execAgent({
-    agentId: message.agentId,
-    appContext: {
-      groupId: message.groupId,
-      threadId: message.threadId,
-      topicId: message.topicId,
-    },
-    ...(bot && { botContext: bot }),
-    ...(hooks.length > 0 && { hooks }),
-    parentMessageId: toolMessageId,
-    prompt: '',
-    resume: true,
-    resumeApproval: {
-      decision,
+  // Later calls in the resumed run ask again rather than running unattended; a task's run keeps
+  // the rules of a run nobody is watching
+  const userInterventionConfig = task
+    ? await backgroundInterventionConfig(db, userId)
+    : { approvalMode: 'manual' as const };
+
+  const result = await new AiAgentService(db, userId, { workspaceId })
+    .execAgent({
+      agentId: message.agentId,
+      appContext: {
+        groupId: message.groupId,
+        threadId: message.threadId,
+        topicId: message.topicId,
+      },
+      ...(pausedOperationId && {
+        approvalSourceOperationId: pausedOperationId,
+        replacesOperationId: pausedOperationId,
+      }),
+      ...(bot && { botContext: bot }),
+      ...(hooks.length > 0 && { hooks }),
       parentMessageId: toolMessageId,
-      rejectionReason: reason,
-      toolCallId: plugin.toolCallId,
-      via,
-    },
-    trigger: bot ? RequestTrigger.Bot : RequestTrigger.Chat,
-    // Later calls in the resumed run ask again rather than running unattended; a task's run keeps
-    // the rules of a run nobody is watching
-    userInterventionConfig: task
-      ? await backgroundInterventionConfig(db, userId)
-      : { approvalMode: 'manual' },
-  });
+      prompt: '',
+      resume: true,
+      resumeApproval: {
+        decision,
+        parentMessageId: toolMessageId,
+        rejectionReason: reason,
+        toolCallId: plugin.toolCallId,
+        via,
+      },
+      trigger: bot ? RequestTrigger.Bot : RequestTrigger.Chat,
+      userInterventionConfig,
+    })
+    .catch((error) => {
+      // Another device or tap answered first
+      if (error instanceof HumanApprovalAlreadyResolvedError) {
+        throw new ToolApprovalError('CONFLICT', 'This tool call was already answered');
+      }
+      throw error;
+    });
 
   // Stopping the task stops its current operation, which is now the resumed one
   if (task && message.topicId && result.operationId) {

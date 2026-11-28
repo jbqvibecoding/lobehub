@@ -4,7 +4,7 @@ export default {
 
   'back': 'Back',
   'keepAwake.description':
-    "LobeHub connects this computer as a device, so agents running in the cloud, on the web or on your phone can use its files and tools. When the computer goes to sleep, the device drops offline and those tasks can't reach it.",
+    "Biber connects this computer as a device, so agents running in the cloud, on the web or on your phone can use its files and tools. When the computer goes to sleep, the device drops offline and those tasks can't reach it.",
   'keepAwake.footerNote':
     'You can change this anytime in Settings → Devices. Closing a laptop lid without an external display still puts it to sleep.',
   'keepAwake.off.description':
@@ -57,7 +57,7 @@ export default {
   'screen3.permissions.4.title': 'Accessibility',
   'screen3.actions.continue': 'Continue',
   'screen3.actions.waiting': 'Waiting for access',
-  'screen3.hint.guide': 'Drag LobeHub into the list in System Settings',
+  'screen3.hint.guide': 'Drag Biber into the list in System Settings',
   'screen3.hint.incomplete': 'Not finished yet. You can try again.',
   'screen3.hint.prompt': 'Choose Allow in the system dialog',
   'screen3.permissions.microphone.description': 'Use voice input and voice conversations',

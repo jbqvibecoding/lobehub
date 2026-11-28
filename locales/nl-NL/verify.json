@@ -322,7 +322,7 @@
   "acceptance.local.save": "Beoordelingen opslaan",
   "acceptance.local.saved": "Opgeslagen {{file}}. Vertel je agent dat je klaar bent met beoordelen.",
   "acceptance.local.share": "Delen",
-  "acceptance.local.shareHint": "Opmerkingen, vermeldingen en een deelbare link vereisen LobeHub. Vraag je agent om deze acceptatie te publiceren, of voer uit:",
+  "acceptance.local.shareHint": "Opmerkingen, vermeldingen en een deelbare link vereisen Biber. Vraag je agent om deze acceptatie te publiceren, of voer uit:",
   "acceptance.local.shareTitle": "Beoordeel met je team",
   "acceptance.local.unsaved": "{{count}} niet-opgeslagen beoordeling(en)",
   "acceptance.notFound.description": "Het kan zijn verwijderd, of het is nooit met je gedeeld.",

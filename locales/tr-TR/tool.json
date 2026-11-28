@@ -112,7 +112,7 @@
   "connector.edit.success": "Bağlayıcı güncellendi",
   "connector.enabled": "Etkin",
   "connector.error.network": "Ağ bağlantısı kesildi. Bağlantınızı kontrol edin ve tekrar deneyin.",
-  "connector.error.stdioDesktopOnly": "Stdio bağlayıcıları yalnızca masaüstü uygulamasında senkronize edilebilir. Bu bağlayıcıyı senkronize etmek için LobeHub Masaüstü'nü açın.",
+  "connector.error.stdioDesktopOnly": "Stdio bağlayıcıları yalnızca masaüstü uygulamasında senkronize edilebilir. Bu bağlayıcıyı senkronize etmek için Biber Masaüstü'nü açın.",
   "connector.kind.agent": "Ajan bağlayıcı",
   "connector.kind.builtin": "Yerleşik araç",
   "connector.kind.community": "Pazar Yeri aracı",

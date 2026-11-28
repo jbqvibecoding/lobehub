@@ -191,6 +191,9 @@ export class GeneralChatAgent implements Agent {
     // path-scope audit fences file paths to it).
     const resolverMetadata = {
       ...state.metadata,
+      // Biber: the plugins the agent itself carries. Upstream defers some of them (the cloud
+      // sandbox) to an activation step; activating one the agent carries is not a new grant.
+      agentPluginIds: (this.config.agentConfig?.plugins as string[] | undefined) ?? [],
       enabledToolIds: [
         ...(selectOperationToolSet(state).enabledToolIds ?? []),
         ...(state.activatedStepTools ?? []).map((activation) => activation.id),

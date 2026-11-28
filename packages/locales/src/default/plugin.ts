@@ -86,7 +86,7 @@ export default {
   'builtins.lobe-mcp-events.error.feature_disabled':
     'Event subscriptions are turned off on this server',
   'builtins.lobe-mcp-events.error.public_url_required':
-    'Event subscriptions need LobeHub on a public HTTPS address. Ask your administrator to set APP_URL',
+    'Event subscriptions need Biber on a public HTTPS address. Ask your administrator to set APP_URL',
   'builtins.lobe-mcp-events.error.channel_unsupported':
     'Ask from a message in the Channel, so events know where to post their results',
   'builtins.lobe-mcp-events.error.connector_not_found': "This agent doesn't have that connector",
@@ -97,7 +97,7 @@ export default {
     'The connector refused. Check its authorization and permissions',
   'builtins.lobe-mcp-events.error.invalid_arguments': "The connector didn't accept this filter",
   'builtins.lobe-mcp-events.error.callback_unreachable':
-    "The connector couldn't reach LobeHub's callback address",
+    "The connector couldn't reach Biber's callback address",
   'builtins.lobe-mcp-events.error.limit_reached':
     'Subscription limit reached. Delete one in Settings › Automations first',
   'builtins.lobe-mcp-events.error.not_found': 'This agent has no such subscription of yours',
@@ -1036,7 +1036,7 @@ export default {
   'dev.mcp.auth.oauth': 'OAuth',
   'dev.mcp.auth.oauth.authorize': 'Authorize & Connect',
   'dev.mcp.auth.oauth.clientId.desc':
-    'Leave empty to identify LobeHub automatically (Client ID Metadata Document or dynamic client registration)',
+    'Leave empty to identify Biber automatically (Client ID Metadata Document or dynamic client registration)',
   'dev.mcp.auth.oauth.clientId.label': 'OAuth Client ID',
   'dev.mcp.auth.oauth.clientId.placeholder': 'Optional',
   'dev.mcp.auth.oauth.clientSecret.desc': 'Only required for confidential OAuth clients',
@@ -1055,7 +1055,7 @@ export default {
   'dev.mcp.boundDevice.desc':
     'Pin this MCP server to one device. When that device is offline, calls fail instead of moving to another device.',
   'dev.mcp.boundDevice.empty':
-    'No device yet. Open the LobeHub desktop app or run `lh connect` on a computer first.',
+    'No device yet. Open the Biber desktop app or run `lh connect` on a computer first.',
   'dev.mcp.boundDevice.emptyWorkspace': 'No shared device in this workspace yet',
   'dev.mcp.boundDevice.label': 'Run on device',
   'dev.mcp.boundDevice.unavailable': 'Bound device is no longer available',
@@ -1068,7 +1068,7 @@ export default {
     'Decided by the address: localhost and LAN IPs connect from your device, every other address connects from the server.',
   'dev.mcp.connectVia.device': 'Connect via device',
   'dev.mcp.connectVia.deviceDesc':
-    'Connects from your own device. Use it for addresses only your computer can reach, such as intranet, Tailscale, or LAN hostnames. Keep the LobeHub desktop app open and online on a computer that can reach this server.',
+    'Connects from your own device. Use it for addresses only your computer can reach, such as intranet, Tailscale, or LAN hostnames. Keep the Biber desktop app open and online on a computer that can reach this server.',
   'dev.mcp.connectVia.label': 'Connection',
   'dev.mcp.desc.desc': 'Add Skill description',
   'dev.mcp.desc.label': 'Description',

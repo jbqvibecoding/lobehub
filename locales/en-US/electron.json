@@ -24,6 +24,7 @@
   "navigation.automations": "Automations",
   "navigation.channels": "IM Bots",
   "navigation.chat": "Chat",
+  "navigation.cloudComputer": "Cloud computer",
   "navigation.dashboard": "Dashboards",
   "navigation.document": "Document",
   "navigation.engine": "Agent Engine",
@@ -144,7 +145,7 @@
   "remoteServer.statusConnected": "Connected",
   "remoteServer.statusDisconnected": "Not connected",
   "remoteServer.urlRequired": "Please enter the server address",
-  "startupUpdate.applying": "Restarting LobeHub…",
+  "startupUpdate.applying": "Restarting Biber…",
   "startupUpdate.checking": "Checking for updates…",
   "startupUpdate.downloading": "Downloading update",
   "startupUpdate.error": "Couldn’t finish the update",
@@ -217,6 +218,5 @@
   "window.minimize": "Minimize window",
   "window.pinToTop": "Pin on top",
   "window.restore": "Restore window",
-  "window.unpinFromTop": "Unpin from top",
-  "navigation.cloudComputer": "Cloud computer"
+  "window.unpinFromTop": "Unpin from top"
 }

@@ -422,7 +422,7 @@
   "models.parameterList.top_p.desc": "この設定は、モデルの選択を可能性の高い一定の割合の語彙に制限します：累積確率がPに達するトップ語彙のみを選択します。低い値はモデルの応答をより予測可能にし、デフォルト設定はモデルが全範囲の語彙から選択できることを許可します。",
   "models.parameterList.top_p.title": "核サンプリング",
   "models.parameterList.type": "タイプ",
-  "models.providerInfo.apiTooltip": "LobeChatは、このプロバイダーに対してカスタムAPIキーを使用することをサポートしています。",
+  "models.providerInfo.apiTooltip": "Biberは、このプロバイダーに対してカスタムAPIキーを使用することをサポートしています。",
   "models.providerInfo.input": "入力価格",
   "models.providerInfo.inputTooltip": "百万トークンあたりのコスト",
   "models.providerInfo.latency": "レイテンシ",

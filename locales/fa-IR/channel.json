@@ -56,7 +56,7 @@
   "environment.chooseDevice": "انتخاب دستگاه",
   "environment.configurationFailed": "تنظیمات این عامل بارگذاری نشد. دوباره تلاش کنید.",
   "environment.configurationLoading": "در حال بارگذاری تنظیمات این عامل…",
-  "environment.connectorUpgradeRequired": "کانکتور LobeHub این دستگاه نیاز به به‌روزرسانی دارد. LobeHub Desktop یا LobeHub CLI را روی آن دستگاه به‌روزرسانی کنید، سپس دوباره متصل شوید و تلاش کنید.",
+  "environment.connectorUpgradeRequired": "کانکتور Biber این دستگاه نیاز به به‌روزرسانی دارد. Biber Desktop یا LobeHub CLI را روی آن دستگاه به‌روزرسانی کنید، سپس دوباره متصل شوید و تلاش کنید.",
   "environment.deviceLabel": "دستگاه برای {{name}}",
   "environment.deviceOffline": "این دستگاه آفلاین است. آن را دوباره متصل کنید یا دستگاه دیگری انتخاب کنید.",
   "environment.deviceRequired": "یک دستگاه آنلاین برای این عامل کدنویسی انتخاب کنید.",

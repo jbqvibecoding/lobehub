@@ -56,7 +56,7 @@
   "environment.chooseDevice": "Chọn một thiết bị",
   "environment.configurationFailed": "Không thể tải cài đặt của Ajan này. Thử lại.",
   "environment.configurationLoading": "Đang tải cài đặt của Ajan này…",
-  "environment.connectorUpgradeRequired": "Trình kết nối LobeHub của thiết bị này cần được cập nhật. Cập nhật LobeHub Desktop hoặc LobeHub CLI trên thiết bị đó, sau đó kết nối lại và thử lại.",
+  "environment.connectorUpgradeRequired": "Trình kết nối Biber của thiết bị này cần được cập nhật. Cập nhật Biber Desktop hoặc LobeHub CLI trên thiết bị đó, sau đó kết nối lại và thử lại.",
   "environment.deviceLabel": "Thiết bị cho {{name}}",
   "environment.deviceOffline": "Thiết bị này đang ngoại tuyến. Kết nối lại hoặc chọn một thiết bị khác.",
   "environment.deviceRequired": "Chọn một thiết bị trực tuyến cho Ajan mã hóa này.",

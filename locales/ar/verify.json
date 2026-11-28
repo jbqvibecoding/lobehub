@@ -322,7 +322,7 @@
   "acceptance.local.save": "حفظ المراجعات",
   "acceptance.local.saved": "تم حفظ {{file}}. أخبر وكيلك أنك انتهيت من المراجعة.",
   "acceptance.local.share": "مشاركة",
-  "acceptance.local.shareHint": "التعليقات، الإشارات، والرابط القابل للمشاركة تحتاج إلى LobeHub. اطلب من وكيلك نشر هذا القبول، أو قم بتشغيل:",
+  "acceptance.local.shareHint": "التعليقات، الإشارات، والرابط القابل للمشاركة تحتاج إلى Biber. اطلب من وكيلك نشر هذا القبول، أو قم بتشغيل:",
   "acceptance.local.shareTitle": "راجع مع فريقك",
   "acceptance.local.unsaved": "{{count}} مراجعة غير محفوظة",
   "acceptance.notFound.description": "قد يكون قد تم حذفه، أو لم يتم مشاركته معك أبدًا.",

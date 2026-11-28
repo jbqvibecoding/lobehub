@@ -43,7 +43,7 @@
   "consent.scope.sync-read": "Ler seus dados sincronizados",
   "consent.scope.sync-write": "Escrever e atualizar seus dados sincronizados",
   "consent.thirdParty.developedBy": "Por {{developerName}}",
-  "consent.thirdParty.notice": "Este aplicativo foi criado por um desenvolvedor terceirizado e não é operado pelo LobeHub. Uma vez autorizado, ele pode agir em seu nome e usar sua cota de conta.",
+  "consent.thirdParty.notice": "Este aplicativo foi criado por um desenvolvedor terceirizado e não é operado pelo Biber. Uma vez autorizado, ele pode agir em seu nome e usar sua cota de conta.",
   "consent.thirdParty.privacyPolicy": "Política de Privacidade",
   "consent.thirdParty.unknownDeveloper": "um desenvolvedor terceirizado",
   "consent.title": "Autorizar {{clientName}}",

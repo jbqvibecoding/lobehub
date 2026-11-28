@@ -75,7 +75,7 @@
   "environment.checkingDevice": "正在确认状态",
   "environment.configurationFailed": "未能读取此 Agent 的配置，请重试。",
   "environment.configurationLoading": "正在读取 Agent 配置…",
-  "environment.connectorUpgradeRequired": "设备连接器需升级。请更新目标设备上的 LobeHub 桌面端或 LobeHub CLI，重新连接后重试。",
+  "environment.connectorUpgradeRequired": "设备连接器需升级。请更新目标设备上的 Biber 桌面端或 LobeHub CLI，重新连接后重试。",
   "environment.deviceLabel": "{{name}} 的设备",
   "environment.deviceOffline": "此设备已离线，请重新连接或选择其他设备。",
   "environment.deviceUnavailable": "当前空间无法使用此设备，请选择有权限访问的设备。",

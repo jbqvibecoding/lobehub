@@ -126,7 +126,7 @@
   "remoteServer.statusConnected": "متصل",
   "remoteServer.statusDisconnected": "غير متصل",
   "remoteServer.urlRequired": "يرجى إدخال عنوان الخادم",
-  "startupUpdate.applying": "إعادة تشغيل LobeHub…",
+  "startupUpdate.applying": "إعادة تشغيل Biber…",
   "startupUpdate.checking": "التحقق من التحديثات…",
   "startupUpdate.downloading": "جارٍ تنزيل التحديث",
   "startupUpdate.error": "تعذر إكمال التحديث",

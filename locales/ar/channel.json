@@ -56,7 +56,7 @@
   "environment.chooseDevice": "اختر جهازًا",
   "environment.configurationFailed": "تعذر تحميل إعدادات هذا الوكيل. حاول مرة أخرى.",
   "environment.configurationLoading": "جارٍ تحميل إعدادات هذا الوكيل…",
-  "environment.connectorUpgradeRequired": "يحتاج موصل LobeHub على هذا الجهاز إلى تحديث. حدّث LobeHub Desktop أو LobeHub CLI على ذلك الجهاز، ثم أعد الاتصال وحاول مرة أخرى.",
+  "environment.connectorUpgradeRequired": "يحتاج موصل Biber على هذا الجهاز إلى تحديث. حدّث Biber Desktop أو LobeHub CLI على ذلك الجهاز، ثم أعد الاتصال وحاول مرة أخرى.",
   "environment.deviceLabel": "الجهاز لـ {{name}}",
   "environment.deviceOffline": "هذا الجهاز غير متصل. أعد الاتصال أو اختر جهازًا آخر.",
   "environment.deviceRequired": "اختر جهازًا متصلًا لهذا الوكيل البرمجي.",

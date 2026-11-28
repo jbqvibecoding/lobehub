@@ -322,7 +322,7 @@
   "acceptance.local.save": "İncelemeleri kaydet",
   "acceptance.local.saved": "{{file}} kaydedildi. İncelemeyi tamamladığınızı ajanınıza bildirin.",
   "acceptance.local.share": "Paylaş",
-  "acceptance.local.shareHint": "Yorumlar, bahsetmeler ve paylaşılabilir bir bağlantı için LobeHub gerekir. Ajanınıza bu kabulü yayınlamasını söyleyin veya şu komutu çalıştırın:",
+  "acceptance.local.shareHint": "Yorumlar, bahsetmeler ve paylaşılabilir bir bağlantı için Biber gerekir. Ajanınıza bu kabulü yayınlamasını söyleyin veya şu komutu çalıştırın:",
   "acceptance.local.shareTitle": "Ekibinizle inceleyin",
   "acceptance.local.unsaved": "{{count}} kaydedilmemiş inceleme",
   "acceptance.notFound.description": "Silinmiş olabilir veya sizinle hiç paylaşılmamış olabilir.",

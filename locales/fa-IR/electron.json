@@ -126,7 +126,7 @@
   "remoteServer.statusConnected": "متصل شد",
   "remoteServer.statusDisconnected": "متصل نیست",
   "remoteServer.urlRequired": "لطفاً آدرس سرور را وارد کنید",
-  "startupUpdate.applying": "در حال راه‌اندازی مجدد LobeHub…",
+  "startupUpdate.applying": "در حال راه‌اندازی مجدد Biber…",
   "startupUpdate.checking": "در حال بررسی برای به‌روزرسانی‌ها…",
   "startupUpdate.downloading": "در حال دانلود به‌روزرسانی",
   "startupUpdate.error": "به‌روزرسانی کامل نشد",

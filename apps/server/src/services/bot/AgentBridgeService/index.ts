@@ -8,12 +8,12 @@ import { UserModel } from '@/database/models/user';
 import type { LobeChatDatabase } from '@/database/type';
 import { createAbortError } from '@/server/services/agentRuntime/abort';
 import { AiAgentService } from '@/server/services/aiAgent';
+import { messengerReplyLocale } from '@/server/services/messenger/replies';
 import { isQueueAgentRuntimeEnabled } from '@/server/services/queue/impls';
 
 import type { BotReplyLocale, PlatformClient } from '../platforms';
 import {
   DEFAULT_BOT_REACTION_MODE,
-  getBotReplyLocale,
   RECEIVED_REACTION_EMOJI,
   shouldApplyReaction,
   THINKING_REACTION_EMOJI,
@@ -314,7 +314,7 @@ export class AgentBridgeService {
    * platform-derived default so legacy callers still get the right copy.
    */
   private resolveReplyLocale(opts: BridgeHandlerOpts): BotReplyLocale {
-    return opts.replyLocale ?? getBotReplyLocale(opts.botContext?.platform);
+    return opts.replyLocale ?? messengerReplyLocale(opts.botContext?.platform);
   }
 
   /**

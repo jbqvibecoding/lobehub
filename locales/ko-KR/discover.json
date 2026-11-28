@@ -422,7 +422,7 @@
   "models.parameterList.top_p.desc": "이 설정은 모델의 선택을 가능성이 가장 높은 특정 비율의 단어로 제한합니다: 누적 확률이 P에 도달하는 최상위 단어만 선택합니다. 낮은 값은 모델의 응답을 더 예측 가능하게 만들고, 기본 설정은 모델이 전체 범위의 단어에서 선택할 수 있도록 허용합니다.",
   "models.parameterList.top_p.title": "핵 샘플링",
   "models.parameterList.type": "유형",
-  "models.providerInfo.apiTooltip": "LobeChat은 이 제공자에 대해 사용자 정의 API 키를 지원합니다.",
+  "models.providerInfo.apiTooltip": "Biber은 이 제공자에 대해 사용자 정의 API 키를 지원합니다.",
   "models.providerInfo.input": "입력 가격",
   "models.providerInfo.inputTooltip": "백만 개의 Token당 비용",
   "models.providerInfo.latency": "지연",
